@@ -170,6 +170,24 @@ impl Home {
         }
     }
 
+    async fn get_server_address(&mut self) -> Option<SocketAddr> {
+        let user_input = self.input.value().to_string();
+        if user_input.is_empty() {
+            add_message("Please enter an address string, e.g. 127.0.0.1:8080".to_string()).await;
+            return None;
+        }
+        let address: SocketAddr = match user_input.parse() {
+            Ok(addr) => addr,
+            _ => {
+                add_message("Incorrect server address, try again.".to_string()).await;
+                self.input.reset();
+                return None;
+            },
+        };
+        self.input.reset();
+        Some(address)
+    }
+
     async fn connect_client(&mut self, address: SocketAddr) {
         if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::DISCONNECTED {
             let stream = TcpStream::connect(address).await;
@@ -185,6 +203,18 @@ impl Home {
         } else {
             add_message("Already connected to server.".to_string()).await;
         }
+    }
+
+    async fn disconnect_client(&mut self) {
+        if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
+            CANCEL_TOKEN.lock().unwrap().token.cancel();
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            add_message("Disconnected from server.".to_string()).await;
+            CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
+        } else {
+            add_message("Not connected to a server.".to_string()).await;
+        }
+        CANCEL_TOKEN.lock().unwrap().token = CancellationToken::new();
     }
 
     pub async fn net_event_select_loop(
@@ -268,72 +298,27 @@ impl Component for Home {
         let action = match self.mode {
             Mode::Normal | Mode::Processing => match key.code {
                 KeyCode::Char('q') => {
-                    if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
-                        CANCEL_TOKEN.lock().unwrap().token.cancel();
-                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                        add_message("Disconnected from server.".to_string()).await;
-                        CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
-                    } else {
-                        add_message("Not connected to a server.".to_string()).await;
-                    }
-                    CANCEL_TOKEN.lock().unwrap().token = CancellationToken::new();
+                    self.disconnect_client().await;
                     Action::Quit
                 },
                 KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
-                        CANCEL_TOKEN.lock().unwrap().token.cancel();
-                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                        add_message("Disconnected from server.".to_string()).await;
-                        CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
-                    } else {
-                        add_message("Not connected to a server.".to_string()).await;
-                    }
-                    CANCEL_TOKEN.lock().unwrap().token = CancellationToken::new();
+                    self.disconnect_client().await;
                     Action::Update
                 },
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
-                        CANCEL_TOKEN.lock().unwrap().token.cancel();
-                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                        add_message("Disconnected from server.".to_string()).await;
-                        CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
-                    } else {
-                        add_message("Not connected to a server.".to_string()).await;
-                    }
-                    CANCEL_TOKEN.lock().unwrap().token = CancellationToken::new();
+                    self.disconnect_client().await;
                     Action::Quit
                 },
                 KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::Suspend,
                 KeyCode::Char('?') => Action::ToggleShowHelp,
                 KeyCode::Char('/') => Action::EnterInsert,
                 KeyCode::Char('c') => {
-                    let user_input = self.input.value().to_string();
-                    if user_input.is_empty() {
-                        add_message("Please enter an address string, e.g. 127.0.0.1:8080".to_string()).await;
-                        return Ok(Some(Action::Update));
-                    }
-                    let addr: SocketAddr = match user_input.parse() {
-                        Ok(addr) => addr,
-                        _ => {
-                            add_message("Incorrect server address, try again.".to_string()).await;
-                            self.input.reset();
-                            return Ok(Some(Action::Update));
-                        },
-                    };
-                    self.input.reset();
-                    self.connect_client(addr).await;
+                    let address = self.get_server_address().await;
+                    self.connect_client(address.unwrap()).await;
                     Action::Update
                 },
                 KeyCode::Char('d') => {
-                    if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
-                        CANCEL_TOKEN.lock().unwrap().token.cancel();
-                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                        add_message("Disconnected from server.".to_string()).await;
-                        CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
-                    } else {
-                        add_message("Not connected to a server.".to_string()).await;
-                    }
-                    CANCEL_TOKEN.lock().unwrap().token = CancellationToken::new();
+                    self.disconnect_client().await;
                     Action::Update
                 },
                 KeyCode::Esc => {
