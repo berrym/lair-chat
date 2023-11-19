@@ -314,7 +314,9 @@ impl Component for Home {
                 KeyCode::Char('/') => Action::EnterInsert,
                 KeyCode::Char('c') => {
                     let address = self.get_server_address().await;
-                    self.connect_client(address.unwrap()).await;
+                    if address.is_some() {
+                        self.connect_client(address.unwrap()).await;
+                    }
                     Action::Update
                 },
                 KeyCode::Char('d') => {
