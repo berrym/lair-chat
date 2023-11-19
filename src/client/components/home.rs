@@ -38,8 +38,38 @@ pub type BoxedStream<Item> = Pin<Box<dyn Stream<Item = Item> + Send>>;
 /// Shorthand for a BoxedStream type we will use
 pub type ClientTcpStream = BoxedStream<Result<String, std::io::Error>>;
 
+#[derive(PartialEq)]
+pub enum ConnectionStatus {
+    CONNECTED,
+    DISCONNECTED,
+}
+
+/// Client connection status
+pub struct ClientStatus {
+    status: ConnectionStatus,
+}
+
+impl ClientStatus {
+    pub fn new() -> Self {
+        let status = ConnectionStatus::DISCONNECTED;
+        Self { status }
+    }
+}
+
+/// Task cancellation token
+pub struct CancelClient {
+    token: CancellationToken,
+}
+
+impl CancelClient {
+    pub fn new() -> Self {
+        let token = CancellationToken::new();
+        Self { token }
+    }
+}
+
 /// Messages queues
-struct Messages {
+pub struct Messages {
     outgoing: Vec<String>,
     text: Vec<String>,
 }
@@ -76,6 +106,18 @@ impl ClientSink {
     }
 }
 
+/// Lazy Mutex wrapped global client connection status
+static CLIENT_STATUS: Lazy<Mutex<ClientStatus>> = Lazy::new(|| {
+    let cs = ClientStatus::new();
+    Mutex::new(cs)
+});
+
+/// Lazy Mutex wrapped global cancellation token
+static CANCEL_TOKEN: Lazy<Mutex<CancelClient>> = Lazy::new(|| {
+    let c = CancelClient::new();
+    Mutex::new(c)
+});
+
 /// Lazy Mutex wrapped global message buffers
 static MESSAGES: Lazy<Mutex<Messages>> = Lazy::new(|| {
     let m = Messages::new();
@@ -111,8 +153,6 @@ pub struct Home {
     action_tx: Option<Tx<Action>>,
     keymap: HashMap<KeyEvent, Action>,
     last_events: Vec<KeyEvent>,
-    connected: bool,
-    client_cancel_token: CancellationToken,
 }
 
 impl Home {
@@ -127,16 +167,14 @@ impl Home {
             action_tx: None,
             keymap: HashMap::new(),
             last_events: Vec::new(),
-            connected: false,
-            client_cancel_token: CancellationToken::new(),
         }
     }
 
     async fn connect_client(&mut self, address: SocketAddr) {
-        if !self.connected {
+        if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::DISCONNECTED {
             let stream = TcpStream::connect(address).await;
             if stream.is_ok() {
-                self.connected = true;
+                CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
                 add_message(format!("Connected to server {}.", address.to_string())).await;
                 // let transport = Framed::new(stream.unwrap(), LinesCodec::new());
                 let (reader, writer) = split_tcp_stream(stream.unwrap()).unwrap();
@@ -157,7 +195,7 @@ impl Home {
         let input = self.input.clone();
         let mut stream = reader;
         let mut sink = writer;
-        let cancel_token = self.client_cancel_token.clone();
+        let cancel_token = CANCEL_TOKEN.lock().unwrap().token.clone();
         tokio::spawn(async move {
             loop {
                 if !MESSAGES.lock().unwrap().outgoing.is_empty() {
@@ -180,7 +218,10 @@ impl Home {
                     message = stream.rx.next().fuse() => match message {
                         Some(Ok(message)) => add_message(message.clone()).await,
                         None => {
-                            add_message("The Lair has closed. Client needs to be restarted to connect again.".to_string()).await;
+                            add_message("The Lair has CLOSED.".to_string()).await;
+                            CANCEL_TOKEN.lock().unwrap().token.cancel();
+                            CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
+                            CANCEL_TOKEN.lock().unwrap().token = CancellationToken::new();
                             break;
                         },
                         _ => continue,
@@ -227,39 +268,39 @@ impl Component for Home {
         let action = match self.mode {
             Mode::Normal | Mode::Processing => match key.code {
                 KeyCode::Char('q') => {
-                    if self.connected {
-                        self.client_cancel_token.cancel();
+                    if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
+                        CANCEL_TOKEN.lock().unwrap().token.cancel();
                         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                         add_message("Disconnected from server.".to_string()).await;
-                        self.connected = false;
+                        CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
                     } else {
                         add_message("Not connected to a server.".to_string()).await;
                     }
-                    self.client_cancel_token = CancellationToken::new();
+                    CANCEL_TOKEN.lock().unwrap().token = CancellationToken::new();
                     Action::Quit
                 },
                 KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    if self.connected {
-                        self.client_cancel_token.cancel();
+                    if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
+                        CANCEL_TOKEN.lock().unwrap().token.cancel();
                         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                         add_message("Disconnected from server.".to_string()).await;
-                        self.connected = false;
+                        CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
                     } else {
                         add_message("Not connected to a server.".to_string()).await;
                     }
-                    self.client_cancel_token = CancellationToken::new();
+                    CANCEL_TOKEN.lock().unwrap().token = CancellationToken::new();
                     Action::Update
                 },
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    if self.connected {
-                        self.client_cancel_token.cancel();
+                    if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
+                        CANCEL_TOKEN.lock().unwrap().token.cancel();
                         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                         add_message("Disconnected from server.".to_string()).await;
-                        self.connected = false;
+                        CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
                     } else {
                         add_message("Not connected to a server.".to_string()).await;
                     }
-                    self.client_cancel_token = CancellationToken::new();
+                    CANCEL_TOKEN.lock().unwrap().token = CancellationToken::new();
                     Action::Quit
                 },
                 KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::Suspend,
@@ -284,15 +325,15 @@ impl Component for Home {
                     Action::Update
                 },
                 KeyCode::Char('d') => {
-                    if self.connected {
-                        self.client_cancel_token.cancel();
+                    if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
+                        CANCEL_TOKEN.lock().unwrap().token.cancel();
                         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                         add_message("Disconnected from server.".to_string()).await;
-                        self.connected = false;
+                        CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
                     } else {
                         add_message("Not connected to a server.".to_string()).await;
                     }
-                    self.client_cancel_token = CancellationToken::new();
+                    CANCEL_TOKEN.lock().unwrap().token = CancellationToken::new();
                     Action::Update
                 },
                 KeyCode::Esc => {
@@ -307,7 +348,7 @@ impl Component for Home {
                 KeyCode::Esc => Action::EnterNormal,
                 KeyCode::Enter => {
                     let message = get_user_input(self.input.clone()).await;
-                    if message.is_some() && self.connected {
+                    if message.is_some() && CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
                         MESSAGES.lock().unwrap().outgoing.insert(0, message.unwrap());
                         self.input.reset();
                     }
