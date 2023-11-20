@@ -8,6 +8,7 @@ pub mod cli;
 pub mod components;
 pub mod config;
 pub mod mode;
+pub mod transport;
 pub mod tui;
 pub mod utils;
 

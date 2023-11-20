@@ -1,30 +1,21 @@
 use async_trait::async_trait;
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use futures::{select, FutureExt, Sink, SinkExt};
+use futures::{select, FutureExt, SinkExt};
 use log::error;
 use once_cell::sync::Lazy;
 use ratatui::{prelude::*, widgets::*};
-use std::{collections::HashMap, net::SocketAddr, pin::Pin, sync::Mutex, time::Duration};
-use tokio::{
-    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
-    net::{
-        tcp::{OwnedReadHalf, OwnedWriteHalf},
-        TcpStream,
-    },
-    sync::mpsc,
-};
+use std::{collections::HashMap, net::SocketAddr, sync::Mutex};
+use tokio::{io::AsyncWriteExt, net::TcpStream, sync::mpsc};
 use tokio_stream::{wrappers::LinesStream, Stream, StreamExt};
-use tokio_util::{
-    codec::{FramedWrite, LinesCodec},
-    sync::CancellationToken,
-};
+use tokio_util::sync::CancellationToken;
 use tui_input::{backend::crossterm::EventHandler, Input};
 
 use crate::{
     action::Action,
     config::{key_event_to_string, Config, KeyBindings},
     mode::Mode,
+    transport::*,
 };
 
 use super::{Component, Frame};
@@ -33,42 +24,8 @@ use super::{Component, Frame};
 pub type Tx<T> = mpsc::UnboundedSender<T>;
 /// Shorthand for the receiving half of the message channel
 pub type Rx<T> = mpsc::UnboundedReceiver<T>;
-/// Shorthand for a pinned boxed stream
-pub type BoxedStream<Item> = Pin<Box<dyn Stream<Item = Item> + Send>>;
-/// Shorthand for a BoxedStream type we will use
-pub type ClientTcpStream = BoxedStream<Result<String, std::io::Error>>;
 
-#[derive(PartialEq)]
-pub enum ConnectionStatus {
-    CONNECTED,
-    DISCONNECTED,
-}
-
-/// Client connection status
-pub struct ClientStatus {
-    status: ConnectionStatus,
-}
-
-impl ClientStatus {
-    pub fn new() -> Self {
-        let status = ConnectionStatus::DISCONNECTED;
-        Self { status }
-    }
-}
-
-/// Task cancellation token
-pub struct CancelClient {
-    token: CancellationToken,
-}
-
-impl CancelClient {
-    pub fn new() -> Self {
-        let token = CancellationToken::new();
-        Self { token }
-    }
-}
-
-/// Messages queues
+/// Messages buffers
 pub struct Messages {
     outgoing: Vec<String>,
     text: Vec<String>,
@@ -82,53 +39,25 @@ impl Messages {
     }
 }
 
-/// Wrapped read half of a TcpStream
-pub struct ClientStream {
-    rx: ClientTcpStream,
-}
-
-impl ClientStream {
-    pub fn new(reader: OwnedReadHalf) -> Self {
-        let rx = Box::pin(LinesStream::new(BufReader::new(reader).lines()));
-        Self { rx }
-    }
-}
-
-/// Wrapped write half of a TcpStream
-pub struct ClientSink {
-    tx: FramedWrite<OwnedWriteHalf, LinesCodec>,
-}
-
-impl ClientSink {
-    pub fn new(writer: OwnedWriteHalf) -> Self {
-        let tx = FramedWrite::new(writer, LinesCodec::new());
-        Self { tx }
-    }
-}
-
 /// Lazy Mutex wrapped global client connection status
-static CLIENT_STATUS: Lazy<Mutex<ClientStatus>> = Lazy::new(|| {
-    let cs = ClientStatus::new();
-    Mutex::new(cs)
+pub static CLIENT_STATUS: Lazy<Mutex<ClientStatus>> = Lazy::new(|| {
+    let m = ClientStatus::new();
+    Mutex::new(m)
 });
 
 /// Lazy Mutex wrapped global cancellation token
-static CANCEL_TOKEN: Lazy<Mutex<CancelClient>> = Lazy::new(|| {
-    let c = CancelClient::new();
-    Mutex::new(c)
+pub static CANCEL_TOKEN: Lazy<Mutex<CancelClient>> = Lazy::new(|| {
+    let m = CancelClient::new();
+    Mutex::new(m)
 });
 
 /// Lazy Mutex wrapped global message buffers
-static MESSAGES: Lazy<Mutex<Messages>> = Lazy::new(|| {
+pub static MESSAGES: Lazy<Mutex<Messages>> = Lazy::new(|| {
     let m = Messages::new();
     Mutex::new(m)
 });
 
-fn split_tcp_stream(stream: TcpStream) -> Result<(ClientStream, ClientSink)> {
-    let (reader, writer) = stream.into_split();
-    Ok((ClientStream::new(reader), ClientSink::new(writer)))
-}
-
+/// Get any text in the input box
 async fn get_user_input(mut input: Input) -> Option<String> {
     let message = input.value().to_string();
     input.reset();
@@ -139,8 +68,14 @@ async fn get_user_input(mut input: Input) -> Option<String> {
     }
 }
 
-async fn add_message(s: String) {
+/// Add a message to displayed in the main window
+async fn add_text_message(s: String) {
     MESSAGES.lock().unwrap().text.insert(0, s);
+}
+
+/// Add a message to the outgoing buffer
+async fn add_outgoing_message(s: String) {
+    MESSAGES.lock().unwrap().outgoing.insert(0, s);
 }
 
 pub struct Home {
@@ -173,13 +108,13 @@ impl Home {
     async fn get_server_address(&mut self) -> Option<SocketAddr> {
         let user_input = self.input.value().to_string();
         if user_input.is_empty() {
-            add_message("Please enter an address string, e.g. 127.0.0.1:8080".to_string()).await;
+            add_text_message("Please enter an address string, e.g. 127.0.0.1:8080".to_string()).await;
             return None;
         }
         let address: SocketAddr = match user_input.parse() {
             Ok(addr) => addr,
             _ => {
-                add_message("Incorrect server address, try again.".to_string()).await;
+                add_text_message("Incorrect server address, try again.".to_string()).await;
                 self.input.reset();
                 return None;
             },
@@ -193,15 +128,15 @@ impl Home {
             let stream = TcpStream::connect(address).await;
             if stream.is_ok() {
                 CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
-                add_message(format!("Connected to server {}.", address.to_string())).await;
+                add_text_message(format!("Connected to server {}.", address.to_string())).await;
                 // let transport = Framed::new(stream.unwrap(), LinesCodec::new());
                 let (reader, writer) = split_tcp_stream(stream.unwrap()).unwrap();
                 self.net_event_select_loop(reader, writer /* transport */).await;
             } else {
-                add_message(format!("Could not connect to server {}.", address.to_string())).await;
+                add_text_message(format!("Could not connect to server {}.", address.to_string())).await;
             }
         } else {
-            add_message("Already connected to server.".to_string()).await;
+            add_text_message("Already connected to server.".to_string()).await;
         }
     }
 
@@ -209,10 +144,10 @@ impl Home {
         if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
             CANCEL_TOKEN.lock().unwrap().token.cancel();
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            add_message("Disconnected from server.".to_string()).await;
+            add_text_message("Disconnected from server.".to_string()).await;
             CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
         } else {
-            add_message("Not connected to a server.".to_string()).await;
+            add_text_message("Not connected to a server.".to_string()).await;
         }
         CANCEL_TOKEN.lock().unwrap().token = CancellationToken::new();
     }
@@ -232,7 +167,7 @@ impl Home {
                     let outgoing: Vec<String> =
                         MESSAGES.lock().unwrap().outgoing.clone().iter().map(|l| String::from(l.clone())).collect();
                     for message in outgoing {
-                        add_message(format!("{}{}", "You: ".to_owned(), message.clone())).await;
+                        add_text_message(format!("{}{}", "You: ".to_owned(), message.clone())).await;
                         // let _ = transport.send(message.clone()).await;
                         let _ = sink.tx.send(message.clone()).await;
                         MESSAGES.lock().unwrap().outgoing.clear();
@@ -246,9 +181,9 @@ impl Home {
                     },
                     // message = transport.next().fuse() => match message {
                     message = stream.rx.next().fuse() => match message {
-                        Some(Ok(message)) => add_message(message.clone()).await,
+                        Some(Ok(message)) => add_text_message(message.clone()).await,
                         None => {
-                            add_message("The Lair has CLOSED.".to_string()).await;
+                            add_text_message("The Lair has CLOSED.".to_string()).await;
                             CANCEL_TOKEN.lock().unwrap().token.cancel();
                             CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
                             CANCEL_TOKEN.lock().unwrap().token = CancellationToken::new();
@@ -260,7 +195,7 @@ impl Home {
                         Some(message) => {
                             // let _ = transport.send(message.clone()).await;
                             let _ = sink.tx.send(message.clone()).await;
-                            add_message(format!("{}{}", "You: ".to_owned(), message.to_string())).await;
+                            add_text_message(format!("{}{}", "You: ".to_owned(), message.to_string())).await;
                         },
                         None => continue,
                     }
@@ -343,10 +278,18 @@ impl Component for Home {
                 KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::Suspend,
                 KeyCode::Esc => Action::EnterNormal,
                 KeyCode::Enter => {
+                    let client_status = CLIENT_STATUS.lock().unwrap();
                     let message = get_user_input(self.input.clone()).await;
-                    if message.is_some() && CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
-                        MESSAGES.lock().unwrap().outgoing.insert(0, message.unwrap());
+                    if message.is_some() && client_status.status == ConnectionStatus::CONNECTED {
+                        add_outgoing_message(message.unwrap()).await;
                         self.input.reset();
+                    } else {
+                        if message.is_some() {
+                            add_text_message("Connect to a server to send messages.".to_string()).await;
+                        }
+                        if client_status.status == ConnectionStatus::CONNECTED {
+                            add_text_message("Can't send an empty message.".to_string()).await;
+                        }
                     }
                     Action::Update
                 },
