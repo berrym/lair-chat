@@ -332,6 +332,15 @@ impl Component for Home {
                 _ => Action::Tick,
             },
             Mode::Insert => match key.code {
+                KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.disconnect_client().await;
+                    Action::Update
+                },
+                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.disconnect_client().await;
+                    Action::Quit
+                },
+                KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::Suspend,
                 KeyCode::Esc => Action::EnterNormal,
                 KeyCode::Enter => {
                     let message = get_user_input(self.input.clone()).await;
