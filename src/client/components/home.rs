@@ -70,7 +70,7 @@ async fn get_user_input(mut input: Input) -> Option<String> {
 
 /// Add a message to displayed in the main window
 async fn add_text_message(s: String) {
-    MESSAGES.lock().unwrap().text.insert(0, s);
+    MESSAGES.lock().unwrap().text.push(s);
 }
 
 /// Add a message to the outgoing buffer
@@ -345,8 +345,23 @@ impl Component for Home {
         }
         text.insert(0, "".into());
 
+        let height: usize = rects[0].height.into();
+        let mut p: Vec<Line> = Vec::new();
+        let count = text.len();
+        if count > 0 {
+            if count > height {
+                p.append(&mut text[0..height].to_vec());
+            } else {
+                p.append(&mut text);
+            }
+            p.reverse();
+            text.clear();
+            text.append(&mut p.clone());
+        }
+
         f.render_widget(
             Paragraph::new(text)
+                .scroll((1, 0))
                 .block(
                     Block::default()
                         .title("The Lair v0.1.0 (c) 2023 Michael Berry")
@@ -362,6 +377,7 @@ impl Component for Home {
                 .alignment(Alignment::Left),
             rects[0],
         );
+
         let width = rects[1].width.max(3) - 3; // keep 2 for borders and 1 for cursor
         let scroll = self.input.visual_scroll(width as usize);
         let input = Paragraph::new(self.input.value())
