@@ -69,7 +69,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 /// Shorthand for the transmit half of the message channel.
 pub type Tx<T> = mpsc::UnboundedSender<T>;
-
 /// Shorthand for the receive half of the message channel.
 pub type Rx<T> = mpsc::UnboundedReceiver<T>;
 
@@ -81,7 +80,7 @@ pub type Rx<T> = mpsc::UnboundedReceiver<T>;
 /// `Tx`.
 struct SharedState {
     peers: HashMap<SocketAddr, Tx<String>>,
-    user_ids: Vec<String>,
+    nicknames: Vec<String>,
 }
 
 /// The state for each connected client.
@@ -91,7 +90,7 @@ struct Peer {
     /// This handles sending and receiving data on the socket. When using
     /// `Lines`, we can work at the line level instead of having to manage the
     /// raw byte operations.
-    lines: Framed<TcpStream, LinesCodec>,
+    transport: Framed<TcpStream, LinesCodec>,
 
     /// Receive half of the message channel.
     ///
@@ -103,7 +102,7 @@ struct Peer {
 impl SharedState {
     /// Create a new, empty, instance of `SharedState`.
     fn new() -> Self {
-        SharedState { peers: HashMap::new(), user_ids: Vec::new() }
+        SharedState { peers: HashMap::new(), nicknames: Vec::new() }
     }
 
     /// Send a `LineCodec` encoded message to every peer, except
@@ -119,9 +118,9 @@ impl SharedState {
 
 impl Peer {
     /// Create a new instance of `Peer`.
-    async fn new(state: Arc<Mutex<SharedState>>, lines: Framed<TcpStream, LinesCodec>) -> io::Result<Peer> {
+    async fn new(state: Arc<Mutex<SharedState>>, transport: Framed<TcpStream, LinesCodec>) -> io::Result<Peer> {
         // Get the client socket address
-        let addr = lines.get_ref().peer_addr()?;
+        let addr = transport.get_ref().peer_addr()?;
 
         // Create a channel for this peer
         let (tx, rx) = mpsc::unbounded_channel();
@@ -129,75 +128,77 @@ impl Peer {
         // Add an entry for this `Peer` in the shared state map.
         state.lock().await.peers.insert(addr, tx);
 
-        Ok(Peer { lines, rx })
+        Ok(Peer { transport, rx })
     }
 }
 
 /// Process an individual chat client
 async fn process(state: Arc<Mutex<SharedState>>, stream: TcpStream, addr: SocketAddr) -> Result<(), Box<dyn Error>> {
-    let mut lines = Framed::new(stream, LinesCodec::new());
+    let mut transport = Framed::new(stream, LinesCodec::new());
 
-    // Send a prompt to the client to enter their user_id.
-    lines.send("Please enter your User_Id:").await?;
+    // Send a welcome prompt to the client then askk client to enter their nickname.
+    transport.send("Welcome to The Lair!").await?;
+    transport.send("Please enter a nickname:").await?;
 
-    // Read from the `LineCodec` stream to get the user_id.
-    let mut user_id = String::new();
+    // Read from the `LinesCodec` stream to get the nickname.
+    let mut nickname = String::new();
     loop {
-        match lines.next().await {
-            Some(Ok(line)) => {
+        match transport.next().await {
+            Some(Ok(message)) => {
                 let mut state = state.lock().await;
-                if state.user_ids.is_empty() {
-                    state.user_ids = vec!["You".into(), "you".into(), "me".into(), "Me".into()];
+                if state.nicknames.is_empty() {
+                    state.nicknames = vec!["You".into(), "you".into(), "me".into(), "Me".into()];
                 }
-                if state.user_ids.contains(&line.clone()) {
-                    lines.send("User_Id already in use, try again:").await?;
+                if state.nicknames.contains(&message.clone()) {
+                    transport.send("Nickname already in use, try again:").await?;
                 } else {
-                    state.user_ids.push(line.clone());
-                    user_id = line;
+                    nickname = message;
+                    state.nicknames.push(nickname.clone());
+                    transport.send(format!("You've logged in to The Lair, happy chatting {}", nickname)).await?;
                     break;
                 }
             },
-            // We didn't get a line so we return early here.
+            // We didn't get a message so we return early here.
             _ => {
-                drop(user_id);
-                tracing::error!("Failed to get user_id from {}. Client disconnected.", addr);
+                drop(nickname);
+                tracing::error!("Failed to get nickname from {}. Client disconnected.", addr);
                 return Ok(());
             },
         };
     }
 
     // Register our peer with state which internally sets up some channels.
-    let mut peer = Peer::new(state.clone(), lines).await?;
+    let mut peer = Peer::new(state.clone(), transport).await?;
 
     // A client has connected, let's let everyone know.
     {
         let mut state = state.lock().await;
-        let msg = format!("{} has joined the chat", user_id);
-        tracing::info!("{}", msg);
-        state.broadcast(addr, &msg).await;
+        let message = format!("{} has joined the chat", nickname);
+        tracing::info!("{}", message);
+        state.broadcast(addr, &message).await;
     }
 
     // Process incoming messages until our stream is exhausted by a disconnect.
     loop {
         tokio::select! {
             // A message was received from a peer. Send it to the current user.
-            Some(msg) = peer.rx.recv() => {
-                peer.lines.send(&msg).await?;
+            Some(message) = peer.rx.recv() => {
+                peer.transport.send(&message).await?;
             }
-            result = peer.lines.next() => match result {
+            result = peer.transport.next() => match result {
                 // A message was received from the current user, we should
                 // broadcast this message to the other users.
-                Some(Ok(msg)) => {
+                Some(Ok(message)) => {
                     let mut state = state.lock().await;
-                    let msg = format!("{}: {}", user_id, msg);
+                    let message = format!("{}: {}", nickname, message);
 
-                    state.broadcast(addr, &msg).await;
+                    state.broadcast(addr, &message).await;
                 }
                 // An error occurred.
                 Some(Err(e)) => {
                     tracing::error!(
                         "an error occurred while processing messages for {}; error = {:?}",
-                        user_id,
+                        nickname,
                         e
                     );
                 }
@@ -213,12 +214,12 @@ async fn process(state: Arc<Mutex<SharedState>>, stream: TcpStream, addr: Socket
         let mut state = state.lock().await;
         state.peers.remove(&addr);
 
-        let index = state.user_ids.iter().position(|s| *s == user_id).unwrap();
-        state.user_ids.remove(index);
+        let index = state.nicknames.iter().position(|s| *s == nickname).unwrap();
+        state.nicknames.remove(index);
 
-        let msg = format!("{} has left the chat", user_id);
-        tracing::info!("{}", msg);
-        state.broadcast(addr, &msg).await;
+        let message = format!("{} has left the chat", nickname);
+        tracing::info!("{}", message);
+        state.broadcast(addr, &message).await;
     }
 
     Ok(())
