@@ -418,7 +418,7 @@ impl Component for Home {
                 Row::new(vec!["Enter", "Submit Input"]),
                 Row::new(vec!["ESC", "Exit Input Mode"]),
                 Row::new(vec!["c", "Connect to Server"]),
-                Row::new(vec!["d", "Disconnect from Server"]),
+                Row::new(vec!["d", "Disconnect"]),
                 Row::new(vec!["q", "Quit"]),
                 Row::new(vec!["?", "Open/Close Help"]),
             ];
