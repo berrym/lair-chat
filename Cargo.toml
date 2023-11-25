@@ -1,6 +1,6 @@
 [package]
 name = "The_Lair"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Asynchronous Chat App"
 repository = "https://github.com/berrym/the-lair.git"
@@ -9,7 +9,6 @@ authors = ["Michael Berry <trismegustis@gmail.com>"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-async-trait = "0.1.74"
 better-panic = "0.3.0"
 clap = { version = "4.4.5", features = ["derive", "cargo", "wrap_help", "unicode", "string", "unstable-styles"] }
 color-eyre = "0.6.2"

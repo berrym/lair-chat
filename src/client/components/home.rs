@@ -1,14 +1,23 @@
-use async_trait::async_trait;
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use futures::{select, FutureExt, SinkExt};
 use log::error;
-use once_cell::sync::Lazy;
 use ratatui::{prelude::*, widgets::*};
 use std::{collections::HashMap, net::SocketAddr, sync::Mutex};
-use tokio::{io::AsyncWriteExt, net::TcpStream, sync::mpsc};
+use tokio::{
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
+    net::{
+        tcp::{OwnedReadHalf, OwnedWriteHalf},
+        TcpStream,
+    },
+    sync::mpsc,
+    time::Duration,
+};
 use tokio_stream::{wrappers::LinesStream, Stream, StreamExt};
-use tokio_util::sync::CancellationToken;
+use tokio_util::{
+    codec::{FramedWrite, LinesCodec},
+    sync::CancellationToken,
+};
 use tui_input::{backend::crossterm::EventHandler, Input};
 
 use crate::{
@@ -25,40 +34,8 @@ pub type Tx<T> = mpsc::UnboundedSender<T>;
 /// Shorthand for the receiving half of the message channel
 pub type Rx<T> = mpsc::UnboundedReceiver<T>;
 
-/// Messages buffers
-pub struct Messages {
-    outgoing: Vec<String>,
-    text: Vec<String>,
-}
-
-impl Messages {
-    pub fn new() -> Self {
-        let outgoing = Vec::new();
-        let text = Vec::new();
-        Self { outgoing, text }
-    }
-}
-
-/// Lazy Mutex wrapped global client connection status
-pub static CLIENT_STATUS: Lazy<Mutex<ClientStatus>> = Lazy::new(|| {
-    let m = ClientStatus::new();
-    Mutex::new(m)
-});
-
-/// Lazy Mutex wrapped global cancellation token
-pub static CANCEL_TOKEN: Lazy<Mutex<CancelClient>> = Lazy::new(|| {
-    let m = CancelClient::new();
-    Mutex::new(m)
-});
-
-/// Lazy Mutex wrapped global message buffers
-pub static MESSAGES: Lazy<Mutex<Messages>> = Lazy::new(|| {
-    let m = Messages::new();
-    Mutex::new(m)
-});
-
 /// Get any text in the input box
-async fn get_user_input(mut input: Input) -> Option<String> {
+pub async fn get_user_input(mut input: Input) -> Option<String> {
     let message = input.value().to_string();
     input.reset();
     if message.is_empty() {
@@ -66,16 +43,6 @@ async fn get_user_input(mut input: Input) -> Option<String> {
     } else {
         Some(message)
     }
-}
-
-/// Add a message to displayed in the main window
-async fn add_text_message(s: String) {
-    MESSAGES.lock().unwrap().text.push(s);
-}
-
-/// Add a message to the outgoing buffer
-async fn add_outgoing_message(s: String) {
-    MESSAGES.lock().unwrap().outgoing.insert(0, s);
 }
 
 pub struct Home {
@@ -91,7 +58,7 @@ pub struct Home {
 }
 
 impl Home {
-    pub async fn new() -> Home {
+    pub fn new() -> Home {
         Home {
             config: Config::default(),
             show_help: false,
@@ -105,102 +72,23 @@ impl Home {
         }
     }
 
-    async fn get_server_address(&mut self) -> Option<SocketAddr> {
-        let user_input = self.input.value().to_string();
-        if user_input.is_empty() {
-            add_text_message("Please enter an address string, e.g. 127.0.0.1:8080".to_string()).await;
-            return None;
-        }
-        let address: SocketAddr = match user_input.parse() {
-            Ok(addr) => addr,
-            _ => {
-                add_text_message("Incorrect server address, try again.".to_string()).await;
-                self.input.reset();
-                return None;
-            },
-        };
-        self.input.reset();
-        Some(address)
-    }
-
-    async fn connect_client(&mut self, address: SocketAddr) {
-        if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::DISCONNECTED {
-            let stream = TcpStream::connect(address).await;
-            if stream.is_ok() {
-                CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
-                add_text_message(format!("Connected to server {}.", address.to_string())).await;
-                // let transport = Framed::new(stream.unwrap(), LinesCodec::new());
-                let (reader, writer) = split_tcp_stream(stream.unwrap()).unwrap();
-                self.net_event_select_loop(reader, writer /* transport */).await;
-            } else {
-                add_text_message(format!("Could not connect to server {}.", address.to_string())).await;
-            }
-        } else {
-            add_text_message("Already connected to server.".to_string()).await;
-        }
-    }
-
-    async fn disconnect_client(&mut self) {
-        if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
-            CANCEL_TOKEN.lock().unwrap().token.cancel();
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            add_text_message("Disconnected from server.".to_string()).await;
-            CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
-        } else {
-            add_text_message("Not connected to a server.".to_string()).await;
-        }
-        CANCEL_TOKEN.lock().unwrap().token = CancellationToken::new();
-    }
-
-    pub async fn net_event_select_loop(
-        &mut self,
-        reader: ClientStream,
-        writer: ClientSink, /* mut transport: Framed<TcpStream, LinesCodec> */
-    ) {
-        let input = self.input.clone();
-        let mut stream = reader;
-        let mut sink = writer;
-        let cancel_token = CANCEL_TOKEN.lock().unwrap().token.clone();
+    pub fn schedule_connect_client(&mut self) {
+        let tx = self.action_tx.clone().unwrap();
         tokio::spawn(async move {
-            loop {
-                if !MESSAGES.lock().unwrap().outgoing.is_empty() {
-                    let outgoing: Vec<String> =
-                        MESSAGES.lock().unwrap().outgoing.clone().iter().map(|l| String::from(l.clone())).collect();
-                    for message in outgoing {
-                        add_text_message(format!("{}{}", "You: ".to_owned(), message.clone())).await;
-                        // let _ = transport.send(message.clone()).await;
-                        let _ = sink.tx.send(message.clone()).await;
-                        MESSAGES.lock().unwrap().outgoing.clear();
-                    }
-                }
-                select! {
-                    _ = cancel_token.cancelled().fuse() => {
-                        let mut writer = sink.tx.into_inner();
-                        let _ = writer.shutdown();
-                        break;
-                    },
-                    // message = transport.next().fuse() => match message {
-                    message = stream.rx.next().fuse() => match message {
-                        Some(Ok(message)) => add_text_message(message.clone()).await,
-                        None => {
-                            add_text_message("The Lair has CLOSED.".to_string()).await;
-                            CANCEL_TOKEN.lock().unwrap().token.cancel();
-                            CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
-                            CANCEL_TOKEN.lock().unwrap().token = CancellationToken::new();
-                            break;
-                        },
-                        _ => continue,
-                    },
-                    message = get_user_input(input.clone()).fuse() => match message {
-                        Some(message) => {
-                            // let _ = transport.send(message.clone()).await;
-                            let _ = sink.tx.send(message.clone()).await;
-                            add_text_message(format!("{}{}", "You: ".to_owned(), message.to_string())).await;
-                        },
-                        None => continue,
-                    }
-                }
-            }
+            tx.send(Action::EnterProcessing).unwrap();
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            tx.send(Action::ConnectClient).unwrap();
+            tx.send(Action::ExitProcessing).unwrap();
+        });
+    }
+
+    pub fn schedule_disconnect_client(&mut self) {
+        let tx = self.action_tx.clone().unwrap();
+        tokio::spawn(async move {
+            tx.send(Action::EnterProcessing).unwrap();
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            tx.send(Action::DisconnectClient).unwrap();
+            tx.send(Action::ExitProcessing).unwrap();
         });
     }
 
@@ -216,7 +104,6 @@ impl Home {
     }
 }
 
-#[async_trait(?Send)]
 impl Component for Home {
     fn register_action_handler(&mut self, tx: Tx<Action>) -> Result<()> {
         self.action_tx = Some(tx);
@@ -228,34 +115,35 @@ impl Component for Home {
         Ok(())
     }
 
-    async fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>> {
+    fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>> {
         self.last_events.push(key.clone());
         let action = match self.mode {
             Mode::Normal | Mode::Processing => match key.code {
                 KeyCode::Char('q') => {
-                    self.disconnect_client().await;
+                    self.schedule_disconnect_client();
                     Action::Quit
                 },
                 KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    self.disconnect_client().await;
-                    Action::Update
+                    self.schedule_disconnect_client();
+                    Action::Quit
                 },
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    self.disconnect_client().await;
+                    self.schedule_disconnect_client();
                     Action::Quit
                 },
                 KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::Suspend,
                 KeyCode::Char('?') => Action::ToggleShowHelp,
                 KeyCode::Char('/') => Action::EnterInsert,
                 KeyCode::Char('c') => {
-                    let address = self.get_server_address().await;
-                    if address.is_some() {
-                        self.connect_client(address.unwrap()).await;
+                    if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
+                        add_text_message("Already connected to a server.".to_string());
+                        return Ok(Some(Action::Update));
                     }
+                    self.schedule_connect_client();
                     Action::Update
                 },
                 KeyCode::Char('d') => {
-                    self.disconnect_client().await;
+                    self.schedule_disconnect_client();
                     Action::Update
                 },
                 KeyCode::Esc => {
@@ -268,34 +156,34 @@ impl Component for Home {
             },
             Mode::Insert => match key.code {
                 KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    self.disconnect_client().await;
-                    Action::Update
+                    self.schedule_disconnect_client();
+                    Action::Quit
                 },
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    self.disconnect_client().await;
+                    self.schedule_disconnect_client();
                     Action::Quit
                 },
                 KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::Suspend,
                 KeyCode::Esc => Action::EnterNormal,
                 KeyCode::Enter => {
                     let client_status = CLIENT_STATUS.lock().unwrap();
-                    let message = get_user_input(self.input.clone()).await;
-                    if message.is_some() && client_status.status == ConnectionStatus::CONNECTED {
-                        add_outgoing_message(message.unwrap()).await;
+                    let message = self.input.value();
+                    if !message.is_empty() && client_status.status == ConnectionStatus::CONNECTED {
+                        add_outgoing_message(message.to_string());
                         self.input.reset();
                     } else {
-                        if message.is_some() {
-                            add_text_message("Connect to a server to send messages.".to_string()).await;
+                        if !message.is_empty() {
+                            add_text_message("Connect to a server to send messages.".to_string());
                         }
                         if client_status.status == ConnectionStatus::CONNECTED {
-                            add_text_message("Can't send an empty message.".to_string()).await;
+                            add_text_message("Can't send an empty message.".to_string());
                         }
                     }
                     Action::Update
                 },
                 _ => {
                     self.input.handle_event(&crossterm::event::Event::Key(key));
-                    Action::Update
+                    Action::Tick
                 },
             },
             _ => {
@@ -306,7 +194,7 @@ impl Component for Home {
         Ok(Some(action))
     }
 
-    async fn update(&mut self, action: Action) -> Result<Option<Action>> {
+    fn update(&mut self, action: Action) -> Result<Option<Action>> {
         match action {
             Action::Tick => self.tick(),
             Action::Render => self.render_tick(),
@@ -322,7 +210,31 @@ impl Component for Home {
             },
             Action::ExitProcessing => {
                 // TODO: Make this go to previous mode instead
-                self.mode = Mode::Insert;
+                self.mode = Mode::Normal;
+            },
+            Action::ConnectClient => {
+                let user_input = self.input.value().to_string();
+                self.input.reset();
+                if user_input.is_empty() {
+                    add_text_message("Enter a address:port string in the input box, e.g. 127.0.0.1:8080".to_string());
+                    return Ok(Some(Action::Update));
+                }
+                let address: SocketAddr = match user_input.parse() {
+                    Ok(address) => address,
+                    Err(_) => {
+                        add_text_message("Failed to get server address.".to_string());
+                        return Ok(Some(Action::Update));
+                    },
+                };
+                let input = self.input.clone();
+                tokio::spawn(async move {
+                    connect_client(input, address).await;
+                });
+            },
+            Action::DisconnectClient => {
+                tokio::spawn(async move {
+                    disconnect_client().await;
+                });
             },
             _ => {},
         }

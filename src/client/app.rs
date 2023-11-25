@@ -34,17 +34,17 @@ pub struct App {
 }
 
 impl App {
-    pub async fn new(tick_rate: f64, frame_rate: f64) -> Result<App> {
+    pub fn new(tick_rate: f64, frame_rate: f64) -> Result<App> {
         Ok(App {
             tick_rate,
             frame_rate,
-            components: vec![Box::new(Home::new().await)],
+            components: vec![Box::new(Home::new())],
             should_quit: false,
             should_suspend: false,
             config: Config::new().unwrap(),
             mode: Mode::default(),
             last_tick_key_events: Vec::new(),
-            home: Home::new().await,
+            home: Home::new(),
         })
     }
 
@@ -101,7 +101,7 @@ impl App {
                 }
 
                 for component in self.components.iter_mut() {
-                    if let Some(action) = component.handle_events(Some(e.clone())).await? {
+                    if let Some(action) = component.handle_events(Some(e.clone()))? {
                         action_tx.send(action)?;
                     }
                 }
@@ -144,7 +144,7 @@ impl App {
                 }
 
                 for component in self.components.iter_mut() {
-                    if let Some(action) = component.update(action.clone()).await? {
+                    if let Some(action) = component.update(action.clone())? {
                         action_tx.send(action)?
                     };
                 }

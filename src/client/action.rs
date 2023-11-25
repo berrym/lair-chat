@@ -21,6 +21,8 @@ pub enum Action {
     EnterInsert,
     EnterProcessing,
     ExitProcessing,
+    ConnectClient,
+    DisconnectClient,
     Update,
 }
 

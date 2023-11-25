@@ -1,7 +1,7 @@
-use async_trait::async_trait;
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyEvent, MouseEvent};
 use ratatui::layout::Rect;
+use std::net::SocketAddr;
 use tokio::sync::mpsc;
 
 use crate::{
@@ -17,7 +17,6 @@ pub type Rx<T> = mpsc::UnboundedReceiver<T>;
 
 pub mod home;
 
-#[async_trait(?Send)]
 pub trait Component {
     #[allow(unused_variables)]
     fn register_action_handler(&mut self, tx: Tx<Action>) -> Result<()> {
@@ -33,9 +32,13 @@ pub trait Component {
         Ok(())
     }
 
-    async fn handle_events(&mut self, event: Option<Event>) -> Result<Option<Action>> {
+    fn get_server_address(&mut self) -> Option<SocketAddr> {
+        None
+    }
+
+    fn handle_events(&mut self, event: Option<Event>) -> Result<Option<Action>> {
         let r = match event {
-            Some(Event::Key(key_event)) => self.handle_key_events(key_event).await?,
+            Some(Event::Key(key_event)) => self.handle_key_events(key_event)?,
             Some(Event::Mouse(mouse_event)) => self.handle_mouse_events(mouse_event)?,
             _ => None,
         };
@@ -43,7 +46,7 @@ pub trait Component {
     }
 
     #[allow(unused_variables)]
-    async fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>> {
+    fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>> {
         Ok(None)
     }
 
@@ -53,7 +56,7 @@ pub trait Component {
     }
 
     #[allow(unused_variables)]
-    async fn update(&mut self, action: Action) -> Result<Option<Action>> {
+    fn update(&mut self, action: Action) -> Result<Option<Action>> {
         Ok(None)
     }
 
