@@ -25,7 +25,7 @@ Use Rust's own tooling to compile and run the program, e.g.
 
 ## Help
 
-* To specify the server:port run e.g. cargo run --bin lair-chat-client -- 127.0.0.1:8080
+* To specify the address and port the server binds to, run the command, e.g. cargo run --bin lair-chat-server -- 127.0.0.1:8080
 * To connect to the server run the client:
     * Press / to enter input mode, enter a formatted server string e.g. 127.0.0.1:8080
     * Press Esc to enter command mode and press c to connect to server
@@ -40,6 +40,8 @@ Copyright (c) 2023 Michael Berry <trismegustis@gmail.com>
 
 * 0.1.0
     * Initial Release
+* 0.2.0
+    * Removed dependencies and refactored not to use async traits
 
 ## License
 
