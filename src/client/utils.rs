@@ -1,8 +1,7 @@
-use std::path::PathBuf;
-
 use color_eyre::eyre::Result;
 use directories::ProjectDirs;
 use lazy_static::lazy_static;
+use std::path::PathBuf;
 use tracing::error;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{self, prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, Layer};
@@ -143,18 +142,17 @@ macro_rules! trace_dbg {
 
 pub fn version() -> String {
     let author = clap::crate_authors!();
-
-    let commit_hash = GIT_COMMIT_HASH.clone();
-
-    // let current_exe_path = PathBuf::from(clap::crate_name!()).display().to_string();
+    let version = clap::crate_version!();
     let config_dir_path = get_config_dir().display().to_string();
     let data_dir_path = get_data_dir().display().to_string();
 
     format!(
         "\
-{commit_hash}
+{version}
 
 Authors: {author}
+Copyright: 2023
+License: MIT
 
 Config directory: {config_dir_path}
 Data directory: {data_dir_path}"

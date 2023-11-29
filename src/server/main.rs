@@ -1,10 +1,5 @@
 use futures::SinkExt;
-use std::collections::HashMap;
-use std::env;
-use std::error::Error;
-use std::io;
-use std::net::SocketAddr;
-use std::sync::Arc;
+use std::{collections::HashMap, env, error::Error, io, net::SocketAddr, sync::Arc};
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::{mpsc, Mutex},
@@ -12,6 +7,73 @@ use tokio::{
 use tokio_stream::StreamExt;
 use tokio_util::codec::{Framed, LinesCodec};
 use tracing_subscriber::fmt::format::FmtSpan;
+
+/// Shorthand for the transmit half of the message channel.
+pub type Tx<T> = mpsc::UnboundedSender<T>;
+/// Shorthand for the receive half of the message channel.
+pub type Rx<T> = mpsc::UnboundedReceiver<T>;
+
+/// Data that is shared between all peers in the chat server.
+///
+/// This is the set of `Tx` handles for all connected clients. Whenever a
+/// message is received from a client, it is broadcasted to all peers by
+/// iterating over the `peers` entries and sending a copy of the message on each
+/// `Tx`.
+struct SharedState {
+    peers: HashMap<SocketAddr, Tx<String>>,
+    nicknames: Vec<String>,
+}
+
+impl SharedState {
+    /// Create a new, empty, instance of `SharedState`.
+    fn new() -> Self {
+        SharedState { peers: HashMap::new(), nicknames: Vec::new() }
+    }
+
+    /// Send a `LineCodec` encoded message to every peer, except
+    /// for the sender.
+    async fn broadcast(&mut self, sender: SocketAddr, message: &str) {
+        for peer in self.peers.iter_mut() {
+            if *peer.0 != sender {
+                let _ = peer.1.send(message.into());
+            }
+        }
+    }
+}
+
+/// The state for each connected client.
+struct Peer {
+    /// The TCP socket wrapped with the `Lines` codec, defined below.
+    ///
+    /// This handles sending and receiving data on the socket. When using
+    /// `Lines`, we can work at the line level instead of having to manage the
+    /// raw byte operations.
+    transport: Framed<TcpStream, LinesCodec>,
+
+    /// Receive half of the message channel.
+    ///
+    /// This is used to receive messages from peers. When a message is received
+    /// off of this `Rx`, it will be written to the socket.
+    rx: Rx<String>,
+}
+
+impl Peer {
+    /// Create a new instance of `Peer`.
+    async fn new(state: Arc<Mutex<SharedState>>, transport: Framed<TcpStream, LinesCodec>) -> io::Result<Peer> {
+        let mut state = state.lock().await;
+
+        // Get the client socket address
+        let addr = transport.get_ref().peer_addr()?;
+
+        // Create a channel for this peer
+        let (tx, rx) = mpsc::unbounded_channel();
+
+        // Add an entry for this `Peer` in the shared state map.
+        state.peers.insert(addr, tx);
+
+        Ok(Peer { transport, rx })
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -64,71 +126,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 tracing::info!("an error occurred; error = {:?}", e);
             }
         });
-    }
-}
-
-/// Shorthand for the transmit half of the message channel.
-pub type Tx<T> = mpsc::UnboundedSender<T>;
-/// Shorthand for the receive half of the message channel.
-pub type Rx<T> = mpsc::UnboundedReceiver<T>;
-
-/// Data that is shared between all peers in the chat server.
-///
-/// This is the set of `Tx` handles for all connected clients. Whenever a
-/// message is received from a client, it is broadcasted to all peers by
-/// iterating over the `peers` entries and sending a copy of the message on each
-/// `Tx`.
-struct SharedState {
-    peers: HashMap<SocketAddr, Tx<String>>,
-    nicknames: Vec<String>,
-}
-
-/// The state for each connected client.
-struct Peer {
-    /// The TCP socket wrapped with the `Lines` codec, defined below.
-    ///
-    /// This handles sending and receiving data on the socket. When using
-    /// `Lines`, we can work at the line level instead of having to manage the
-    /// raw byte operations.
-    transport: Framed<TcpStream, LinesCodec>,
-
-    /// Receive half of the message channel.
-    ///
-    /// This is used to receive messages from peers. When a message is received
-    /// off of this `Rx`, it will be written to the socket.
-    rx: Rx<String>,
-}
-
-impl SharedState {
-    /// Create a new, empty, instance of `SharedState`.
-    fn new() -> Self {
-        SharedState { peers: HashMap::new(), nicknames: Vec::new() }
-    }
-
-    /// Send a `LineCodec` encoded message to every peer, except
-    /// for the sender.
-    async fn broadcast(&mut self, sender: SocketAddr, message: &str) {
-        for peer in self.peers.iter_mut() {
-            if *peer.0 != sender {
-                let _ = peer.1.send(message.into());
-            }
-        }
-    }
-}
-
-impl Peer {
-    /// Create a new instance of `Peer`.
-    async fn new(state: Arc<Mutex<SharedState>>, transport: Framed<TcpStream, LinesCodec>) -> io::Result<Peer> {
-        // Get the client socket address
-        let addr = transport.get_ref().peer_addr()?;
-
-        // Create a channel for this peer
-        let (tx, rx) = mpsc::unbounded_channel();
-
-        // Add an entry for this `Peer` in the shared state map.
-        state.lock().await.peers.insert(addr, tx);
-
-        Ok(Peer { transport, rx })
     }
 }
 

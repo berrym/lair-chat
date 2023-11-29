@@ -276,7 +276,7 @@ impl Component for Home {
                 .scroll((1, 0))
                 .block(
                     Block::default()
-                        .title("The Lair v0.2.0 (c) 2023 Michael Berry")
+                        .title("The Lair v0.2.1 (c) 2023 Michael Berry")
                         .title_alignment(Alignment::Center)
                         .borders(Borders::ALL)
                         .border_style(match self.mode {
