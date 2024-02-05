@@ -5,6 +5,7 @@ edition = "2021"
 description = "Asynchronous Chat App"
 repository = "https://github.com/berrym/the-lair.git"
 authors = ["Michael Berry <trismegustis@gmail.com>"]
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
