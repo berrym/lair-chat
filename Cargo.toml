@@ -1,6 +1,6 @@
 [package]
 name = "lair-chat"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 description = "Asynchronous Chat App"
 repository = "https://github.com/berrym/the-lair.git"
