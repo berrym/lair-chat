@@ -34,7 +34,7 @@ Use Rust's own tooling to compile and run the program, e.g.
 
 ## Authors
 
-Copyright (c) 2023 Michael Berry <trismegustis@gmail.com>
+Copyright (c) 2024 Michael Berry <trismegustis@gmail.com>
 
 ## Version History
 
