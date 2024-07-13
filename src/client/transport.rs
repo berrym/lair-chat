@@ -162,8 +162,12 @@ pub fn client_io_select_loop(input: Input, reader: ClientStream, writer: ClientS
                     Some(message) => {
                         let _ = sink.tx.send(message.clone()).await;
                         add_text_message(format!("{}{}", "You: ".to_owned(), message.to_string()));
+                        tokio::time::sleep(Duration::from_millis(250)).await;
                     },
-                    None => continue,
+                    None => {
+                        tokio::time::sleep(Duration::from_millis(250)).await;
+                        continue;
+                    },
                 }
             }
         }

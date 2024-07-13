@@ -1,6 +1,6 @@
 [package]
 name = "lair-chat"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 description = "Asynchronous Chat App"
 repository = "https://github.com/berrym/the-lair.git"
@@ -11,7 +11,14 @@ license = "MIT"
 
 [dependencies]
 better-panic = "0.3.0"
-clap = { version = "4.4.5", features = ["derive", "cargo", "wrap_help", "unicode", "string", "unstable-styles"] }
+clap = { version = "4.4.5", features = [
+    "derive",
+    "cargo",
+    "wrap_help",
+    "unicode",
+    "string",
+    "unstable-styles",
+] }
 color-eyre = "0.6.2"
 config = "0.13.3"
 crossterm = { version = "0.27.0", features = ["serde", "event-stream"] }
@@ -46,4 +53,3 @@ path = "src/server/main.rs"
 [[bin]]
 name = "lair-chat-client"
 path = "src/client/main.rs"
-

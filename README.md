@@ -42,6 +42,8 @@ Copyright (c) 2023 Michael Berry <trismegustis@gmail.com>
     * Initial Release
 * 0.2.0
     * Removed dependencies and refactored not to use async traits
+* 0.2.3
+    * Added sleep in between user input reads
 
 ## License
 
