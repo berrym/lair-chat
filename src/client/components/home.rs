@@ -1,4 +1,4 @@
-use color_eyre::eyre::Result;
+use color_eyre::{eyre::Result, owo_colors::OwoColorize};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use futures::{select, FutureExt, SinkExt};
 use log::error;
@@ -76,9 +76,10 @@ impl Home {
         let tx = self.action_tx.clone().unwrap();
         tokio::spawn(async move {
             tx.send(Action::EnterProcessing).unwrap();
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            tokio::time::sleep(Duration::from_millis(250)).await;
             tx.send(Action::ConnectClient).unwrap();
             tx.send(Action::ExitProcessing).unwrap();
+            tx.send(Action::EnterInsert).unwrap();
         });
     }
 
@@ -86,7 +87,7 @@ impl Home {
         let tx = self.action_tx.clone().unwrap();
         tokio::spawn(async move {
             tx.send(Action::EnterProcessing).unwrap();
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            tokio::time::sleep(Duration::from_millis(250)).await;
             tx.send(Action::DisconnectClient).unwrap();
             tx.send(Action::ExitProcessing).unwrap();
         });
@@ -134,6 +135,14 @@ impl Component for Home {
                 KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::Suspend,
                 KeyCode::Char('?') => Action::ToggleShowHelp,
                 KeyCode::Char('/') => Action::EnterInsert,
+                KeyCode::F(2) => {
+                    if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
+                        add_text_message("Already connected to a server.".to_string());
+                        return Ok(Some(Action::Update));
+                    }
+                    self.schedule_connect_client();
+                    Action::Update
+                },
                 KeyCode::Char('c') => {
                     if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
                         add_text_message("Already connected to a server.".to_string());
@@ -155,6 +164,14 @@ impl Component for Home {
                 _ => Action::Tick,
             },
             Mode::Insert => match key.code {
+                KeyCode::F(2) => {
+                    if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
+                        add_text_message("Already connected to a server.".to_string());
+                        return Ok(Some(Action::Update));
+                    }
+                    self.schedule_connect_client();
+                    Action::Update
+                },
                 KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     self.schedule_disconnect_client();
                     Action::Quit
@@ -167,6 +184,10 @@ impl Component for Home {
                 KeyCode::Esc => Action::EnterNormal,
                 KeyCode::Enter => {
                     let client_status = CLIENT_STATUS.lock().unwrap();
+                    if client_status.status == ConnectionStatus::DISCONNECTED {
+                        self.schedule_connect_client();
+                        return Ok(Some(Action::Update));
+                    }
                     let message = self.input.value();
                     if !message.is_empty() && client_status.status == ConnectionStatus::CONNECTED {
                         add_outgoing_message(message.to_string());
@@ -299,7 +320,7 @@ impl Component for Home {
             })
             .scroll((0, scroll as u16))
             .block(Block::default().borders(Borders::ALL).title(Line::from(vec![
-                Span::raw("Enter Input Mode "),
+                Span::raw("Insert Text Here"),
                 Span::styled("(Press ", Style::default().fg(Color::DarkGray)),
                 Span::styled("/", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
                 Span::styled(" to start, ", Style::default().fg(Color::DarkGray)),
@@ -332,6 +353,7 @@ impl Component for Home {
                 Row::new(vec!["c", "Connect to Server"]),
                 Row::new(vec!["d", "Disconnect"]),
                 Row::new(vec!["q", "Quit"]),
+                Row::new(vec!["Ctrl-z", "Suspend Program"]),
                 Row::new(vec!["?", "Open/Close Help"]),
             ];
             let table = Table::new(rows)
@@ -342,7 +364,7 @@ impl Component for Home {
                 )
                 .widths(&[Constraint::Percentage(10), Constraint::Percentage(90)])
                 .column_spacing(10);
-            f.render_widget(table, area.inner(&Margin { vertical: 8, horizontal: 24 }));
+            f.render_widget(table, area.inner(&Margin { vertical: 4, horizontal: 24 }));
         };
 
         f.render_widget(
