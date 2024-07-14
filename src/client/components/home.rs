@@ -51,6 +51,7 @@ pub struct Home {
     app_ticker: usize,
     render_ticker: usize,
     mode: Mode,
+    prev_mode: Mode,
     input: Input,
     action_tx: Option<Tx<Action>>,
     keymap: HashMap<KeyEvent, Action>,
@@ -65,6 +66,7 @@ impl Home {
             app_ticker: 0,
             render_ticker: 0,
             mode: Mode::Normal,
+            prev_mode: Mode::Normal,
             input: Input::default(),
             action_tx: None,
             keymap: HashMap::new(),
@@ -79,7 +81,6 @@ impl Home {
             tokio::time::sleep(Duration::from_millis(250)).await;
             tx.send(Action::ConnectClient).unwrap();
             tx.send(Action::ExitProcessing).unwrap();
-            tx.send(Action::EnterInsert).unwrap();
         });
     }
 
@@ -221,17 +222,20 @@ impl Component for Home {
             Action::Render => self.render_tick(),
             Action::ToggleShowHelp => self.show_help = !self.show_help,
             Action::EnterNormal => {
+                self.prev_mode = self.mode;
                 self.mode = Mode::Normal;
             },
             Action::EnterInsert => {
+                self.prev_mode = self.mode;
                 self.mode = Mode::Insert;
             },
             Action::EnterProcessing => {
+                self.prev_mode = self.mode;
                 self.mode = Mode::Processing;
             },
             Action::ExitProcessing => {
                 // TODO: Make this go to previous mode instead
-                self.mode = Mode::Normal;
+                self.mode = self.prev_mode;
             },
             Action::ConnectClient => {
                 let user_input = self.input.value().to_string();
@@ -325,7 +329,7 @@ impl Component for Home {
                 Span::styled("/", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
                 Span::styled(" to start, ", Style::default().fg(Color::DarkGray)),
                 Span::styled("ESC", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
-                Span::styled(" to finish, ", Style::default().fg(Color::DarkGray)),
+                Span::styled(" to stop, ", Style::default().fg(Color::DarkGray)),
                 Span::styled("?", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
                 Span::styled(" for help)", Style::default().fg(Color::DarkGray)),
             ])));
