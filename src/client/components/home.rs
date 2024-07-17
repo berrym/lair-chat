@@ -80,6 +80,7 @@ impl Home {
             tx.send(Action::EnterProcessing).unwrap();
             tokio::time::sleep(Duration::from_millis(250)).await;
             tx.send(Action::ConnectClient).unwrap();
+            tokio::time::sleep(Duration::from_millis(250)).await;
             tx.send(Action::ExitProcessing).unwrap();
         });
     }
@@ -90,6 +91,7 @@ impl Home {
             tx.send(Action::EnterProcessing).unwrap();
             tokio::time::sleep(Duration::from_millis(250)).await;
             tx.send(Action::DisconnectClient).unwrap();
+            tokio::time::sleep(Duration::from_millis(250)).await;
             tx.send(Action::ExitProcessing).unwrap();
         });
     }
@@ -135,7 +137,15 @@ impl Component for Home {
                 },
                 KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::Suspend,
                 KeyCode::Char('?') => Action::ToggleShowHelp,
-                KeyCode::Char('/') => Action::EnterInsert,
+                KeyCode::Char('/') => {
+                    if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::DISCONNECTED {
+                        add_text_message("Before you can send messages,".to_owned());
+                        add_text_message("you must connect to a server.".to_owned());
+                        add_text_message("Type an address e.g. 127.0.0.1:8080".to_owned());
+                        add_text_message("then press Enter".to_owned());
+                    }
+                    Action::EnterInsert
+                },
                 KeyCode::F(2) => {
                     if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
                         add_text_message("Already connected to a server.".to_string());
@@ -305,22 +315,23 @@ impl Component for Home {
                         .title_alignment(Alignment::Center)
                         .borders(Borders::ALL)
                         .border_style(match self.mode {
-                            Mode::Processing => Style::default().fg(Color::Yellow),
-                            _ => Style::default(),
+                            Mode::Processing => Style::default().bg(Color::Black).fg(Color::Yellow),
+                            _ => Style::default().bg(Color::Black).fg(Color::Cyan),
                         })
-                        .border_type(BorderType::Rounded),
+                        .border_type(BorderType::Thick),
                 )
-                .style(Style::default().fg(Color::Cyan))
-                .alignment(Alignment::Left),
+                .style(Style::default().bg(Color::Black).fg(Color::White))
+                .alignment(Alignment::Left)
+                .wrap(Wrap { trim: false }),
             rects[0],
         );
 
         let width = rects[1].width.max(3) - 3; // keep 2 for borders and 1 for cursor
         let scroll = self.input.visual_scroll(width as usize);
-        let input = Paragraph::new(self.input.value())
+        let input_box = Paragraph::new(self.input.value())
             .style(match self.mode {
-                Mode::Insert => Style::default().fg(Color::Yellow),
-                _ => Style::default(),
+                Mode::Insert => Style::default().bg(Color::Black).fg(Color::Yellow),
+                _ => Style::default().bg(Color::Black).fg(Color::White),
             })
             .scroll((0, scroll as u16))
             .block(Block::default().borders(Borders::ALL).title(Line::from(vec![
@@ -333,7 +344,7 @@ impl Component for Home {
                 Span::styled("?", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
                 Span::styled(" for help)", Style::default().fg(Color::DarkGray)),
             ])));
-        f.render_widget(input, rects[1]);
+        f.render_widget(input_box, rects[1]);
         if self.mode == Mode::Insert {
             f.set_cursor(
                 (rects[1].x + 1 + self.input.cursor() as u16).min(rects[1].x + rects[1].width - 2),
@@ -348,7 +359,7 @@ impl Component for Home {
                 .title(Line::from(vec![Span::styled("Key Bindings", Style::default().add_modifier(Modifier::BOLD))]))
                 .title_alignment(Alignment::Center)
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Yellow));
+                .border_style(Style::default().bg(Color::DarkGray).fg(Color::Yellow));
             f.render_widget(block, rect);
             let rows = vec![
                 Row::new(vec!["/", "Enter Input Mode"]),
@@ -364,7 +375,7 @@ impl Component for Home {
                 .header(
                     Row::new(vec!["Key", "Action"])
                         .bottom_margin(1)
-                        .style(Style::default().add_modifier(Modifier::BOLD)),
+                        .style(Style::default().add_modifier(Modifier::BOLD).bg(Color::Black).fg(Color::White)),
                 )
                 .widths(&[Constraint::Percentage(10), Constraint::Percentage(90)])
                 .column_spacing(10);
@@ -380,7 +391,7 @@ impl Component for Home {
                     ))
                     .alignment(Alignment::Right),
                 )
-                .title_style(Style::default().add_modifier(Modifier::BOLD)),
+                .title_style(Style::default().add_modifier(Modifier::BOLD).bg(Color::Black).fg(Color::White)),
             Rect { x: area.x + 1, y: area.height.saturating_sub(1), width: area.width.saturating_sub(2), height: 1 },
         );
 

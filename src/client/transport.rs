@@ -2,7 +2,7 @@ use color_eyre::eyre::Result;
 use futures::{select, FutureExt, Sink, SinkExt};
 use log::error;
 use once_cell::sync::Lazy;
-use std::{net::SocketAddr, pin::Pin, sync::Mutex, time::Duration};
+use std::{net::SocketAddr, pin::Pin, sync::Mutex};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     net::{
@@ -10,6 +10,7 @@ use tokio::{
         TcpStream,
     },
     sync::mpsc,
+    time::{sleep, Duration},
 };
 use tokio_stream::{wrappers::LinesStream, Stream, StreamExt};
 use tokio_util::{
@@ -162,10 +163,10 @@ pub fn client_io_select_loop(input: Input, reader: ClientStream, writer: ClientS
                     Some(message) => {
                         let _ = sink.tx.send(message.clone()).await;
                         add_text_message(format!("{}{}", "You: ".to_owned(), message.to_string()));
-                        tokio::time::sleep(Duration::from_millis(250)).await;
+                        sleep(Duration::from_millis(250)).await;
                     },
                     None => {
-                        tokio::time::sleep(Duration::from_millis(250)).await;
+                        sleep(Duration::from_millis(250)).await;
                         continue;
                     },
                 }
@@ -177,7 +178,7 @@ pub fn client_io_select_loop(input: Input, reader: ClientStream, writer: ClientS
 pub async fn disconnect_client() {
     if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
         CANCEL_TOKEN.lock().unwrap().token.cancel();
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        sleep(Duration::from_millis(500)).await;
         add_text_message("Disconnected from server.".to_string());
         CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
     } else {
