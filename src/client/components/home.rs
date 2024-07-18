@@ -139,10 +139,9 @@ impl Component for Home {
                 KeyCode::Char('?') => Action::ToggleShowHelp,
                 KeyCode::Char('/') => {
                     if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::DISCONNECTED {
-                        add_text_message("Before you can send messages,".to_owned());
-                        add_text_message("you must connect to a server.".to_owned());
-                        add_text_message("Type an address e.g. 127.0.0.1:8080".to_owned());
-                        add_text_message("then press Enter".to_owned());
+                        add_text_message("Before you can send messages, you must connect to a server.".to_owned());
+                        add_text_message("Type an address e.g. 127.0.0.1:8080 then press Enter".to_owned());
+                        add_text_message("".to_owned());
                     }
                     Action::EnterInsert
                 },
@@ -311,14 +310,14 @@ impl Component for Home {
                 .scroll((1, 0))
                 .block(
                     Block::default()
-                        .title("The Lair v0.2.3 (c) 2024 Michael Berry")
+                        .title("The Lair v0.3.0 (c) 2024 Michael Berry")
                         .title_alignment(Alignment::Center)
                         .borders(Borders::ALL)
                         .border_style(match self.mode {
                             Mode::Processing => Style::default().bg(Color::Black).fg(Color::Yellow),
                             _ => Style::default().bg(Color::Black).fg(Color::Cyan),
                         })
-                        .border_type(BorderType::Thick),
+                        .border_type(BorderType::Rounded),
                 )
                 .style(Style::default().bg(Color::Black).fg(Color::White))
                 .alignment(Alignment::Left)

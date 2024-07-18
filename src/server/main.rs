@@ -1,4 +1,10 @@
+use aes_gcm::{
+    aead::{Aead, AeadCore, KeyInit, OsRng},
+    Aes256Gcm, Key, Nonce,
+};
+use base64::prelude::*;
 use futures::SinkExt;
+use md5;
 use std::{collections::HashMap, env, error::Error, io, net::SocketAddr, sync::Arc};
 use tokio::{
     net::{TcpListener, TcpStream},
@@ -7,11 +13,13 @@ use tokio::{
 use tokio_stream::StreamExt;
 use tokio_util::codec::{Framed, LinesCodec};
 use tracing_subscriber::fmt::format::FmtSpan;
+use x25519_dalek::{EphemeralSecret, PublicKey};
 
 /// Shorthand for the transmit half of the message channel.
 pub type Tx<T> = mpsc::UnboundedSender<T>;
 /// Shorthand for the receive half of the message channel.
 pub type Rx<T> = mpsc::UnboundedReceiver<T>;
+pub type WriteData = (String, Tx<String>);
 
 /// Data that is shared between all peers in the chat server.
 ///
@@ -20,7 +28,7 @@ pub type Rx<T> = mpsc::UnboundedReceiver<T>;
 /// iterating over the `peers` entries and sending a copy of the message on each
 /// `Tx`.
 struct SharedState {
-    peers: HashMap<SocketAddr, Tx<String>>,
+    peers: HashMap<SocketAddr, WriteData>,
     nicknames: Vec<String>,
 }
 
@@ -35,7 +43,7 @@ impl SharedState {
     async fn broadcast(&mut self, sender: SocketAddr, message: &str) {
         for peer in self.peers.iter_mut() {
             if *peer.0 != sender {
-                let _ = peer.1.send(message.into());
+                let _ = peer.1 .1.send(encrypt(peer.1 .0.to_string().clone(), message.into()));
             }
         }
     }
@@ -59,7 +67,11 @@ struct Peer {
 
 impl Peer {
     /// Create a new instance of `Peer`.
-    async fn new(state: Arc<Mutex<SharedState>>, transport: Framed<TcpStream, LinesCodec>) -> io::Result<Peer> {
+    async fn new(
+        state: Arc<Mutex<SharedState>>,
+        transport: Framed<TcpStream, LinesCodec>,
+        shared_aes_key: String,
+    ) -> io::Result<Peer> {
         let mut state = state.lock().await;
 
         // Get the client socket address
@@ -68,8 +80,11 @@ impl Peer {
         // Create a channel for this peer
         let (tx, rx) = mpsc::unbounded_channel();
 
+        // Create a shared key/transport writer tuple
+        let write_data = (shared_aes_key.clone(), tx);
+
         // Add an entry for this `Peer` in the shared state map.
-        state.peers.insert(addr, tx);
+        state.peers.insert(addr, write_data);
 
         Ok(Peer { transport, rx })
     }
@@ -113,6 +128,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tracing::info!("server running on {}", addr);
 
     loop {
+        let server_secret_key = EphemeralSecret::random();
+        let server_public_key = PublicKey::from(&server_secret_key);
+
         // Asynchronously wait for an inbound TcpStream.
         let (stream, addr) = listener.accept().await?;
 
@@ -122,7 +140,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // Spawn our handler to be run asynchronously.
         tokio::spawn(async move {
             tracing::debug!("accepted connection");
-            if let Err(e) = process(state, stream, addr).await {
+            if let Err(e) = process(state, stream, addr, server_public_key, server_secret_key).await {
                 tracing::info!("an error occurred; error = {:?}", e);
             }
         });
@@ -130,28 +148,80 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 /// Process an individual chat client
-async fn process(state: Arc<Mutex<SharedState>>, stream: TcpStream, addr: SocketAddr) -> Result<(), Box<dyn Error>> {
+async fn process(
+    state: Arc<Mutex<SharedState>>,
+    stream: TcpStream,
+    addr: SocketAddr,
+    server_public_key: PublicKey,
+    server_secret_key: EphemeralSecret,
+) -> Result<(), Box<dyn Error>> {
+    // start the handshake by sending public key to peer
     let mut transport = Framed::new(stream, LinesCodec::new());
+    transport.send(BASE64_STANDARD.encode(server_public_key)).await?;
+    // recieve peer's public key
+    let peer_public_key_string = match transport.next().await {
+        Some(key_string) => {
+            println!("Got public key from: {}", addr.to_string());
+            key_string
+        },
+        None => {
+            println!("Failed to get public key from peer!");
+            return Ok(());
+        },
+    };
+    // keep converting until key is a 32 byte u8 array
+    let peer_public_key_vec = match peer_public_key_string {
+        Ok(key_vec) => BASE64_STANDARD.decode(key_vec).unwrap(),
+        _ => {
+            println!("Failed to convert peer public key to byte vec!");
+            return Ok(());
+        },
+    };
+    let peer_public_key_slice: &[u8] = match peer_public_key_vec.as_slice().try_into() {
+        Ok(key_slice) => key_slice,
+        _ => {
+            println!("Failed to convert peer public key byte vec to slice!");
+            return Ok(());
+        },
+    };
+    let peer_public_key_array: [u8; 32] = match peer_public_key_slice.try_into() {
+        Ok(key_array) => key_array,
+        _ => {
+            println!("Failed to convert public key slice to byte array!");
+            return Ok(());
+        },
+    };
+    // create shared keys
+    let shared_secret = server_secret_key.diffie_hellman(&PublicKey::from(peer_public_key_array));
+    let shared_aes256_key = format!("{:x}", md5::compute(BASE64_STANDARD.encode(shared_secret)));
 
-    // Send a welcome prompt to the client then askk client to enter their nickname.
-    transport.send("Welcome to The Lair!").await?;
-    transport.send("Please enter a nickname:").await?;
+    // Send a welcome prompt to the client then ask client to enter their nickname.
+    transport.send(encrypt(shared_aes256_key.clone(), "Welcome to The Lair!".to_string())).await?;
+    transport.send(encrypt(shared_aes256_key.clone(), "Please enter a nickname:".to_string())).await?;
 
     // Read from the `LinesCodec` stream to get the nickname.
     let mut nickname = String::new();
     loop {
         match transport.next().await {
             Some(Ok(message)) => {
+                let message = decrypt(shared_aes256_key.clone(), message);
                 let mut state = state.lock().await;
                 if state.nicknames.is_empty() {
                     state.nicknames = vec!["You".into(), "you".into(), "me".into(), "Me".into()];
                 }
                 if state.nicknames.contains(&message.clone()) {
-                    transport.send("Nickname already in use, try again:").await?;
+                    transport
+                        .send(encrypt(shared_aes256_key.clone(), "Nickname already in use, try again:".to_string()))
+                        .await?;
                 } else {
                     nickname = message;
                     state.nicknames.push(nickname.clone());
-                    transport.send(format!("You've logged in to The Lair, happy chatting {}", nickname)).await?;
+                    transport
+                        .send(encrypt(
+                            shared_aes256_key.clone(),
+                            format!("You've logged in to The Lair, happy chatting {}", nickname),
+                        ))
+                        .await?;
                     break;
                 }
             },
@@ -165,7 +235,7 @@ async fn process(state: Arc<Mutex<SharedState>>, stream: TcpStream, addr: Socket
     }
 
     // Register our peer with state which internally sets up some channels.
-    let mut peer = Peer::new(state.clone(), transport).await?;
+    let mut peer = Peer::new(state.clone(), transport, shared_aes256_key.clone()).await?;
 
     // A client has connected, let's let everyone know.
     {
@@ -180,12 +250,13 @@ async fn process(state: Arc<Mutex<SharedState>>, stream: TcpStream, addr: Socket
         tokio::select! {
             // A message was received from a peer. Send it to the current user.
             Some(message) = peer.rx.recv() => {
-                peer.transport.send(&message).await?;
+                peer.transport.send(message).await?;
             }
             result = peer.transport.next() => match result {
                 // A message was received from the current user, we should
                 // broadcast this message to the other users.
                 Some(Ok(message)) => {
+                    let message = decrypt(shared_aes256_key.clone(), message);
                     let mut state = state.lock().await;
                     let message = format!("{}: {}", nickname, message);
 
@@ -220,4 +291,39 @@ async fn process(state: Arc<Mutex<SharedState>>, stream: TcpStream, addr: Socket
     }
 
     Ok(())
+}
+
+// const AES_KEY_STR: &str = "thiskeystrmustbe32charlongtowork";
+// const AES_KEY: GenericArray<u8> = Key::<Aes256Gcm>::from_slice(key_str.as_bytes());
+
+fn encrypt(key_str: String, plaintext: String) -> String {
+    let key = Key::<Aes256Gcm>::from_slice(key_str.as_bytes());
+    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+
+    let cipher = Aes256Gcm::new(key);
+
+    let ciphered_data = cipher.encrypt(&nonce, plaintext.as_bytes()).expect("failed to encrypt");
+
+    // combining nonce and encrypted data together
+    // for storage purpose
+    let mut encrypted_data: Vec<u8> = nonce.to_vec();
+    encrypted_data.extend_from_slice(&ciphered_data);
+
+    //hex::encode(encrypted_data)
+    BASE64_STANDARD.encode(encrypted_data)
+}
+
+fn decrypt(key_str: String, encrypted_data: String) -> String {
+    let encrypted_data = BASE64_STANDARD.decode(encrypted_data).unwrap(); // hex::decode(encrypted_data).expect("failed to decode hex string into vec");
+
+    let key = Key::<Aes256Gcm>::from_slice(key_str.as_bytes());
+
+    let (nonce_arr, ciphered_data) = encrypted_data.split_at(12);
+    let nonce = Nonce::from_slice(nonce_arr);
+
+    let cipher = Aes256Gcm::new(key);
+
+    let plaintext = cipher.decrypt(nonce, ciphered_data).expect("failed to decrypt data");
+
+    String::from_utf8(plaintext).expect("failed to convert vector of bytes to string")
 }

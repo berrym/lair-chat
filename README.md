@@ -1,8 +1,11 @@
 # The Lair Chat
 
+## Current Version
+0.3.0
+
 ## Description
 
-An async chat app written in the Rust programming language.
+An async enctypted chat app written in the Rust programming language.
 It is both a terminal based server and TUI client.
 
 ## Getting started
@@ -11,7 +14,7 @@ Install a recent version of Rust using your OS distributions package manager or 
 
 ### Installing
 
-Clone the git repository from https://github.com/berrym/the_lair.git
+Clone the git repository from https://github.com/berrym/lair-char.git
 
 ### Building and Executing The Lair
 
@@ -28,7 +31,8 @@ Use Rust's own tooling to compile and run the program, e.g.
 * To specify the address and port the server binds to, run the command, e.g. cargo run --bin lair-chat-server -- 127.0.0.1:8080
 * To connect to the server run the client:
     * Press / to enter input mode, enter a formatted server string e.g. 127.0.0.1:8080
-    * Press Esc to enter command mode and press c to connect to server
+    * Press enter to connect and stay in input mode, or,
+    * Press esc to enter command mode and press c to connect to server, then,
     * Press / to enter input mode and type messages for the server, press enter to send
 * When in command mode you can press d to disconnect from the server or q to exit the client
 
@@ -37,13 +41,6 @@ Use Rust's own tooling to compile and run the program, e.g.
 Copyright (c) 2024 Michael Berry <trismegustis@gmail.com>
 
 ## Version History
-
-* 0.1.0
-    * Initial Release
-* 0.2.0
-    * Removed dependencies and refactored not to use async traits
-* 0.2.3
-    * Added sleep in between user input reads
 
 ## License
 
