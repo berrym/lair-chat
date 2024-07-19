@@ -1,28 +1,13 @@
-use color_eyre::{eyre::Result, owo_colors::OwoColorize};
+use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use futures::{select, FutureExt, SinkExt};
-use log::error;
 use ratatui::{prelude::*, widgets::*};
-use std::{collections::HashMap, net::SocketAddr, sync::Mutex};
-use tokio::{
-    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
-    net::{
-        tcp::{OwnedReadHalf, OwnedWriteHalf},
-        TcpStream,
-    },
-    sync::mpsc,
-    time::Duration,
-};
-use tokio_stream::{wrappers::LinesStream, Stream, StreamExt};
-use tokio_util::{
-    codec::{FramedWrite, LinesCodec},
-    sync::CancellationToken,
-};
+use std::net::SocketAddr;
+use tokio::{sync::mpsc, time::Duration};
 use tui_input::{backend::crossterm::EventHandler, Input};
 
 use crate::{
     action::Action,
-    config::{key_event_to_string, Config, KeyBindings},
+    config::{key_event_to_string, Config},
     mode::Mode,
     transport::*,
 };
@@ -54,7 +39,7 @@ pub struct Home {
     prev_mode: Mode,
     input: Input,
     action_tx: Option<Tx<Action>>,
-    keymap: HashMap<KeyEvent, Action>,
+    // keymap: HashMap<KeyEvent, Action>,
     last_events: Vec<KeyEvent>,
 }
 
@@ -69,7 +54,7 @@ impl Home {
             prev_mode: Mode::Normal,
             input: Input::default(),
             action_tx: None,
-            keymap: HashMap::new(),
+            // keymap: HashMap::new(),
             last_events: Vec::new(),
         }
     }
@@ -310,8 +295,9 @@ impl Component for Home {
                 .scroll((1, 0))
                 .block(
                     Block::default()
-                        .title("The Lair v0.3.0 (c) 2024 Michael Berry")
-                        .title_alignment(Alignment::Center)
+                        .title(block::Title::from("v0.3.1".white()).alignment(Alignment::Left))
+                        .title(block::Title::from("THE LAIR".yellow().bold()).alignment(Alignment::Center))
+                        .title(block::Title::from("(C) 2024".white()).alignment(Alignment::Right))
                         .borders(Borders::ALL)
                         .border_style(match self.mode {
                             Mode::Processing => Style::default().bg(Color::Black).fg(Color::Yellow),
@@ -319,7 +305,7 @@ impl Component for Home {
                         })
                         .border_type(BorderType::Rounded),
                 )
-                .style(Style::default().bg(Color::Black).fg(Color::White))
+                .style(Style::default().bg(Color::Black).fg(Color::Green))
                 .alignment(Alignment::Left)
                 .wrap(Wrap { trim: false }),
             rects[0],
@@ -352,33 +338,33 @@ impl Component for Home {
         }
 
         if self.show_help {
-            let rect = area.inner(&Margin { horizontal: 4, vertical: 2 });
+            let rect = area.inner(Margin { horizontal: 4, vertical: 2 });
             f.render_widget(Clear, rect);
             let block = Block::default()
                 .title(Line::from(vec![Span::styled("Key Bindings", Style::default().add_modifier(Modifier::BOLD))]))
                 .title_alignment(Alignment::Center)
                 .borders(Borders::ALL)
-                .border_style(Style::default().bg(Color::DarkGray).fg(Color::Yellow));
+                .border_style(Style::default().bg(Color::Blue).fg(Color::Yellow));
             f.render_widget(block, rect);
             let rows = vec![
                 Row::new(vec!["/", "Enter Input Mode"]),
-                Row::new(vec!["Enter", "Submit Input"]),
-                Row::new(vec!["ESC", "Exit Input Mode"]),
+                Row::new(vec!["enter", "Submit Input"]),
+                Row::new(vec!["esc", "Exit Input Mode"]),
                 Row::new(vec!["c", "Connect to Server"]),
                 Row::new(vec!["d", "Disconnect"]),
                 Row::new(vec!["q", "Quit"]),
-                Row::new(vec!["Ctrl-z", "Suspend Program"]),
+                Row::new(vec!["ctrl-z", "Suspend Program"]),
                 Row::new(vec!["?", "Open/Close Help"]),
             ];
-            let table = Table::new(rows)
+            let table = Table::new(rows, [Constraint::Percentage(20), Constraint::Percentage(80)])
                 .header(
                     Row::new(vec!["Key", "Action"])
                         .bottom_margin(1)
-                        .style(Style::default().add_modifier(Modifier::BOLD).bg(Color::Black).fg(Color::White)),
+                        .style(Style::default().add_modifier(Modifier::BOLD).bg(Color::Blue).fg(Color::White)),
                 )
-                .widths(&[Constraint::Percentage(10), Constraint::Percentage(90)])
-                .column_spacing(10);
-            f.render_widget(table, area.inner(&Margin { vertical: 4, horizontal: 24 }));
+                .column_spacing(5)
+                .style(Style::default().bg(Color::DarkGray).fg(Color::White));
+            f.render_widget(table, rect.inner(Margin { vertical: 4, horizontal: 4 }));
         };
 
         f.render_widget(

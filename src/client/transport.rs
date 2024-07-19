@@ -1,21 +1,19 @@
 use aes_gcm::{
-    aead::{generic_array::GenericArray, Aead, AeadCore, KeyInit, OsRng},
+    aead::{Aead, AeadCore, KeyInit, OsRng},
     Aes256Gcm, Key, Nonce,
 };
 use base64::prelude::*;
 use color_eyre::eyre::Result;
-use futures::{select, FutureExt, Sink, SinkExt};
-use log::error;
+use futures::{select, FutureExt, SinkExt};
 use md5;
 use once_cell::sync::Lazy;
 use std::{net::SocketAddr, pin::Pin, sync::Mutex};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{
         tcp::{OwnedReadHalf, OwnedWriteHalf},
         TcpStream,
     },
-    sync::mpsc,
     time::{sleep, Duration},
 };
 use tokio_stream::{wrappers::LinesStream, Stream, StreamExt};

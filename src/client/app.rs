@@ -1,20 +1,9 @@
 use color_eyre::eyre::Result;
 use crossterm::event::KeyEvent;
-use futures::{FutureExt, SinkExt, Stream, StreamExt};
 use ratatui::prelude::Rect;
-use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
-use crate::{
-    action::Action,
-    components::Component,
-    components::{home, home::Home},
-    config::Config,
-    mode::Mode,
-    tui,
-};
-
-use super::components;
+use crate::{action::Action, components::home::Home, components::Component, config::Config, mode::Mode, tui};
 
 pub enum InputMode {
     Normal,

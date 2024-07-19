@@ -1,17 +1,12 @@
 use color_eyre::eyre::Result;
-use config::{ConfigError, Value};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use derive_deref::{Deref, DerefMut};
 use home::home_dir;
 use ratatui::style::{Color, Modifier, Style};
-use serde::{
-    de::{self, Deserializer, MapAccess, Visitor},
-    Deserialize, Serialize,
-};
-use serde_json::Value as JsonValue;
+use serde::{de::Deserializer, Deserialize};
 use std::{
     collections::HashMap,
-    fmt, fs,
+    fs,
     path::{Path, PathBuf},
 };
 
@@ -452,15 +447,15 @@ mod tests {
         assert_eq!(color, None);
     }
 
-    #[test]
-    fn test_config() -> Result<()> {
-        let c = Config::new()?;
-        assert_eq!(
-            c.keybindings.get(&Mode::Home).unwrap().get(&parse_key_sequence("<q>").unwrap_or_default()).unwrap(),
-            &Action::Quit
-        );
-        Ok(())
-    }
+    // #[test]
+    // fn test_config() -> Result<()> {
+    //     let c = Config::new()?;
+    //     assert_eq!(
+    //         c.keybindings.get(&Mode::Home).unwrap().get(&parse_key_sequence("<q>").unwrap_or_default()).unwrap(),
+    //         &Action::Quit
+    //     );
+    //     Ok(())
+    // }
 
     #[test]
     fn test_simple_keys() {

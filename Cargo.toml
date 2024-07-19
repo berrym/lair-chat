@@ -1,6 +1,6 @@
 [package]
 name = "lair-chat"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 description = "Asynchronous Chat App"
 repository = "https://github.com/berrym/the-lair.git"
@@ -22,13 +22,13 @@ clap = { version = "4.4.5", features = [
     "unstable-styles",
 ] }
 color-eyre = "0.6.2"
-config = "0.13.3"
+config = "0.14.0"
 crossterm = { version = "0.27.0", features = ["serde", "event-stream"] }
 derive_deref = "1.1.1"
 directories = "5.0.1"
 futures = "0.3.28"
 home = "0.5.5"
-human-panic = "1.2.0"
+human-panic = "2.0.0"
 json5 = "0.4.1"
 lazy_static = "1.4.0"
 libc = "0.2.148"
@@ -36,7 +36,7 @@ log = "0.4.20"
 md5 = "0.7.0"
 once_cell = "1.18.0"
 pretty_assertions = "1.4.0"
-ratatui = { version = "0.23.0", features = ["serde", "macros", "all-widgets"] }
+ratatui = { version = "0.27.0", features = ["serde", "macros", "all-widgets"] }
 serde = { version = "1.0.188", features = ["derive"] }
 serde_json = "1.0.107"
 signal-hook = "0.3.17"
@@ -47,7 +47,7 @@ tokio-util = { version = "0.7.9", features = ["full"] }
 tracing = "0.1.37"
 tracing-error = "0.2.0"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter", "serde"] }
-tui-input = "0.8.0"
+tui-input = "0.9.0"
 x25519-dalek = { version = "2.0.1", features = ["getrandom"] }
 
 [[bin]]

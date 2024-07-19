@@ -23,7 +23,7 @@ pub type Tx<T> = mpsc::UnboundedSender<T>;
 /// Shorthand for the receiving half of the message channel
 pub type Rx<T> = mpsc::UnboundedReceiver<T>;
 
-pub type Frame<'a> = ratatui::Frame<'a, Backend<std::io::Stderr>>;
+pub type Frame<'a> = ratatui::Frame<'a>;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Event {

@@ -28,6 +28,7 @@ pub trait Component {
         Ok(())
     }
 
+    #[allow(unused_variables)]
     fn init(&mut self, area: Rect) -> Result<()> {
         Ok(())
     }
