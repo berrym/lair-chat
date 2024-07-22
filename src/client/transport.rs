@@ -163,14 +163,17 @@ pub fn client_io_select_loop(
     let cancel_token = CANCEL_TOKEN.lock().unwrap().token.clone();
     tokio::spawn(async move {
         // start handshake by sending public key to server
-        _ = sink.tx.send(BASE64_STANDARD.encode(client_public_key)).await;
+        _ = sink
+            .tx
+            .send(BASE64_STANDARD.encode(client_public_key))
+            .await;
         // recieve server public key
         let server_public_key_string = match stream.rx.next().await {
             Some(key_string) => key_string,
             None => {
                 add_text_message("Failed to get server public key!.".to_owned());
                 return Ok(());
-            },
+            }
         };
         // keep converting until key is a 32 byte u8 array
         let server_public_key_vec = match server_public_key_string {
@@ -178,25 +181,31 @@ pub fn client_io_select_loop(
             _ => {
                 add_text_message("Failed to convert server public key to byte vec!".to_owned());
                 return Err("failed to convert server public key to byte vec");
-            },
+            }
         };
         let server_public_key_slice: &[u8] = match server_public_key_vec.as_slice().try_into() {
             Ok(key_slice) => key_slice,
             _ => {
-                add_text_message("Failed to convert server public key byte vec to byte slice!".to_owned());
+                add_text_message(
+                    "Failed to convert server public key byte vec to byte slice!".to_owned(),
+                );
                 return Err("failed to convert server public key byte vec to byte slice");
-            },
+            }
         };
         let server_public_key_array: [u8; 32] = match server_public_key_slice.try_into() {
             Ok(key_array) => key_array,
             _ => {
-                add_text_message("Failed to convert public key byte slice to byte array!".to_owned());
+                add_text_message(
+                    "Failed to convert public key byte slice to byte array!".to_owned(),
+                );
                 return Err("failed to convert public key slice to array");
-            },
+            }
         };
         // create shared keys
-        let shared_secret = client_secret_key.diffie_hellman(&PublicKey::from(server_public_key_array));
-        let shared_aes256_key = format!("{:x}", md5::compute(BASE64_STANDARD.encode(shared_secret)));
+        let shared_secret =
+            client_secret_key.diffie_hellman(&PublicKey::from(server_public_key_array));
+        let shared_aes256_key =
+            format!("{:x}", md5::compute(BASE64_STANDARD.encode(shared_secret)));
         // main client loop
         loop {
             // process any messages
@@ -271,7 +280,9 @@ fn encrypt(key_str: String, plaintext: String) -> String {
     let key = Key::<Aes256Gcm>::from_slice(key_str.as_bytes());
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
     let cipher = Aes256Gcm::new(key);
-    let ciphered_data = cipher.encrypt(&nonce, plaintext.as_bytes()).expect("failed to encrypt");
+    let ciphered_data = cipher
+        .encrypt(&nonce, plaintext.as_bytes())
+        .expect("failed to encrypt");
     // combining nonce and encrypted data together for storage purpose
     let mut encrypted_data: Vec<u8> = nonce.to_vec();
     encrypted_data.extend_from_slice(&ciphered_data);
@@ -285,6 +296,8 @@ fn decrypt(key_str: String, encrypted_data: String) -> String {
     let (nonce_arr, ciphered_data) = encrypted_data.split_at(12);
     let nonce = Nonce::from_slice(nonce_arr);
     let cipher = Aes256Gcm::new(key);
-    let plaintext = cipher.decrypt(nonce, ciphered_data).expect("failed to decrypt data");
+    let plaintext = cipher
+        .decrypt(nonce, ciphered_data)
+        .expect("failed to decrypt data");
     String::from_utf8(plaintext).expect("failed to convert vector of bytes to string")
 }

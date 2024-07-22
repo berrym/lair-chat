@@ -35,7 +35,10 @@ struct SharedState {
 impl SharedState {
     /// Create a new, empty, instance of `SharedState`.
     fn new() -> Self {
-        SharedState { peers: HashMap::new(), nicknames: Vec::new() }
+        SharedState {
+            peers: HashMap::new(),
+            nicknames: Vec::new(),
+        }
     }
 
     /// Send a `LineCodec` encoded message to every peer, except
@@ -43,7 +46,10 @@ impl SharedState {
     async fn broadcast(&mut self, sender: SocketAddr, message: &str) {
         for peer in self.peers.iter_mut() {
             if *peer.0 != sender {
-                let _ = peer.1 .1.send(encrypt(peer.1 .0.to_string().clone(), message.into()));
+                let _ = peer
+                    .1
+                     .1
+                    .send(encrypt(peer.1 .0.to_string().clone(), message.into()));
             }
         }
     }
@@ -118,7 +124,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // client connection.
     let state = Arc::new(Mutex::new(SharedState::new()));
 
-    let addr = env::args().nth(1).unwrap_or_else(|| "127.0.0.1:8080".to_string());
+    let addr = env::args()
+        .nth(1)
+        .unwrap_or_else(|| "127.0.0.1:8080".to_string());
 
     // Bind a TCP listener to the socket address.
     //
@@ -140,7 +148,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // Spawn our handler to be run asynchronously.
         tokio::spawn(async move {
             tracing::debug!("accepted connection");
-            if let Err(e) = process(state, stream, addr, server_public_key, server_secret_key).await {
+            if let Err(e) = process(state, stream, addr, server_public_key, server_secret_key).await
+            {
                 tracing::info!("an error occurred; error = {:?}", e);
             }
         });
@@ -157,17 +166,19 @@ async fn process(
 ) -> Result<(), Box<dyn Error>> {
     // start the handshake by sending public key to peer
     let mut transport = Framed::new(stream, LinesCodec::new());
-    transport.send(BASE64_STANDARD.encode(server_public_key)).await?;
+    transport
+        .send(BASE64_STANDARD.encode(server_public_key))
+        .await?;
     // recieve peer's public key
     let peer_public_key_string = match transport.next().await {
         Some(key_string) => {
             println!("Got public key from: {}", addr.to_string());
             key_string
-        },
+        }
         None => {
             println!("Failed to get public key from peer!");
             return Ok(());
-        },
+        }
     };
     // keep converting until key is a 32 byte u8 array
     let peer_public_key_vec = match peer_public_key_string {
@@ -175,29 +186,39 @@ async fn process(
         _ => {
             println!("Failed to convert peer public key to byte vec!");
             return Ok(());
-        },
+        }
     };
     let peer_public_key_slice: &[u8] = match peer_public_key_vec.as_slice().try_into() {
         Ok(key_slice) => key_slice,
         _ => {
             println!("Failed to convert peer public key byte vec to slice!");
             return Ok(());
-        },
+        }
     };
     let peer_public_key_array: [u8; 32] = match peer_public_key_slice.try_into() {
         Ok(key_array) => key_array,
         _ => {
             println!("Failed to convert public key slice to byte array!");
             return Ok(());
-        },
+        }
     };
     // create shared keys
     let shared_secret = server_secret_key.diffie_hellman(&PublicKey::from(peer_public_key_array));
     let shared_aes256_key = format!("{:x}", md5::compute(BASE64_STANDARD.encode(shared_secret)));
 
     // Send a welcome prompt to the client then ask client to enter their nickname.
-    transport.send(encrypt(shared_aes256_key.clone(), "Welcome to The Lair!".to_string())).await?;
-    transport.send(encrypt(shared_aes256_key.clone(), "Please enter a nickname:".to_string())).await?;
+    transport
+        .send(encrypt(
+            shared_aes256_key.clone(),
+            "Welcome to The Lair!".to_string(),
+        ))
+        .await?;
+    transport
+        .send(encrypt(
+            shared_aes256_key.clone(),
+            "Please enter a nickname:".to_string(),
+        ))
+        .await?;
 
     // Read from the `LinesCodec` stream to get the nickname.
     let mut nickname = String::new();
@@ -211,7 +232,10 @@ async fn process(
                 }
                 if state.nicknames.contains(&message.clone()) {
                     transport
-                        .send(encrypt(shared_aes256_key.clone(), "Nickname already in use, try again:".to_string()))
+                        .send(encrypt(
+                            shared_aes256_key.clone(),
+                            "Nickname already in use, try again:".to_string(),
+                        ))
                         .await?;
                 } else {
                     nickname = message;
@@ -224,13 +248,13 @@ async fn process(
                         .await?;
                     break;
                 }
-            },
+            }
             // We didn't get a message so we return early here.
             _ => {
                 drop(nickname);
                 tracing::error!("Failed to get nickname from {}. Client disconnected.", addr);
                 return Ok(());
-            },
+            }
         };
     }
 
@@ -293,37 +317,27 @@ async fn process(
     Ok(())
 }
 
-// const AES_KEY_STR: &str = "thiskeystrmustbe32charlongtowork";
-// const AES_KEY: GenericArray<u8> = Key::<Aes256Gcm>::from_slice(key_str.as_bytes());
-
 fn encrypt(key_str: String, plaintext: String) -> String {
     let key = Key::<Aes256Gcm>::from_slice(key_str.as_bytes());
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-
     let cipher = Aes256Gcm::new(key);
-
-    let ciphered_data = cipher.encrypt(&nonce, plaintext.as_bytes()).expect("failed to encrypt");
-
-    // combining nonce and encrypted data together
-    // for storage purpose
+    let ciphered_data = cipher
+        .encrypt(&nonce, plaintext.as_bytes())
+        .expect("failed to encrypt");
+    // combining nonce and encrypted data together for storage purpose
     let mut encrypted_data: Vec<u8> = nonce.to_vec();
     encrypted_data.extend_from_slice(&ciphered_data);
-
-    //hex::encode(encrypted_data)
     BASE64_STANDARD.encode(encrypted_data)
 }
 
 fn decrypt(key_str: String, encrypted_data: String) -> String {
     let encrypted_data = BASE64_STANDARD.decode(encrypted_data).unwrap(); // hex::decode(encrypted_data).expect("failed to decode hex string into vec");
-
     let key = Key::<Aes256Gcm>::from_slice(key_str.as_bytes());
-
     let (nonce_arr, ciphered_data) = encrypted_data.split_at(12);
     let nonce = Nonce::from_slice(nonce_arr);
-
     let cipher = Aes256Gcm::new(key);
-
-    let plaintext = cipher.decrypt(nonce, ciphered_data).expect("failed to decrypt data");
-
+    let plaintext = cipher
+        .decrypt(nonce, ciphered_data)
+        .expect("failed to decrypt data");
     String::from_utf8(plaintext).expect("failed to convert vector of bytes to string")
 }

@@ -1,23 +1,17 @@
-use color_eyre::eyre::Result;
+use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{prelude::*, widgets::*};
 use std::net::SocketAddr;
-use tokio::{sync::mpsc, time::Duration};
+use tokio::{sync::mpsc::UnboundedSender, time::Duration};
 use tui_input::{backend::crossterm::EventHandler, Input};
 
+use super::Component;
 use crate::{
     action::Action,
+    app::Mode,
     config::{key_event_to_string, Config},
-    mode::Mode,
     transport::*,
 };
-
-use super::{Component, Frame};
-
-/// Shorthand for the transmit half of the message channel
-pub type Tx<T> = mpsc::UnboundedSender<T>;
-/// Shorthand for the receiving half of the message channel
-pub type Rx<T> = mpsc::UnboundedReceiver<T>;
 
 /// Get any text in the input box
 pub async fn get_user_input(mut input: Input) -> Option<String> {
@@ -30,7 +24,9 @@ pub async fn get_user_input(mut input: Input) -> Option<String> {
     }
 }
 
+#[derive(Default)]
 pub struct Home {
+    command_tx: Option<UnboundedSender<Action>>,
     config: Config,
     show_help: bool,
     app_ticker: usize,
@@ -38,14 +34,16 @@ pub struct Home {
     mode: Mode,
     prev_mode: Mode,
     input: Input,
-    action_tx: Option<Tx<Action>>,
-    // keymap: HashMap<KeyEvent, Action>,
     last_events: Vec<KeyEvent>,
 }
 
 impl Home {
+    // pub fn new() -> Self {
+    //     Self::default()
+    // }
     pub fn new() -> Home {
         Home {
+            command_tx: None,
             config: Config::default(),
             show_help: false,
             app_ticker: 0,
@@ -53,14 +51,12 @@ impl Home {
             mode: Mode::Normal,
             prev_mode: Mode::Normal,
             input: Input::default(),
-            action_tx: None,
-            // keymap: HashMap::new(),
             last_events: Vec::new(),
         }
     }
 
     pub fn schedule_connect_client(&mut self) {
-        let tx = self.action_tx.clone().unwrap();
+        let tx = self.command_tx.clone().unwrap();
         tokio::spawn(async move {
             tx.send(Action::EnterProcessing).unwrap();
             tokio::time::sleep(Duration::from_millis(250)).await;
@@ -71,7 +67,7 @@ impl Home {
     }
 
     pub fn schedule_disconnect_client(&mut self) {
-        let tx = self.action_tx.clone().unwrap();
+        let tx = self.command_tx.clone().unwrap();
         tokio::spawn(async move {
             tx.send(Action::EnterProcessing).unwrap();
             tokio::time::sleep(Duration::from_millis(250)).await;
@@ -82,20 +78,20 @@ impl Home {
     }
 
     pub fn tick(&mut self) {
-        log::info!("Tick");
+        //log::info!("Tick");
         self.app_ticker = self.app_ticker.saturating_add(1);
         self.last_events.drain(..);
     }
 
     pub fn render_tick(&mut self) {
-        log::debug!("Render Tick");
+        //log::debug!("Render Tick");
         self.render_ticker = self.render_ticker.saturating_add(1);
     }
 }
 
 impl Component for Home {
-    fn register_action_handler(&mut self, tx: Tx<Action>) -> Result<()> {
-        self.action_tx = Some(tx);
+    fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> Result<()> {
+        self.command_tx = Some(tx);
         Ok(())
     }
 
@@ -104,7 +100,7 @@ impl Component for Home {
         Ok(())
     }
 
-    fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>> {
+    fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
         self.last_events.push(key.clone());
         let action = match self.mode {
             Mode::Normal | Mode::Processing => match key.code {
@@ -124,9 +120,10 @@ impl Component for Home {
                 KeyCode::Char('?') => Action::ToggleShowHelp,
                 KeyCode::Char('/') => {
                     if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::DISCONNECTED {
+                        add_text_message(" ".to_owned());
                         add_text_message("Before you can send messages, you must connect to a server.".to_owned());
                         add_text_message("Type an address e.g. 127.0.0.1:8080 then press Enter".to_owned());
-                        add_text_message("".to_owned());
+                        add_text_message(" ".to_owned());
                     }
                     Action::EnterInsert
                 },
@@ -258,9 +255,19 @@ impl Component for Home {
             _ => {},
         }
         Ok(None)
+        // match action {
+        //     Action::Tick => {
+        //         // add any logic here that should run on every tick
+        //     }
+        //     Action::Render => {
+        //         // add any logic here that should run on every render
+        //     }
+        //     _ => {a}
+        // }
+        // Ok(None)
     }
 
-    fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
+    fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         let rects =
             Layout::default().constraints([Constraint::Percentage(100), Constraint::Min(3)].as_ref()).split(area);
 
@@ -290,12 +297,12 @@ impl Component for Home {
             text.append(&mut p.clone());
         }
 
-        f.render_widget(
+        frame.render_widget(
             Paragraph::new(text)
                 .scroll((1, 0))
                 .block(
                     Block::default()
-                        .title(block::Title::from("v0.3.1".white()).alignment(Alignment::Left))
+                        .title(block::Title::from("v0.3.2".white()).alignment(Alignment::Left))
                         .title(block::Title::from("THE LAIR".yellow().bold()).alignment(Alignment::Center))
                         .title(block::Title::from("(C) 2024".white()).alignment(Alignment::Right))
                         .borders(Borders::ALL)
@@ -329,9 +336,9 @@ impl Component for Home {
                 Span::styled("?", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
                 Span::styled(" for help)", Style::default().fg(Color::DarkGray)),
             ])));
-        f.render_widget(input_box, rects[1]);
+        frame.render_widget(input_box, rects[1]);
         if self.mode == Mode::Insert {
-            f.set_cursor(
+            frame.set_cursor(
                 (rects[1].x + 1 + self.input.cursor() as u16).min(rects[1].x + rects[1].width - 2),
                 rects[1].y + 1,
             )
@@ -339,13 +346,13 @@ impl Component for Home {
 
         if self.show_help {
             let rect = area.inner(Margin { horizontal: 4, vertical: 2 });
-            f.render_widget(Clear, rect);
+            frame.render_widget(Clear, rect);
             let block = Block::default()
                 .title(Line::from(vec![Span::styled("Key Bindings", Style::default().add_modifier(Modifier::BOLD))]))
                 .title_alignment(Alignment::Center)
                 .borders(Borders::ALL)
                 .border_style(Style::default().bg(Color::Blue).fg(Color::Yellow));
-            f.render_widget(block, rect);
+            frame.render_widget(block, rect);
             let rows = vec![
                 Row::new(vec!["/", "Enter Input Mode"]),
                 Row::new(vec!["enter", "Submit Input"]),
@@ -364,10 +371,10 @@ impl Component for Home {
                 )
                 .column_spacing(5)
                 .style(Style::default().bg(Color::DarkGray).fg(Color::White));
-            f.render_widget(table, rect.inner(Margin { vertical: 4, horizontal: 4 }));
+            frame.render_widget(table, rect.inner(Margin { vertical: 4, horizontal: 4 }));
         };
 
-        f.render_widget(
+        frame.render_widget(
             Block::default()
                 .title(
                     ratatui::widgets::block::Title::from(format!(
