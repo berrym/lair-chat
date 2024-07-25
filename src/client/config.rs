@@ -59,7 +59,6 @@ impl Config {
         if !Path::new(config_file).exists() {
             let mut default_config = String::from("{\n  \"keybindings\": {\n");
             default_config.push_str("    \"Home\": {\n");
-            default_config.push_str("      \"<q>\": \"Quit\", // Quit the application\n");
             default_config.push_str("      \"<Ctrl-d>\": \"Quit\", // Another way to quit\n");
             default_config.push_str("      \"<Ctrl-c>\": \"Quit\", // Yet another way to quit\n");
             default_config.push_str("      \"<Ctrl-z>\": \"Suspend\" // Suspend the application\n");
