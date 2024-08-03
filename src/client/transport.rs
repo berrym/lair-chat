@@ -232,7 +232,7 @@ pub fn client_io_select_loop(
             select! {
                 _ = cancel_token.cancelled().fuse() => {
                     let mut writer = sink.tx.into_inner();
-                    let _ = writer.shutdown();
+                    let _ = writer.shutdown().await;
                     return Ok(());
                 },
                 message = stream.rx.next().fuse() => match message {
