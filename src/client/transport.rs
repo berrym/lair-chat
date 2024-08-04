@@ -248,7 +248,7 @@ pub fn client_io_select_loop(
                 },
                 message = get_user_input(input.clone()).fuse() => match message {
                     Some(message) => {
-                    let _ = sink.tx.send(encrypt(shared_aes256_key.clone(), message.clone())).await;
+                        let _ = sink.tx.send(encrypt(shared_aes256_key.clone(), message.clone())).await;
                         add_text_message(format!("{}{}", "You: ".to_owned(), message.to_owned()));
                         sleep(Duration::from_millis(250)).await;
                     },
