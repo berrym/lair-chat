@@ -322,9 +322,9 @@ impl Component for Home {
                 .scroll((1, 0))
                 .block(
                     Block::default()
-                        .title_top(Line::from("v0.3.2".white()).left_aligned())
+                        .title_top(Line::from("v0.4.1".white()).left_aligned())
                         .title_top(Line::from("THE LAIR".yellow().bold()).centered())
-                        .title_top(Line::from("(C) 2024".white()).right_aligned())
+                        .title_top(Line::from("(C) 2025".white()).right_aligned())
                         .borders(Borders::ALL)
                         .border_style(match self.mode {
                             Mode::Processing => Style::default().bg(Color::Black).fg(Color::Yellow),
