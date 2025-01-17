@@ -36,11 +36,11 @@ To specify the address and port the server binds to, run the command, e.g.
     $ cargo run --bin lair-chat-server -- 127.0.0.1:8080
 
 To connect to the server run the client
-    -   Press / to enter input mode, enter a formatted server string e.g. 127.0.0.1:8080
-    -   Press enter to connect and stay in input mode, or,
-    -   Press esc to enter command mode and press c to connect to server, then,
-    -   Press / to enter input mode and type messages for the server, press enter to send
-    -   In Normal mode press d to disconnect from the server or q to exit the client
+-   Press / to enter input mode, enter a formatted server string e.g. 127.0.0.1:8080
+-   Press enter to connect and stay in input mode, or,
+-   Press esc to enter command mode and press c to connect to server, then,
+-   Press / to enter input mode and type messages for the server, press enter to send
+-   In Normal mode press d to disconnect from the server or q to exit the client
 
 ## Authors
 
