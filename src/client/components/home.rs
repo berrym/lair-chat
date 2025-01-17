@@ -107,26 +107,33 @@ impl Component for Home {
                 KeyCode::Char('q') => {
                     self.schedule_disconnect_client();
                     Action::Quit
-                },
+                }
                 KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     self.schedule_disconnect_client();
                     Action::Quit
-                },
+                }
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     self.schedule_disconnect_client();
                     Action::Quit
-                },
-                KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::Suspend,
+                }
+                KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    Action::Suspend
+                }
                 KeyCode::Char('?') => Action::ToggleShowHelp,
                 KeyCode::Char('/') => {
                     if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::DISCONNECTED {
                         add_text_message(" ".to_owned());
-                        add_text_message("Before you can send messages, you must connect to a server.".to_owned());
-                        add_text_message("Type an address e.g. 127.0.0.1:8080 then press Enter".to_owned());
+                        add_text_message(
+                            "Before you can send messages, you must connect to a server."
+                                .to_owned(),
+                        );
+                        add_text_message(
+                            "Type an address e.g. 127.0.0.1:8080 then press Enter".to_owned(),
+                        );
                         add_text_message(" ".to_owned());
                     }
                     Action::EnterInsert
-                },
+                }
                 KeyCode::F(2) => {
                     if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
                         add_text_message("Already connected to a server.".to_string());
@@ -134,7 +141,7 @@ impl Component for Home {
                     }
                     self.schedule_connect_client();
                     Action::Update
-                },
+                }
                 KeyCode::Char('c') => {
                     if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
                         add_text_message("Already connected to a server.".to_string());
@@ -142,17 +149,17 @@ impl Component for Home {
                     }
                     self.schedule_connect_client();
                     Action::Update
-                },
+                }
                 KeyCode::Char('d') => {
                     self.schedule_disconnect_client();
                     Action::Update
-                },
+                }
                 KeyCode::Esc => {
                     if self.show_help {
                         self.show_help = false;
                     }
                     Action::Update
-                },
+                }
                 _ => Action::Tick,
             },
             Mode::Insert => match key.code {
@@ -163,16 +170,18 @@ impl Component for Home {
                     }
                     self.schedule_connect_client();
                     Action::Update
-                },
+                }
                 KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     self.schedule_disconnect_client();
                     Action::Quit
-                },
+                }
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     self.schedule_disconnect_client();
                     Action::Quit
-                },
-                KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::Suspend,
+                }
+                KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    Action::Suspend
+                }
                 KeyCode::Esc => Action::EnterNormal,
                 KeyCode::Enter => {
                     let client_status = CLIENT_STATUS.lock().unwrap();
@@ -193,16 +202,16 @@ impl Component for Home {
                         }
                     }
                     Action::Update
-                },
+                }
                 _ => {
                     self.input.handle_event(&crossterm::event::Event::Key(key));
                     Action::Tick
-                },
+                }
             },
             _ => {
                 self.input.handle_event(&crossterm::event::Event::Key(key));
                 Action::Tick
-            },
+            }
         };
         Ok(Some(action))
     }
@@ -215,24 +224,27 @@ impl Component for Home {
             Action::EnterNormal => {
                 self.prev_mode = self.mode;
                 self.mode = Mode::Normal;
-            },
+            }
             Action::EnterInsert => {
                 self.prev_mode = self.mode;
                 self.mode = Mode::Insert;
-            },
+            }
             Action::EnterProcessing => {
                 self.prev_mode = self.mode;
                 self.mode = Mode::Processing;
-            },
+            }
             Action::ExitProcessing => {
                 // TODO: Make this go to previous mode instead
                 self.mode = self.prev_mode;
-            },
+            }
             Action::ConnectClient => {
                 let user_input = self.input.value().to_string();
                 self.input.reset();
                 if user_input.is_empty() {
-                    add_text_message("Enter a address:port string in the input box, e.g. 127.0.0.1:8080".to_string());
+                    add_text_message(
+                        "Enter a address:port string in the input box, e.g. 127.0.0.1:8080"
+                            .to_string(),
+                    );
                     return Ok(Some(Action::Update));
                 }
                 let address: SocketAddr = match user_input.parse() {
@@ -240,19 +252,19 @@ impl Component for Home {
                     Err(_) => {
                         add_text_message("Failed to get server address.".to_string());
                         return Ok(Some(Action::Update));
-                    },
+                    }
                 };
                 let input = self.input.clone();
                 tokio::spawn(async move {
                     connect_client(input, address).await;
                 });
-            },
+            }
             Action::DisconnectClient => {
                 tokio::spawn(async move {
                     disconnect_client().await;
                 });
-            },
-            _ => {},
+            }
+            _ => {}
         }
         Ok(None)
         // match action {
@@ -268,12 +280,20 @@ impl Component for Home {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        let rects =
-            Layout::default().constraints([Constraint::Percentage(100), Constraint::Min(3)].as_ref()).split(area);
+        let rects = Layout::default()
+            .constraints([Constraint::Percentage(100), Constraint::Min(3)].as_ref())
+            .split(area);
 
         let mut text: Vec<Line> = Vec::<Line>::new();
         text.insert(0, "".into());
-        let messages: Vec<Line> = MESSAGES.lock().unwrap().text.clone().iter().map(|l| Line::from(l.clone())).collect();
+        let messages: Vec<Line> = MESSAGES
+            .lock()
+            .unwrap()
+            .text
+            .clone()
+            .iter()
+            .map(|l| Line::from(l.clone()))
+            .collect();
         if messages.is_empty() {
             text.insert(0, "No messages to display.".dim().into());
         } else {
@@ -302,9 +322,9 @@ impl Component for Home {
                 .scroll((1, 0))
                 .block(
                     Block::default()
-                        .title(block::Title::from("v0.3.2".white()).alignment(Alignment::Left))
-                        .title(block::Title::from("THE LAIR".yellow().bold()).alignment(Alignment::Center))
-                        .title(block::Title::from("(C) 2024".white()).alignment(Alignment::Right))
+                        .title_top(Line::from("v0.3.2".white()).left_aligned())
+                        .title_top(Line::from("THE LAIR".yellow().bold()).centered())
+                        .title_top(Line::from("(C) 2024".white()).right_aligned())
                         .borders(Borders::ALL)
                         .border_style(match self.mode {
                             Mode::Processing => Style::default().bg(Color::Black).fg(Color::Yellow),
@@ -326,29 +346,57 @@ impl Component for Home {
                 _ => Style::default().bg(Color::Black).fg(Color::White),
             })
             .scroll((0, scroll as u16))
-            .block(Block::default().borders(Borders::ALL).title(Line::from(vec![
-                Span::raw("Insert Text Here"),
-                Span::styled("(Press ", Style::default().fg(Color::DarkGray)),
-                Span::styled("/", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
-                Span::styled(" to start, ", Style::default().fg(Color::DarkGray)),
-                Span::styled("ESC", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
-                Span::styled(" to stop, ", Style::default().fg(Color::DarkGray)),
-                Span::styled("?", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
-                Span::styled(" for help)", Style::default().fg(Color::DarkGray)),
-            ])));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(Line::from(vec![
+                        Span::raw("Insert Text Here"),
+                        Span::styled("(Press ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(
+                            "/",
+                            Style::default()
+                                .add_modifier(Modifier::BOLD)
+                                .fg(Color::Gray),
+                        ),
+                        Span::styled(" to start, ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(
+                            "ESC",
+                            Style::default()
+                                .add_modifier(Modifier::BOLD)
+                                .fg(Color::Gray),
+                        ),
+                        Span::styled(" to stop, ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(
+                            "?",
+                            Style::default()
+                                .add_modifier(Modifier::BOLD)
+                                .fg(Color::Gray),
+                        ),
+                        Span::styled(" for help)", Style::default().fg(Color::DarkGray)),
+                    ])),
+            );
         frame.render_widget(input_box, rects[1]);
         if self.mode == Mode::Insert {
-            frame.set_cursor(
+            frame.set_cursor_position(Position::new(
+                // Draw the cursor at the current position in the input field.
+                // This position is can be controlled via the left and right arrow key
                 (rects[1].x + 1 + self.input.cursor() as u16).min(rects[1].x + rects[1].width - 2),
+                // Move one line down, from the border to the input line
                 rects[1].y + 1,
-            )
+            ))
         }
 
         if self.show_help {
-            let rect = area.inner(Margin { horizontal: 4, vertical: 2 });
+            let rect = area.inner(Margin {
+                horizontal: 4,
+                vertical: 2,
+            });
             frame.render_widget(Clear, rect);
             let block = Block::default()
-                .title(Line::from(vec![Span::styled("Key Bindings", Style::default().add_modifier(Modifier::BOLD))]))
+                .title(Line::from(vec![Span::styled(
+                    "Key Bindings",
+                    Style::default().add_modifier(Modifier::BOLD),
+                )]))
                 .title_alignment(Alignment::Center)
                 .borders(Borders::ALL)
                 .border_style(Style::default().bg(Color::Blue).fg(Color::Yellow));
@@ -363,28 +411,54 @@ impl Component for Home {
                 Row::new(vec!["ctrl-z", "Suspend Program"]),
                 Row::new(vec!["?", "Open/Close Help"]),
             ];
-            let table = Table::new(rows, [Constraint::Percentage(20), Constraint::Percentage(80)])
-                .header(
-                    Row::new(vec!["Key", "Action"])
-                        .bottom_margin(1)
-                        .style(Style::default().add_modifier(Modifier::BOLD).bg(Color::Blue).fg(Color::White)),
-                )
-                .column_spacing(5)
-                .style(Style::default().bg(Color::DarkGray).fg(Color::White));
-            frame.render_widget(table, rect.inner(Margin { vertical: 4, horizontal: 4 }));
+            let table = Table::new(
+                rows,
+                [Constraint::Percentage(20), Constraint::Percentage(80)],
+            )
+            .header(
+                Row::new(vec!["Key", "Action"]).bottom_margin(1).style(
+                    Style::default()
+                        .add_modifier(Modifier::BOLD)
+                        .bg(Color::Blue)
+                        .fg(Color::White),
+                ),
+            )
+            .column_spacing(5)
+            .style(Style::default().bg(Color::DarkGray).fg(Color::White));
+            frame.render_widget(
+                table,
+                rect.inner(Margin {
+                    vertical: 4,
+                    horizontal: 4,
+                }),
+            );
         };
 
         frame.render_widget(
             Block::default()
                 .title(
-                    ratatui::widgets::block::Title::from(format!(
+                    Line::from(format!(
                         "{:?}",
-                        &self.last_events.iter().map(|k| key_event_to_string(k)).collect::<Vec<_>>()
+                        &self
+                            .last_events
+                            .iter()
+                            .map(|k| key_event_to_string(k))
+                            .collect::<Vec<_>>()
                     ))
-                    .alignment(Alignment::Right),
+                    .right_aligned(),
                 )
-                .title_style(Style::default().add_modifier(Modifier::BOLD).bg(Color::Black).fg(Color::White)),
-            Rect { x: area.x + 1, y: area.height.saturating_sub(1), width: area.width.saturating_sub(2), height: 1 },
+                .title_style(
+                    Style::default()
+                        .add_modifier(Modifier::BOLD)
+                        .bg(Color::Black)
+                        .fg(Color::White),
+                ),
+            Rect {
+                x: area.x + 1,
+                y: area.height.saturating_sub(1),
+                width: area.width.saturating_sub(2),
+                height: 1,
+            },
         );
 
         Ok(())

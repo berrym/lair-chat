@@ -85,13 +85,10 @@ impl Component for FpsCounter {
         );
         let span = Span::styled(message, Style::new().magenta().dim());
         let paragraph = Paragraph::new(span).right_aligned();
-        frame.render_widget(
-            paragraph,
-            bottom.inner(Margin {
-                vertical: 0,
-                horizontal: 2,
-            }),
-        );
+        frame.render_widget(paragraph, bottom.inner(Margin {
+            vertical: 0,
+            horizontal: 2,
+        }));
         Ok(())
     }
 }
