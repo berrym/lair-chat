@@ -283,7 +283,8 @@ impl Component for Home {
         let rects = Layout::default()
             .constraints([Constraint::Percentage(100), Constraint::Min(3)].as_ref())
             .split(area);
-
+        let width: usize = rects[0].width.into();
+        let mut scroll: usize = 0;
         let mut text: Vec<Line> = Vec::<Line>::new();
         text.insert(0, "".into());
         let messages: Vec<Line> = MESSAGES
@@ -298,17 +299,20 @@ impl Component for Home {
             text.insert(0, "No messages to display.".dim().into());
         } else {
             for l in messages {
+                if l.width() >= width || l.width() == 0 {
+                    scroll += 1;
+                }
                 text.insert(0, l.into());
             }
         }
         text.insert(0, "".into());
-
+        scroll += 1;
         let height: usize = rects[0].height.into();
         let mut p: Vec<Line> = Vec::new();
         let count = text.len();
         if count > 0 {
-            if count > height {
-                p.append(&mut text[0..height].to_vec());
+            if count >= height - 1 {
+                p.append(&mut text[0..height - 2].to_vec());
             } else {
                 p.append(&mut text);
             }
@@ -319,10 +323,10 @@ impl Component for Home {
 
         frame.render_widget(
             Paragraph::new(text)
-                .scroll((1, 0))
+                .scroll((scroll as u16, 0))
                 .block(
                     Block::default()
-                        .title_top(Line::from("v0.4.1".white()).left_aligned())
+                        .title_top(Line::from("v0.4.2".white()).left_aligned())
                         .title_top(Line::from("THE LAIR".yellow().bold()).centered())
                         .title_top(Line::from("(C) 2025".white()).right_aligned())
                         .borders(Borders::ALL)

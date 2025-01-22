@@ -133,7 +133,7 @@ pub fn split_tcp_stream(stream: TcpStream) -> Result<(ClientStream, ClientSink)>
 }
 
 pub async fn connect_client(input: Input, address: SocketAddr) {
-    add_text_message(format!("Connecting to {}", address.clone().to_string()).to_string());
+    add_text_message(format!("Connecting to {}", address.clone()));
     let stream = TcpStream::connect(address).await;
     if stream.is_ok() {
         add_text_message("Connected to server.".to_owned());
@@ -141,7 +141,7 @@ pub async fn connect_client(input: Input, address: SocketAddr) {
         tokio::task::spawn_blocking(move || {
             CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
             let (reader, writer) = split_tcp_stream(stream.unwrap()).unwrap();
-            let _ = client_io_select_loop(input, reader, writer);
+            client_io_select_loop(input, reader, writer);
         });
     } else {
         add_text_message("Failed to connect to server.".to_owned());
@@ -152,8 +152,7 @@ pub async fn connect_client(input: Input, address: SocketAddr) {
 pub fn client_io_select_loop(
     input: Input,
     reader: ClientStream,
-    writer: ClientSink,
-) -> Result<(), Box<dyn std::error::Error>> {
+    writer: ClientSink) {
     // create private/public keys
     let client_secret_key = EphemeralSecret::random();
     let client_public_key = PublicKey::from(&client_secret_key);
@@ -172,7 +171,7 @@ pub fn client_io_select_loop(
             Some(key_string) => key_string,
             None => {
                 add_text_message("Failed to get server public key!.".to_owned());
-                return Ok(());
+                return;
             }
         };
         // keep converting until key is a 32 byte u8 array
@@ -180,7 +179,7 @@ pub fn client_io_select_loop(
             Ok(key_vec) => BASE64_STANDARD.decode(key_vec).unwrap(),
             _ => {
                 add_text_message("Failed to convert server public key to byte vec!".to_owned());
-                return Err("failed to convert server public key to byte vec");
+                return;
             }
         };
         let server_public_key_slice: &[u8] = match server_public_key_vec.as_slice().try_into() {
@@ -189,7 +188,7 @@ pub fn client_io_select_loop(
                 add_text_message(
                     "Failed to convert server public key byte vec to byte slice!".to_owned(),
                 );
-                return Err("failed to convert server public key byte vec to byte slice");
+                return;
             }
         };
         let server_public_key_array: [u8; 32] = match server_public_key_slice.try_into() {
@@ -198,7 +197,7 @@ pub fn client_io_select_loop(
                 add_text_message(
                     "Failed to convert public key byte slice to byte array!".to_owned(),
                 );
-                return Err("failed to convert public key slice to array");
+                return;
             }
         };
         // create shared keys
@@ -233,42 +232,50 @@ pub fn client_io_select_loop(
                 _ = cancel_token.cancelled().fuse() => {
                     let mut writer = sink.tx.into_inner();
                     let _ = writer.shutdown().await;
-                    return Ok(());
+                    return;
                 },
                 message = stream.rx.next().fuse() => match message {
-                    Some(Ok(message)) => add_text_message(decrypt(shared_aes256_key.clone(), message.clone())),
+                    Some(Ok(message)) => {
+                        add_text_message(decrypt(shared_aes256_key.clone(), message.clone()));
+                        continue;
+                    },
                     None => {
                         add_text_message("The Lair has CLOSED.".to_string());
                         CANCEL_TOKEN.lock().unwrap().token.cancel();
                         CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
                         CANCEL_TOKEN.lock().unwrap().token = CancellationToken::new();
-                        return Ok(());
+                        return;
                     },
-                    _ => continue,
+                    Some(Err(e)) => {
+                        add_text_message(format!("Closed connection with error: {e}"));
+                        CANCEL_TOKEN.lock().unwrap().token.cancel();
+                        CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
+                        CANCEL_TOKEN.lock().unwrap().token = CancellationToken::new();
+                        return;
+                    }
                 },
                 message = get_user_input(input.clone()).fuse() => match message {
                     Some(message) => {
                         let _ = sink.tx.send(encrypt(shared_aes256_key.clone(), message.clone())).await;
                         add_text_message(format!("{}{}", "You: ".to_owned(), message.to_owned()));
-                        sleep(Duration::from_millis(250)).await;
                     },
                     None => {
                         sleep(Duration::from_millis(250)).await;
-                        continue;
                     },
                 }
             }
         }
     });
-    Ok(())
 }
 
 pub async fn disconnect_client() {
     if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
         CANCEL_TOKEN.lock().unwrap().token.cancel();
-        sleep(Duration::from_millis(250)).await;
+        MESSAGES.lock().unwrap().text.clear();
         add_text_message("Disconnected from server.".to_string());
         CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
+        sleep(Duration::from_secs(2)).await;
+        MESSAGES.lock().unwrap().text.clear();
     } else {
         add_text_message("Not connected to a server.".to_string());
     }
