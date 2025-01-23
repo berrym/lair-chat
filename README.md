@@ -1,7 +1,7 @@
 # The Lair Chat
 
 ## Current Version
-0.4.3
+0.4.4
 
 ## Description
 

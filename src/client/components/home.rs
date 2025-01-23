@@ -283,8 +283,6 @@ impl Component for Home {
         let rects = Layout::default()
             .constraints([Constraint::Percentage(100), Constraint::Min(3)].as_ref())
             .split(area);
-        let width: usize = rects[0].width.into();
-        let mut scroll: usize = 1;
         let mut text: Vec<Line> = Vec::<Line>::new();
         text.insert(0, "".into());
         let messages: Vec<Line> = MESSAGES
@@ -303,25 +301,22 @@ impl Component for Home {
             }
         }
         text.insert(0, "".into());
+        text.reverse();
 
         let height: usize = rects[0].height.into();
-        let mut p: Vec<Line> = Vec::new();
-        let len = text.len();
-        if len > 0 {
-            if len >= height - 1 {
-                p.append(&mut text[0..height - 2].to_vec());
-            } else {
-                p.append(&mut text);
-            }
-            p.reverse();
-            text.clear();
-            text.append(&mut p.clone());
+        let width: usize = rects[0].width.into();
+        let mut scroll: usize = 1;
+        let mut len = text.len();
+        // Check if paragraph is too long
+        while len >= height - 2 {
+            scroll += len - (height - 2);
+            len = len - (height - 2);
         }
-
+        // Compensate for wrapped lines
         for l in text.clone().iter() {
-            let mut len = l.width();
+            len = l.width();
             while len >= width {
-                scroll += 1;
+                scroll += 2;
                 len = len - width;
             }
         }
@@ -331,7 +326,7 @@ impl Component for Home {
                 .scroll((scroll as u16, 0))
                 .block(
                     Block::default()
-                        .title_top(Line::from("v0.4.3".white()).left_aligned())
+                        .title_top(Line::from("v0.4.4".white()).left_aligned())
                         .title_top(Line::from("THE LAIR".yellow().bold()).centered())
                         .title_top(Line::from("(C) 2025".white()).right_aligned())
                         .borders(Borders::ALL)
