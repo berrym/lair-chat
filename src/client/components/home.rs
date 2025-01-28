@@ -38,22 +38,22 @@ pub struct Home {
 }
 
 impl Home {
-    // pub fn new() -> Self {
-    //     Self::default()
-    // }
-    pub fn new() -> Home {
-        Home {
-            command_tx: None,
-            config: Config::default(),
-            show_help: false,
-            app_ticker: 0,
-            render_ticker: 0,
-            mode: Mode::Normal,
-            prev_mode: Mode::Normal,
-            input: Input::default(),
-            last_events: Vec::new(),
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
+    //pub fn new() -> Home {
+    //    Home {
+    //        command_tx: None,
+    //        config: Config::default(),
+    //        show_help: false,
+    //        app_ticker: 0,
+    //        render_ticker: 0,
+    //        mode: Mode::Normal,
+    //        prev_mode: Mode::Normal,
+    //        input: Input::default(),
+    //        last_events: Vec::new(),
+    //    }
+    //}
 
     pub fn schedule_connect_client(&mut self) {
         let tx = self.command_tx.clone().unwrap();
@@ -119,6 +119,7 @@ impl Component for Home {
                 KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     Action::Suspend
                 }
+                KeyCode::Char('f') => Action::ToggleFps,
                 KeyCode::Char('?') => Action::ToggleShowHelp,
                 KeyCode::Char('/') => {
                     if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::DISCONNECTED {
@@ -306,18 +307,45 @@ impl Component for Home {
         let height: usize = rects[0].height.into();
         let width: usize = rects[0].width.into();
         let mut scroll: usize = 1;
-        let mut len = text.len();
+        let mut len_x = text.len();
         // Check if paragraph is too long
-        while len >= height - 2 {
-            scroll += len - (height - 2);
-            len = len - (height - 2);
+        while len_x >= height - 2 {
+            scroll += len_x - (height - 2);
+            len_x -= height - 2;
         }
+
+        let mut len_y = width;
+        while len_y >= width {
+            scroll += 1;
+            len_y -= width;
+        }
+
         // Compensate for wrapped lines
         for l in text.clone().iter() {
-            len = l.width();
-            while len >= width {
-                scroll += 2;
-                len = len - width;
+            let temp = l.clone();
+            let s = temp.to_string();
+            let words: Vec<&str> = s.split(char::is_whitespace).collect();
+            let mut cycle: usize = 0;
+            for w in words.iter() {
+                let mut wlen = w.len();
+                while wlen > width  {
+                    cycle += 1;
+                    wlen -= width;
+                }
+                if cycle >= 1 {
+                    len_x = text.len();
+                    let mut cycle2:usize = 0;
+                    let mut offset = len_x + cycle;
+                    if offset >= height - 2 {
+                        while offset >= height - 2 {
+                            cycle2 += 1;
+                            offset -= height - 2;
+                        }
+                        scroll += cycle + cycle2;
+                    } else {
+                        scroll += cycle;
+                    }
+                }
             }
         }
 
