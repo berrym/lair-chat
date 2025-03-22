@@ -285,7 +285,7 @@ impl Component for Home {
             .constraints([Constraint::Percentage(100), Constraint::Min(3)].as_ref())
             .split(area);
         let mut text: Vec<Line> = Vec::<Line>::new();
-        text.insert(0, "".into());
+        text.push("".into());
         let messages: Vec<Line> = MESSAGES
             .lock()
             .unwrap()
@@ -295,14 +295,13 @@ impl Component for Home {
             .map(|l| Line::from(l.clone()))
             .collect();
         if messages.is_empty() {
-            text.insert(0, "No messages to display.".dim().into());
+            text.push("No messages to display.".dim().into());
         } else {
             for l in messages {
-                text.insert(0, l.into());
+                text.push(l.into());
             }
         }
-        text.insert(0, "".into());
-        text.reverse();
+        text.push("".into());
 
         let height: usize = rects[0].height.into();
         let width: usize = rects[0].width.into();
