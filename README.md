@@ -18,6 +18,7 @@ It is both a terminal based server and TUI client.
 - Extracted encryption functionality into separate module for better code organization
 - Extracted key exchange logic into separate function with proper error handling
 - Extracted message processing logic into focused helper functions for better maintainability
+- Fixed scrolling functionality and text rendering issues in the TUI interface
 
 **In Progress:**
 - Modular architecture redesign to improve testability and maintainability

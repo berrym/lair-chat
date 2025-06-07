@@ -658,6 +658,11 @@ impl Component for Home {
         // Calculate available height for text (accounting for borders)
         let available_height = content_area.height.saturating_sub(2) as usize; // -2 for top/bottom borders
         
+        // Debug: Ensure we have a minimum height
+        if available_height == 0 {
+            return Ok(());
+        }
+        
         // Calculate scroll position - start from the bottom of the text
         let text_len = text.len();
         
@@ -683,59 +688,8 @@ impl Component for Home {
             0
         };
         
-        // Calculate height of content when rendered (including line wrapping)
-        let content_width = content_area.width.saturating_sub(2) as usize; // -2 for left/right borders
-        // Create a temporary buffer to measure actual rendered line count
-        let mut total_lines = 0;
-        
-        // Count actual rendered lines (accounting for word wrapping)
-        for line in text.iter() {
-            let line_str = line.to_string();
-            
-            // Empty lines count as 1
-            if line_str.is_empty() {
-                total_lines += 1;
-                continue;
-            }
-            
-            // For lines with terminal color codes or other formatting
-            let stripped_line = String::from_utf8_lossy(&strip_ansi_escapes::strip(&line_str)).to_string();
-            
-            // Split into words and calculate wrapped lines
-            let mut current_line_len = 0;
-            for word in stripped_line.split_whitespace() {
-                // Handle words longer than the width (they'll be wrapped)
-                if word.len() > content_width {
-                    let chunks = (word.len() + content_width - 1) / content_width; // ceiling division
-                    total_lines += chunks;
-                    current_line_len = 0;
-                    continue;
-                }
-                
-                // If adding this word would exceed the width, start a new line
-                if current_line_len + word.len() + 1 > content_width {
-                    total_lines += 1;
-                    current_line_len = word.len();
-                } else {
-                    // Otherwise add to current line
-                    if current_line_len > 0 {
-                        current_line_len += 1; // For the space
-                    }
-                    current_line_len += word.len();
-                }
-            }
-            
-            // Add the last line if there's content
-            if current_line_len > 0 {
-                total_lines += 1;
-            } else if stripped_line.trim().is_empty() {
-                // Empty line with whitespace
-                total_lines += 1;
-            }
-        }
-        
-        // Ensure total_lines is never less than the text vector length
-        total_lines = total_lines.max(text_len);
+        // Simplified line counting - let ratatui handle wrapping
+        let total_lines = text_len;
         
         // Calculate visible percentage for scrollbar
         let _visible_percentage = if total_lines > 0 {
@@ -811,6 +765,12 @@ impl Component for Home {
         }
         
         // Render main content with appropriate scroll
+        let content_borders = if total_lines > available_height {
+            Borders::ALL & !Borders::RIGHT // Remove right border when scrollbar is present
+        } else {
+            Borders::ALL
+        };
+        
         frame.render_widget(
             Paragraph::new(text.clone())
                 .scroll((scroll_position as u16, 0))
@@ -822,7 +782,7 @@ impl Component for Home {
                             Span::styled("THE LAIR", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
                         ]).centered())
                         .title_top(Line::from("(C) 2025".white()).right_aligned())
-                        .borders(Borders::ALL & !Borders::RIGHT) // Remove right border when scrollbar is present
+                        .borders(content_borders)
                         .border_style(match self.mode {
                             Mode::Processing => Style::default().bg(Color::Black).fg(Color::Yellow),
                             _ => Style::default().bg(Color::Black).fg(Color::Cyan),
@@ -832,7 +792,7 @@ impl Component for Home {
                 .style(Style::default().bg(Color::Black).fg(Color::Green))
                 .alignment(Alignment::Left)
                 .wrap(Wrap { trim: false }),
-            rects[0],
+            content_area,
         );
 
         let width = rects[1].width.max(3) - 3; // keep 2 for borders and 1 for cursor
