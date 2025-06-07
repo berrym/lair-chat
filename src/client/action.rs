@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
 use strum::Display;
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
@@ -21,4 +22,6 @@ pub enum Action {
     ConnectClient,
     DisconnectClient,
     Update,
+    ShowConnectionDialog,
+    Connect(SocketAddr),
 }

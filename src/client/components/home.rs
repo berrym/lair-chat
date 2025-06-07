@@ -24,7 +24,6 @@ pub async fn get_user_input(mut input: Input) -> Option<String> {
     }
 }
 
-#[derive(Default)]
 pub struct Home {
     command_tx: Option<UnboundedSender<Action>>,
     config: Config,
@@ -35,11 +34,100 @@ pub struct Home {
     prev_mode: Mode,
     input: Input,
     last_events: Vec<KeyEvent>,
+    // Connection dialog fields
+    dialog_visible: bool,
+    dialog_cursor_position: usize,
+    dialog_host_input: Input,
+    dialog_port_input: Input,
+}
+
+impl Default for Home {
+    fn default() -> Self {
+        Self {
+            command_tx: None,
+            config: Config::default(),
+            show_help: false,
+            app_ticker: 0,
+            render_ticker: 0,
+            mode: Mode::Normal,
+            prev_mode: Mode::Normal,
+            input: Input::default(),
+            last_events: Vec::new(),
+            // Dialog defaults
+            dialog_visible: false,
+            dialog_cursor_position: 0,
+            dialog_host_input: Input::default(),
+            dialog_port_input: Input::default(),
+        }
+    }
 }
 
 impl Home {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    // Connection dialog methods
+    fn show_dialog(&mut self) {
+        self.dialog_visible = true;
+        self.dialog_cursor_position = 0;
+    }
+
+    fn hide_dialog(&mut self) {
+        self.dialog_visible = false;
+    }
+
+    fn next_dialog_position(&mut self) {
+        self.dialog_cursor_position = (self.dialog_cursor_position + 1) % 4;
+    }
+
+    fn previous_dialog_position(&mut self) {
+        self.dialog_cursor_position = (self.dialog_cursor_position + 3) % 4;
+    }
+
+    fn connect_from_dialog(&mut self) -> Result<Option<Action>> {
+        if let Some(_tx) = &self.command_tx {
+            let host = self.dialog_host_input.value().to_string();
+            let port_str = self.dialog_port_input.value().to_string();
+            
+            // Validate inputs
+            if host.is_empty() {
+                add_text_message("Host cannot be empty".to_string());
+                return Ok(None);
+            }
+            
+            let port = match port_str.parse::<u16>() {
+                Ok(p) => p,
+                Err(_) => {
+                    add_text_message("Invalid port number".to_string());
+                    return Ok(None);
+                }
+            };
+            
+            // Try to parse the socket address
+            let addr_str = format!("{}:{}", host, port);
+            match addr_str.parse::<SocketAddr>() {
+                Ok(addr) => {
+                    // Schedule connection
+                    self.hide_dialog();
+                    
+                    // Reset the inputs for next time
+                    self.dialog_host_input = Input::default();
+                    self.dialog_port_input = Input::default();
+                    
+                    let input = self.input.clone();
+                    tokio::spawn(async move {
+                        connect_client(input, addr).await;
+                    });
+                    
+                    return Ok(Some(Action::Update));
+                }
+                Err(_) => {
+                    add_text_message("Invalid address format".to_string());
+                }
+            }
+        }
+        Ok(None)
     }
     //pub fn new() -> Home {
     //    Home {
@@ -54,17 +142,6 @@ impl Home {
     //        last_events: Vec::new(),
     //    }
     //}
-
-    pub fn schedule_connect_client(&mut self) {
-        let tx = self.command_tx.clone().unwrap();
-        tokio::spawn(async move {
-            tx.send(Action::EnterProcessing).unwrap();
-            tokio::time::sleep(Duration::from_millis(250)).await;
-            tx.send(Action::ConnectClient).unwrap();
-            tokio::time::sleep(Duration::from_millis(250)).await;
-            tx.send(Action::ExitProcessing).unwrap();
-        });
-    }
 
     pub fn schedule_disconnect_client(&mut self) {
         let tx = self.command_tx.clone().unwrap();
@@ -102,6 +179,92 @@ impl Component for Home {
 
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
         self.last_events.push(key.clone());
+        
+        // Handle dialog keys if dialog is visible
+        if self.dialog_visible {
+            match key.code {
+                KeyCode::Esc => {
+                    self.hide_dialog();
+                    return Ok(Some(Action::Update));
+                }
+                KeyCode::Tab => {
+                    self.next_dialog_position();
+                    return Ok(Some(Action::Update));
+                }
+                KeyCode::BackTab => {
+                    self.previous_dialog_position();
+                    return Ok(Some(Action::Update));
+                }
+                KeyCode::Down | KeyCode::Right => {
+                    self.next_dialog_position();
+                    return Ok(Some(Action::Update));
+                }
+                KeyCode::Up | KeyCode::Left => {
+                    self.previous_dialog_position();
+                    return Ok(Some(Action::Update));
+                }
+                KeyCode::Enter => {
+                    match self.dialog_cursor_position {
+                        2 => {
+                            // Connect button
+                            return self.connect_from_dialog();
+                        }
+                        3 => {
+                            // Cancel button
+                            self.hide_dialog();
+                            return Ok(Some(Action::Update));
+                        }
+                        _ => {
+                            // Move to next field when pressing Enter in input fields
+                            self.next_dialog_position();
+                            return Ok(Some(Action::Update));
+                        }
+                    }
+                }
+                _ => {
+                    // Handle input for the active field
+                    match self.dialog_cursor_position {
+                        0 => {
+                            // Host input field
+                            self.dialog_host_input.handle_event(&crossterm::event::Event::Key(key));
+                            // Force redraw
+                            return Ok(Some(Action::Render));
+                        }
+                        1 => {
+                            // Port input field - only allow numbers
+                            match key.code {
+                                KeyCode::Char(c) if c.is_digit(10) => {
+                                    // Directly modify the port input to ensure it's updated
+                                    let current = self.dialog_port_input.value().to_string();
+                                    let new_value = format!("{}{}", current, c);
+                                    self.dialog_port_input = Input::from(new_value);
+                    
+                                    // Force redraw
+                                    return Ok(Some(Action::Render));
+                                }
+                                KeyCode::Backspace => {
+                                    // Directly handle backspace
+                                    let current = self.dialog_port_input.value().to_string();
+                                    if !current.is_empty() {
+                                        let new_value = current[..current.len()-1].to_string();
+                                        self.dialog_port_input = Input::from(new_value);
+                        
+                                    }
+        
+                                    // Force redraw
+                                    return Ok(Some(Action::Render));
+                                }
+                                _ => {}
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            return Ok(Some(Action::Update));
+        }
+        
+        // Handle regular keys when dialog is not visible
         let action = match self.mode {
             Mode::Normal | Mode::Processing => match key.code {
                 KeyCode::Char('q') => {
@@ -140,7 +303,7 @@ impl Component for Home {
                         add_text_message("Already connected to a server.".to_string());
                         return Ok(Some(Action::Update));
                     }
-                    self.schedule_connect_client();
+                    self.show_dialog();
                     Action::Update
                 }
                 KeyCode::Char('c') => {
@@ -148,7 +311,7 @@ impl Component for Home {
                         add_text_message("Already connected to a server.".to_string());
                         return Ok(Some(Action::Update));
                     }
-                    self.schedule_connect_client();
+                    self.show_dialog();
                     Action::Update
                 }
                 KeyCode::Char('d') => {
@@ -169,7 +332,7 @@ impl Component for Home {
                         add_text_message("Already connected to a server.".to_string());
                         return Ok(Some(Action::Update));
                     }
-                    self.schedule_connect_client();
+                    self.show_dialog();
                     Action::Update
                 }
                 KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -187,7 +350,7 @@ impl Component for Home {
                 KeyCode::Enter => {
                     let client_status = CLIENT_STATUS.lock().unwrap();
                     if client_status.status == ConnectionStatus::DISCONNECTED {
-                        self.schedule_connect_client();
+                        self.show_dialog();
                         return Ok(Some(Action::Update));
                     }
                     let message = self.input.value();
@@ -259,6 +422,9 @@ impl Component for Home {
                 tokio::spawn(async move {
                     connect_client(input, address).await;
                 });
+            }
+            Action::ShowConnectionDialog => {
+                self.show_dialog();
             }
             Action::DisconnectClient => {
                 tokio::spawn(async move {
@@ -417,6 +583,169 @@ impl Component for Home {
             ))
         }
 
+        // Draw connection dialog if visible
+        if self.dialog_visible {
+            // Calculate dialog dimensions
+            let dialog_width = 60; // Wider dialog for better field display
+            let dialog_height = 14; // Taller for better spacing
+            
+            let dialog_area = Rect::new(
+                (area.width.saturating_sub(dialog_width)) / 2,
+                (area.height.saturating_sub(dialog_height)) / 2,
+                dialog_width.min(area.width),
+                dialog_height.min(area.height),
+            );
+
+            // Draw a clear background behind the dialog to create a modal effect
+            frame.render_widget(Clear, dialog_area);
+            
+            // Dialog border
+            let dialog_block = Block::default()
+                .title("Connect to Server")
+                .borders(Borders::ALL)
+                .style(Style::default().bg(Color::DarkGray).fg(Color::White));
+            
+            frame.render_widget(dialog_block.clone(), dialog_area);
+            
+            // Create inner area for the dialog content
+            let inner_area = dialog_block.inner(dialog_area);
+            
+            // Create layout for the dialog content
+            let layout = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(1),  // Padding
+                    Constraint::Length(3),  // Host input
+                    Constraint::Length(3),  // Port input 
+                    Constraint::Length(1),  // Buttons
+                    Constraint::Length(1),  // Padding
+                ])
+                .split(inner_area);
+
+            // Host input field
+            let host_input_style = if self.dialog_cursor_position == 0 {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default()
+            };
+            
+            let host_block = Block::default()
+                .title("Host")
+                .borders(Borders::ALL)
+                .style(host_input_style);
+            
+            // Get the host value for display
+            let host_value = self.dialog_host_input.value().to_string();
+            
+            // Render just the block without text content
+            let host_input = Paragraph::new("")
+                .block(host_block)
+                .style(host_input_style);
+            
+            frame.render_widget(host_input, layout[1]);
+            
+            // Create inner area for text with better padding
+            let host_inner_area = layout[1].inner(Margin {
+                vertical: 1,    // Avoid overwriting the title
+                horizontal: 2,  // Add horizontal padding for better appearance
+            });
+            
+            // Render the host value in the inner area only
+            let host_text = Paragraph::new(if self.dialog_cursor_position == 0 {
+                // Show cursor when this field is selected
+                format!("{}_", host_value)
+            } else {
+                host_value
+            })
+            .style(Style::default()
+                .fg(Color::White)  // White is more readable on dark gray background
+                .add_modifier(Modifier::BOLD))
+            .alignment(Alignment::Left);
+            
+            frame.render_widget(host_text, host_inner_area);
+
+            // Port input field
+            let port_input_style = if self.dialog_cursor_position == 1 {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default()
+            };
+            
+            let port_block = Block::default()
+                .title("Port")
+                .borders(Borders::ALL)
+                .style(port_input_style);
+            
+            // Get the port value for display
+            let port_value = self.dialog_port_input.value().to_string();
+            
+            // Port value for display
+            
+            // Render just the block without text content
+            let port_input = Paragraph::new("")
+                .block(port_block)
+                .style(port_input_style);
+            
+            frame.render_widget(port_input, layout[2]);
+            
+            // Create larger inner area for port text to ensure visibility
+            let port_inner_area = layout[2].inner(Margin { 
+                vertical: 1,    // Avoid overwriting the title
+                horizontal: 2,  // Add more horizontal padding for better appearance
+            });
+            
+            // Render the port value with enhanced visibility - make it stand out more
+            let display_text = if self.dialog_cursor_position == 1 {
+                format!("{}_", port_value)
+            } else {
+                port_value.clone()
+            };
+            
+            // Use a bold, bright text to ensure visibility
+            let value_text = Paragraph::new(display_text)
+                .style(Style::default()
+                    .fg(Color::White)  // White is more readable on dark gray background
+                    .add_modifier(Modifier::BOLD))
+                .alignment(Alignment::Left);
+            
+            frame.render_widget(value_text, port_inner_area);
+
+            // Buttons
+            let button_layout = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(50),
+                    Constraint::Percentage(50),
+                ])
+                .split(layout[3]);
+
+            // Connect button
+            let connect_style = if self.dialog_cursor_position == 2 {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default()
+            };
+            
+            let connect_button = Paragraph::new("[ Connect ]")
+                .alignment(Alignment::Center)
+                .style(connect_style);
+            
+            frame.render_widget(connect_button, button_layout[0]);
+
+            // Cancel button
+            let cancel_style = if self.dialog_cursor_position == 3 {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default()
+            };
+            
+            let cancel_button = Paragraph::new("[ Cancel ]")
+                .alignment(Alignment::Center)
+                .style(cancel_style);
+            
+            frame.render_widget(cancel_button, button_layout[1]);
+        }
+
         if self.show_help {
             let rect = area.inner(Margin {
                 horizontal: 4,
@@ -436,7 +765,8 @@ impl Component for Home {
                 Row::new(vec!["/", "Enter Input Mode"]),
                 Row::new(vec!["enter", "Submit Input"]),
                 Row::new(vec!["esc", "Exit Input Mode"]),
-                Row::new(vec!["c", "Connect to Server"]),
+                Row::new(vec!["c", "Open Connection Dialog"]),
+                Row::new(vec!["F2", "Open Connection Dialog"]),
                 Row::new(vec!["d", "Disconnect"]),
                 Row::new(vec!["q", "Quit"]),
                 Row::new(vec!["ctrl-z", "Suspend Program"]),

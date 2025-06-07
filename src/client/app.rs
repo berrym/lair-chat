@@ -148,6 +148,13 @@ impl App {
                 Action::ClearScreen => tui.terminal.clear()?,
                 Action::Resize(w, h) => self.handle_resize(tui, w, h)?,
                 Action::Render => self.render(tui)?,
+                Action::Connect(addr) => {
+                    // This will be handled by the Home component
+                    let input = tui_input::Input::default();
+                    tokio::spawn(async move {
+                        crate::transport::connect_client(input, addr).await;
+                    });
+                }
                 _ => {}
             }
             for component in self.components.iter_mut() {
