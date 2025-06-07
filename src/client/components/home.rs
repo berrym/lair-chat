@@ -41,6 +41,11 @@ pub struct Home {
     dialog_port_input: Input,
 }
 
+// Static state variables for scrolling
+static mut SCROLL_OFFSET_STATE: usize = 0;
+static mut PREV_TEXT_LEN_STATE: usize = 0;
+static mut MANUAL_SCROLL_STATE: bool = false;
+
 impl Default for Home {
     fn default() -> Self {
         Self {
@@ -179,6 +184,56 @@ impl Component for Home {
 
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
         self.last_events.push(key.clone());
+        
+        // Handle scrolling with PageUp and PageDown
+        if self.mode == Mode::Normal || self.mode == Mode::Processing {
+            match key.code {
+                KeyCode::PageUp => {
+                    unsafe {
+                        // Mark as manual scroll to disable auto-follow
+                        MANUAL_SCROLL_STATE = true;
+                        // Scroll up by reducing the scroll offset
+                        if SCROLL_OFFSET_STATE > 5 {
+                            SCROLL_OFFSET_STATE -= 5;
+                        } else {
+                            SCROLL_OFFSET_STATE = 0;
+                        }
+                    }
+                    return Ok(Some(Action::Render));
+                },
+                KeyCode::PageDown => {
+                    unsafe {
+                        // Scroll down by increasing the scroll offset
+                        SCROLL_OFFSET_STATE += 5;
+                        
+                        // If we reach the bottom, enable auto-follow again
+                        let messages_len = MESSAGES.lock().unwrap().text.len();
+                        if SCROLL_OFFSET_STATE >= messages_len {
+                            MANUAL_SCROLL_STATE = false;
+                        }
+                    }
+                    return Ok(Some(Action::Render));
+                },
+                KeyCode::End => {
+                    unsafe {
+                        // Scroll to the end and re-enable auto-follow
+                        let messages_len = MESSAGES.lock().unwrap().text.len();
+                        SCROLL_OFFSET_STATE = messages_len;
+                        MANUAL_SCROLL_STATE = false;
+                    }
+                    return Ok(Some(Action::Render));
+                },
+                KeyCode::Home => {
+                    unsafe {
+                        // Scroll to the top
+                        SCROLL_OFFSET_STATE = 0;
+                        MANUAL_SCROLL_STATE = true;
+                    }
+                    return Ok(Some(Action::Render));
+                },
+                _ => {}
+            }
+        }
         
         // Handle dialog keys if dialog is visible
         if self.dialog_visible {
@@ -450,6 +505,20 @@ impl Component for Home {
         let rects = Layout::default()
             .constraints([Constraint::Percentage(100), Constraint::Min(3)].as_ref())
             .split(area);
+            
+        // Create a horizontal layout for the main content and scrollbar
+        let content_layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Min(1),     // Main content area
+                Constraint::Length(1),  // Scrollbar
+            ])
+            .split(rects[0]);
+            
+        let content_area = content_layout[0];
+        let scrollbar_area = content_layout[1];
+        
+        // Prepare text content
         let mut text: Vec<Line> = Vec::<Line>::new();
         text.push("".into());
         let messages: Vec<Line> = MESSAGES
@@ -469,60 +538,145 @@ impl Component for Home {
         }
         text.push("".into());
 
-        let height: usize = rects[0].height.into();
-        let width: usize = rects[0].width.into();
-        let mut scroll: usize = 1;
-        let mut len_x = text.len();
-        // Check if paragraph is too long
-        while len_x >= height - 2 {
-            scroll += len_x - (height - 2);
-            len_x -= height - 2;
+        // Calculate available height for text (accounting for borders)
+        let available_height = content_area.height.saturating_sub(2) as usize; // -2 for top/bottom borders
+        
+        // Calculate scroll position - start from the bottom of the text
+        let text_len = text.len();
+        
+        // Use auto-scrolling to follow the latest messages
+        // Only update the scroll position when new content is added
+        unsafe {
+            let old_text_len = PREV_TEXT_LEN_STATE;
+            // Auto-scroll when new content is added
+            if text_len > old_text_len && !MANUAL_SCROLL_STATE {
+                SCROLL_OFFSET_STATE = text_len;
+            }
+            PREV_TEXT_LEN_STATE = text_len;
         }
-
-        let mut len_y = width;
-        while len_y >= width {
-            scroll += 1;
-            len_y -= width;
-        }
-
-        // Compensate for wrapped lines
-        for l in text.clone().iter() {
-            let temp = l.clone();
-            let s = temp.to_string();
-            let words: Vec<&str> = s.split(char::is_whitespace).collect();
-            let mut cycle: usize = 0;
-            for w in words.iter() {
-                let mut wlen = w.len();
-                while wlen > width  {
-                    cycle += 1;
-                    wlen -= width;
+        
+        // Calculate scroll position to show the most recent messages
+        let scroll_position = if text_len > available_height {
+            unsafe { (SCROLL_OFFSET_STATE.saturating_sub(available_height)).min(text_len.saturating_sub(available_height)) }
+        } else {
+            0
+        };
+        
+        // Calculate height of content when rendered (including line wrapping)
+        let content_width = content_area.width.saturating_sub(2) as usize; // -2 for left/right borders
+        // Create a temporary buffer to measure actual rendered line count
+        let mut total_lines = 0;
+        
+        // Count actual rendered lines (accounting for word wrapping)
+        for line in text.iter() {
+            let line_str = line.to_string();
+            
+            // Empty lines count as 1
+            if line_str.is_empty() {
+                total_lines += 1;
+                continue;
+            }
+            
+            // For lines with terminal color codes or other formatting
+            let stripped_line = String::from_utf8_lossy(&strip_ansi_escapes::strip(&line_str)).to_string();
+            
+            // Split into words and calculate wrapped lines
+            let mut current_line_len = 0;
+            for word in stripped_line.split_whitespace() {
+                // Handle words longer than the width (they'll be wrapped)
+                if word.len() > content_width {
+                    let chunks = (word.len() + content_width - 1) / content_width; // ceiling division
+                    total_lines += chunks;
+                    current_line_len = 0;
+                    continue;
                 }
-                if cycle >= 1 {
-                    len_x = text.len();
-                    let mut cycle2:usize = 0;
-                    let mut offset = len_x + cycle;
-                    if offset >= height - 2 {
-                        while offset >= height - 2 {
-                            cycle2 += 1;
-                            offset -= height - 2;
-                        }
-                        scroll += cycle + cycle2;
-                    } else {
-                        scroll += cycle;
+                
+                // If adding this word would exceed the width, start a new line
+                if current_line_len + word.len() + 1 > content_width {
+                    total_lines += 1;
+                    current_line_len = word.len();
+                } else {
+                    // Otherwise add to current line
+                    if current_line_len > 0 {
+                        current_line_len += 1; // For the space
                     }
+                    current_line_len += word.len();
+                }
+            }
+            
+            // Add the last line if there's content
+            if current_line_len > 0 {
+                total_lines += 1;
+            } else if stripped_line.trim().is_empty() {
+                // Empty line with whitespace
+                total_lines += 1;
+            }
+        }
+        
+        // Ensure total_lines is never less than the text vector length
+        total_lines = total_lines.max(text_len);
+        
+        // Calculate visible percentage for scrollbar
+        let _visible_percentage = if total_lines > 0 {
+            (available_height as f64 / total_lines as f64).min(1.0)
+        } else {
+            1.0
+        };
+        
+        // Render scrollbar if there's enough content to scroll
+        if total_lines > available_height {
+            // Calculate scrollbar parameters
+            let scrollbar_height = scrollbar_area.height.saturating_sub(2) as usize; // Account for borders
+            let content_height = total_lines;
+            
+            // Calculate scrollbar thumb position and size
+            let thumb_height = ((scrollbar_height as f64 * available_height as f64) / content_height as f64).max(1.0) as usize;
+            let thumb_position = ((scroll_position as f64 * scrollbar_height as f64) / content_height as f64) as usize;
+            
+            // Create the scrollbar string
+            let mut scrollbar = vec![String::from("│"); scrollbar_height];
+            
+            // Draw the thumb
+            for i in thumb_position..((thumb_position + thumb_height).min(scrollbar_height)) {
+                scrollbar[i] = String::from("█");
+            }
+            
+            // Render scrollbar
+            let scrollbar_block = Block::default()
+                .borders(Borders::LEFT | Borders::RIGHT)
+                .style(Style::default().fg(Color::DarkGray));
+                
+            frame.render_widget(scrollbar_block, scrollbar_area);
+            
+            // Render scrollbar thumb
+            for (i, symbol) in scrollbar.iter().enumerate() {
+                if i < scrollbar_height {
+                    let scrollbar_piece = Paragraph::new(symbol.clone())
+                        .style(Style::default().fg(Color::Gray));
+                    frame.render_widget(
+                        scrollbar_piece,
+                        Rect::new(
+                            scrollbar_area.x,
+                            scrollbar_area.y + 1 + i as u16, // +1 to account for top border
+                            1,
+                            1
+                        )
+                    );
                 }
             }
         }
-
+        
+        // Render main content with appropriate scroll
         frame.render_widget(
-            Paragraph::new(text)
-                .scroll((scroll as u16, 0))
+            Paragraph::new(text.clone())
+                .scroll((scroll_position as u16, 0))
+                .wrap(Wrap { trim: false })
                 .block(
                     Block::default()
                         .title_top(Line::from("v0.4.4".white()).left_aligned())
                         .title_top(Line::from("THE LAIR".yellow().bold()).centered())
                         .title_top(Line::from("(C) 2025".white()).right_aligned())
-                        .borders(Borders::ALL)
+                        .borders(Borders::ALL & !Borders::RIGHT) // Remove right border when scrollbar is present
                         .border_style(match self.mode {
                             Mode::Processing => Style::default().bg(Color::Black).fg(Color::Yellow),
                             _ => Style::default().bg(Color::Black).fg(Color::Cyan),
@@ -536,13 +690,13 @@ impl Component for Home {
         );
 
         let width = rects[1].width.max(3) - 3; // keep 2 for borders and 1 for cursor
-        let scroll = self.input.visual_scroll(width as usize);
+        let input_scroll = self.input.visual_scroll(width as usize);
         let input_box = Paragraph::new(self.input.value())
             .style(match self.mode {
                 Mode::Insert => Style::default().bg(Color::Black).fg(Color::Yellow),
                 _ => Style::default().bg(Color::Black).fg(Color::White),
             })
-            .scroll((0, scroll as u16))
+            .scroll((0, input_scroll as u16)) // Fixed input box scrolling
             .block(
                 Block::default()
                     .borders(Borders::ALL)
@@ -583,7 +737,7 @@ impl Component for Home {
             ))
         }
 
-        // Draw connection dialog if visible
+        // Draw connection dialog if visible - this appears on top of everything else
         if self.dialog_visible {
             // Calculate dialog dimensions
             let dialog_width = 60; // Wider dialog for better field display
@@ -771,6 +925,10 @@ impl Component for Home {
                 Row::new(vec!["q", "Quit"]),
                 Row::new(vec!["ctrl-z", "Suspend Program"]),
                 Row::new(vec!["?", "Open/Close Help"]),
+                Row::new(vec!["PageUp", "Scroll Up"]),
+                Row::new(vec!["PageDown", "Scroll Down"]),
+                Row::new(vec!["Home", "Scroll to Top"]),
+                Row::new(vec!["End", "Scroll to Bottom"]),
             ];
             let table = Table::new(
                 rows,
