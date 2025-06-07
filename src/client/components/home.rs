@@ -230,9 +230,6 @@ impl Component for Home {
                         unsafe {
                             // Mark as manual scroll to disable auto-follow
                             MANUAL_SCROLL_STATE = true;
-                            // Add message to indicate manual scrolling
-                            add_text_message("Manual scrolling active - press End to resume auto-follow".to_string());
-                            add_text_message("Use ↑/↓ arrows for line-by-line, PageUp/PageDown for page scrolling".to_string());
                             // Scroll up by reducing the scroll offset
                             if SCROLL_OFFSET_STATE > 5 {
                                 SCROLL_OFFSET_STATE -= 5;
@@ -245,11 +242,7 @@ impl Component for Home {
                     KeyCode::Up => {
                         unsafe {
                             // Mark as manual scroll to disable auto-follow
-                            if !MANUAL_SCROLL_STATE {
-                                MANUAL_SCROLL_STATE = true;
-                                // Add message to indicate manual scrolling
-                                add_text_message("Manual scrolling active - press End to resume auto-follow".to_string());
-                            }
+                            MANUAL_SCROLL_STATE = true;
                             // Scroll up by one line
                             if SCROLL_OFFSET_STATE > 0 {
                                 SCROLL_OFFSET_STATE -= 1;
@@ -266,8 +259,6 @@ impl Component for Home {
                             let messages_len = MESSAGES.lock().unwrap().text.len();
                             if SCROLL_OFFSET_STATE >= messages_len {
                                 MANUAL_SCROLL_STATE = false;
-                                // Add message to indicate auto-follow is resumed
-                                add_text_message("Auto-follow enabled".to_string());
                             }
                         }
                         return Ok(Some(Action::Render));
@@ -281,8 +272,6 @@ impl Component for Home {
                             let messages_len = MESSAGES.lock().unwrap().text.len();
                             if SCROLL_OFFSET_STATE >= messages_len {
                                 MANUAL_SCROLL_STATE = false;
-                                // Add message to indicate auto-follow is resumed
-                                add_text_message("Auto-follow enabled".to_string());
                             }
                         }
                         return Ok(Some(Action::Render));
@@ -296,6 +285,17 @@ impl Component for Home {
                         }
                         return Ok(Some(Action::Render));
                     },
+                    // Cancel scroll mode and return to auto-follow on Escape
+                    KeyCode::Esc => {
+                        if !self.show_help {
+                            unsafe {
+                                let messages_len = MESSAGES.lock().unwrap().text.len();
+                                SCROLL_OFFSET_STATE = messages_len;
+                                MANUAL_SCROLL_STATE = false;
+                            }
+                            return Ok(Some(Action::Render));
+                        }
+                    },
                     KeyCode::Home => {
                         unsafe {
                             // Scroll to the top
@@ -304,13 +304,32 @@ impl Component for Home {
                         }
                         return Ok(Some(Action::Render));
                     },
-                    _ => {}
+                    // Any other key press exits manual scroll mode
+                    _ => {
+                        unsafe {
+                            // Exit manual scrolling mode on any non-scroll key
+                            if MANUAL_SCROLL_STATE {
+                                MANUAL_SCROLL_STATE = false;
+                                // When exiting manual scroll, set position to follow most recent messages
+                                let messages_len = MESSAGES.lock().unwrap().text.len();
+                                SCROLL_OFFSET_STATE = messages_len;
+                            }
+                        }
+                    }
                 }
             }
         }
         
-        // Handle dialog keys if dialog is visible
+        // Exit manual scroll mode and handle dialog keys if dialog is visible
         if self.dialog_visible {
+            // Exit manual scroll mode when dialog is opened
+            unsafe {
+                MANUAL_SCROLL_STATE = false;
+                // Also reset scroll position to follow latest messages
+                let messages_len = MESSAGES.lock().unwrap().text.len();
+                SCROLL_OFFSET_STATE = messages_len;
+            }
+            
             match key.code {
                 KeyCode::Esc => {
                     self.hide_dialog();
@@ -394,6 +413,17 @@ impl Component for Home {
         }
         
         // Handle regular keys when dialog is not visible
+        // Exit manual scroll mode for any action key in normal mode
+        unsafe {
+            if (self.mode == Mode::Normal || self.mode == Mode::Processing) && MANUAL_SCROLL_STATE {
+                // We're not handling a scroll key at this point, so exit manual scroll
+                MANUAL_SCROLL_STATE = false;
+                // Also reset scroll position to follow latest messages
+                let messages_len = MESSAGES.lock().unwrap().text.len();
+                SCROLL_OFFSET_STATE = messages_len;
+            }
+        }
+        
         let action = match self.mode {
             Mode::Normal | Mode::Processing => match key.code {
                 KeyCode::Char('q') => {
@@ -527,6 +557,13 @@ impl Component for Home {
             Action::EnterInsert => {
                 self.prev_mode = self.mode;
                 self.mode = Mode::Insert;
+                // Automatically exit manual scrolling when entering input mode
+                unsafe {
+                    MANUAL_SCROLL_STATE = false;
+                    // Also reset scroll position to follow latest messages
+                    let messages_len = MESSAGES.lock().unwrap().text.len();
+                    SCROLL_OFFSET_STATE = messages_len;
+                }
             }
             Action::EnterProcessing => {
                 self.prev_mode = self.mode;
@@ -628,8 +665,12 @@ impl Component for Home {
         // Only update the scroll position when new content is added
         unsafe {
             let old_text_len = PREV_TEXT_LEN_STATE;
-            // Auto-scroll when new content is added
+            // Auto-scroll when new content is added or we're not in manual mode
             if text_len > old_text_len && !MANUAL_SCROLL_STATE {
+                // Update to follow new content
+                SCROLL_OFFSET_STATE = text_len;
+            } else if !MANUAL_SCROLL_STATE {
+                // Always ensure we're at the bottom when not in manual scroll mode
                 SCROLL_OFFSET_STATE = text_len;
             }
             PREV_TEXT_LEN_STATE = text_len;
@@ -766,25 +807,7 @@ impl Component for Home {
                 }
             }
             
-            // Add scroll position indicator in content title when manually scrolling
-            unsafe {
-                if MANUAL_SCROLL_STATE {
-                    let position_text = format!(" [scroll: {}/{}]", scroll_position + 1, total_lines - available_height + 1);
-                    let scroll_indicator = Paragraph::new(position_text)
-                        .alignment(Alignment::Right)
-                        .style(Style::default().fg(Color::Yellow));
-                    
-                    frame.render_widget(
-                        scroll_indicator,
-                        Rect::new(
-                            content_area.x + 10,
-                            content_area.y,
-                            content_area.width - 20,
-                            1
-                        )
-                    );
-                }
-            }
+            // No longer displaying scroll position in title
         }
         
         // Render main content with appropriate scroll
@@ -797,8 +820,6 @@ impl Component for Home {
                         .title_top(Line::from("v0.4.4".white()).left_aligned())
                         .title_top(Line::from(vec![
                             Span::styled("THE LAIR", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                            Span::raw(" "),
-                            Span::styled("(↑↓ to scroll, End to auto-follow)", Style::default().fg(Color::DarkGray)),
                         ]).centered())
                         .title_top(Line::from("(C) 2025".white()).right_aligned())
                         .borders(Borders::ALL & !Borders::RIGHT) // Remove right border when scrollbar is present
@@ -1072,7 +1093,7 @@ impl Component for Home {
                 Row::new(vec!["PageUp", "Scroll Up One Page"]),
                 Row::new(vec!["PageDown", "Scroll Down One Page"]),
                 Row::new(vec!["Home", "Scroll to Top"]),
-                Row::new(vec!["End", "Scroll to Bottom (Resume Auto-follow)"]),
+                Row::new(vec!["End/Esc", "Return to Auto-follow"]),
                 Row::new(vec!["Tab", "Navigate Dialog Fields"]),
                 Row::new(vec!["F1", "Show Version Info"]),
             ];
@@ -1160,13 +1181,13 @@ impl Component for Home {
                     }
                 }
                 
-                // Add scroll indicators in title if scrollable
-                let scroll_indicator = format!(" [{}/{}] ", self.help_scroll + 1, max_scroll + 1);
+                // Add small scroll indicator in title if scrollable
+                let scroll_indicator = format!(" ↕ ");
                 let scroll_text = Paragraph::new(scroll_indicator)
                     .alignment(Alignment::Right)
-                    .style(Style::default().fg(Color::Yellow));
+                    .style(Style::default().fg(Color::DarkGray));
                 
-                // Render scroll position indicator
+                // Render subtle scroll indicator
                 frame.render_widget(
                     scroll_text,
                     Rect::new(
