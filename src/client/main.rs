@@ -9,6 +9,7 @@ mod app;
 mod cli;
 mod components;
 mod config;
+mod encryption;
 mod errors;
 mod logging;
 mod transport;

@@ -11,10 +11,11 @@ It is both a terminal based server and TUI client.
 ## Transport Refactoring Progress
 
 **Completed:**
-- Error handling infrastructure with comprehensive `TransportError` enum
+- Error handling infrastructure with comprehensive error enums
 - Eliminated application crashes by replacing `.expect()` calls with proper error propagation
 - Added graceful error handling with user-friendly messages
 - Established testing foundation for error conditions
+- Extracted encryption functionality into separate module for better code organization
 
 **In Progress:**
 - Modular architecture redesign to improve testability and maintainability
