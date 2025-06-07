@@ -16,6 +16,7 @@ It is both a terminal based server and TUI client.
 - Added graceful error handling with user-friendly messages
 - Established testing foundation for error conditions
 - Extracted encryption functionality into separate module for better code organization
+- Extracted key exchange logic into separate function with proper error handling
 
 **In Progress:**
 - Modular architecture redesign to improve testability and maintainability

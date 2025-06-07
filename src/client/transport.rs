@@ -23,6 +23,65 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 use crate::components::home::get_user_input;
 use super::encryption::{encrypt, decrypt, EncryptionError};
 
+/// Perform key exchange with the server and return the shared AES key
+async fn perform_key_exchange(
+    sink: &mut ClientSink,
+    stream: &mut ClientStream,
+) -> Result<String, TransportError> {
+    // create private/public keys
+    let client_secret_key = EphemeralSecret::random();
+    let client_public_key = PublicKey::from(&client_secret_key);
+    
+    // start handshake by sending public key to server
+    sink.tx
+        .send(BASE64_STANDARD.encode(client_public_key))
+        .await
+        .map_err(|e| TransportError::KeyExchangeError(format!("Failed to send public key: {}", e)))?;
+    
+    // receive server public key
+    let server_public_key_string = match stream.rx.next().await {
+        Some(key_string) => key_string,
+        None => {
+            return Err(TransportError::KeyExchangeError(
+                "Failed to get server public key".to_string(),
+            ));
+        }
+    };
+    
+    // keep converting until key is a 32 byte u8 array
+    let server_public_key_vec = match server_public_key_string {
+        Ok(key_vec) => BASE64_STANDARD.decode(key_vec).map_err(|e| {
+            TransportError::KeyExchangeError(format!(
+                "Failed to decode server public key: {}",
+                e
+            ))
+        })?,
+        Err(_) => {
+            return Err(TransportError::KeyExchangeError(
+                "Failed to receive server public key".to_string(),
+            ));
+        }
+    };
+    
+    let server_public_key_slice: &[u8] = server_public_key_vec.as_slice().try_into().map_err(|_| {
+        TransportError::KeyExchangeError(
+            "Failed to convert server public key to byte slice".to_string(),
+        )
+    })?;
+    
+    let server_public_key_array: [u8; 32] = server_public_key_slice.try_into().map_err(|_| {
+        TransportError::KeyExchangeError(
+            "Failed to convert public key to 32-byte array".to_string(),
+        )
+    })?;
+    
+    // create shared keys
+    let shared_secret = client_secret_key.diffie_hellman(&PublicKey::from(server_public_key_array));
+    let shared_aes256_key = format!("{:x}", md5::compute(BASE64_STANDARD.encode(shared_secret)));
+    
+    Ok(shared_aes256_key)
+}
+
 /// Transport-specific error types
 #[derive(Debug)]
 pub enum TransportError {
@@ -176,58 +235,19 @@ pub fn client_io_select_loop(
     input: Input,
     reader: ClientStream,
     writer: ClientSink) {
-    // create private/public keys
-    let client_secret_key = EphemeralSecret::random();
-    let client_public_key = PublicKey::from(&client_secret_key);
     // create a sink and stream for transport
     let mut stream = reader;
     let mut sink = writer;
     let cancel_token = CANCEL_TOKEN.lock().unwrap().token.clone();
     tokio::spawn(async move {
-        // start handshake by sending public key to server
-        _ = sink
-            .tx
-            .send(BASE64_STANDARD.encode(client_public_key))
-            .await;
-        // recieve server public key
-        let server_public_key_string = match stream.rx.next().await {
-            Some(key_string) => key_string,
-            None => {
-                add_text_message("Failed to get server public key!.".to_owned());
+        // perform key exchange with server
+        let shared_aes256_key = match perform_key_exchange(&mut sink, &mut stream).await {
+            Ok(key) => key,
+            Err(e) => {
+                add_text_message(format!("Key exchange failed: {}", e));
                 return;
             }
         };
-        // keep converting until key is a 32 byte u8 array
-        let server_public_key_vec = match server_public_key_string {
-            Ok(key_vec) => BASE64_STANDARD.decode(key_vec).unwrap(),
-            _ => {
-                add_text_message("Failed to convert server public key to byte vec!".to_owned());
-                return;
-            }
-        };
-        let server_public_key_slice: &[u8] = match server_public_key_vec.as_slice().try_into() {
-            Ok(key_slice) => key_slice,
-            _ => {
-                add_text_message(
-                    "Failed to convert server public key byte vec to byte slice!".to_owned(),
-                );
-                return;
-            }
-        };
-        let server_public_key_array: [u8; 32] = match server_public_key_slice.try_into() {
-            Ok(key_array) => key_array,
-            _ => {
-                add_text_message(
-                    "Failed to convert public key byte slice to byte array!".to_owned(),
-                );
-                return;
-            }
-        };
-        // create shared keys
-        let shared_secret =
-            client_secret_key.diffie_hellman(&PublicKey::from(server_public_key_array));
-        let shared_aes256_key =
-            format!("{:x}", md5::compute(BASE64_STANDARD.encode(shared_secret)));
         // main client loop
         loop {
             // process any messages
@@ -319,5 +339,36 @@ pub async fn disconnect_client() {
     }
     CANCEL_TOKEN.lock().unwrap().token = CancellationToken::new();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::encryption::EncryptionError;
+
+    #[test]
+    fn test_transport_error_display() {
+        let conn_error = TransportError::ConnectionError(std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "test"));
+        let enc_error = TransportError::EncryptionError(EncryptionError::EncryptionError("test".to_string()));
+        let key_error = TransportError::KeyExchangeError("test key exchange error".to_string());
+
+        assert!(conn_error.to_string().contains("Connection error"));
+        assert!(enc_error.to_string().contains("Encryption error"));
+        assert!(key_error.to_string().contains("Key exchange error"));
+    }
+
+    #[test]
+    fn test_error_conversion() {
+        let encryption_error = EncryptionError::EncryptionError("test".to_string());
+        let transport_error: TransportError = encryption_error.into();
+        
+        match transport_error {
+            TransportError::EncryptionError(_) => {
+                // This is expected
+            }
+            _ => panic!("Expected EncryptionError variant"),
+        }
+    }
+}
+
 
 
