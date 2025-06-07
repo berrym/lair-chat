@@ -28,6 +28,7 @@ pub struct Home {
     command_tx: Option<UnboundedSender<Action>>,
     config: Config,
     show_help: bool,
+    help_scroll: usize,      // Track help popup scroll position
     app_ticker: usize,
     render_ticker: usize,
     mode: Mode,
@@ -52,6 +53,7 @@ impl Default for Home {
             command_tx: None,
             config: Config::default(),
             show_help: false,
+            help_scroll: 0,
             app_ticker: 0,
             render_ticker: 0,
             mode: Mode::Normal,
@@ -187,51 +189,88 @@ impl Component for Home {
         
         // Handle scrolling with PageUp and PageDown
         if self.mode == Mode::Normal || self.mode == Mode::Processing {
-            match key.code {
-                KeyCode::PageUp => {
-                    unsafe {
-                        // Mark as manual scroll to disable auto-follow
-                        MANUAL_SCROLL_STATE = true;
-                        // Scroll up by reducing the scroll offset
-                        if SCROLL_OFFSET_STATE > 5 {
-                            SCROLL_OFFSET_STATE -= 5;
-                        } else {
-                            SCROLL_OFFSET_STATE = 0;
+            // Handle scrolling for the help popup if it's visible
+            if self.show_help {
+                match key.code {
+                    KeyCode::PageUp => {
+                        if self.help_scroll > 0 {
+                            self.help_scroll = self.help_scroll.saturating_sub(5);
                         }
-                    }
-                    return Ok(Some(Action::Render));
-                },
-                KeyCode::PageDown => {
-                    unsafe {
-                        // Scroll down by increasing the scroll offset
-                        SCROLL_OFFSET_STATE += 5;
-                        
-                        // If we reach the bottom, enable auto-follow again
-                        let messages_len = MESSAGES.lock().unwrap().text.len();
-                        if SCROLL_OFFSET_STATE >= messages_len {
+                        return Ok(Some(Action::Render));
+                    },
+                    KeyCode::PageDown => {
+                        self.help_scroll = self.help_scroll.saturating_add(5);
+                        return Ok(Some(Action::Render));
+                    },
+                    KeyCode::Up => {
+                        if self.help_scroll > 0 {
+                            self.help_scroll = self.help_scroll.saturating_sub(1);
+                        }
+                        return Ok(Some(Action::Render));
+                    },
+                    KeyCode::Down => {
+                        self.help_scroll = self.help_scroll.saturating_add(1);
+                        return Ok(Some(Action::Render));
+                    },
+                    KeyCode::Home => {
+                        self.help_scroll = 0;
+                        return Ok(Some(Action::Render));
+                    },
+                    KeyCode::End => {
+                        // Will be capped in the render code
+                        self.help_scroll = 999; // Large number, will be constrained by max scroll
+                        return Ok(Some(Action::Render));
+                    },
+                    _ => {}
+                }
+            } else {
+                // Handle scrolling for the main content
+                match key.code {
+                    KeyCode::PageUp => {
+                        unsafe {
+                            // Mark as manual scroll to disable auto-follow
+                            MANUAL_SCROLL_STATE = true;
+                            // Scroll up by reducing the scroll offset
+                            if SCROLL_OFFSET_STATE > 5 {
+                                SCROLL_OFFSET_STATE -= 5;
+                            } else {
+                                SCROLL_OFFSET_STATE = 0;
+                            }
+                        }
+                        return Ok(Some(Action::Render));
+                    },
+                    KeyCode::PageDown => {
+                        unsafe {
+                            // Scroll down by increasing the scroll offset
+                            SCROLL_OFFSET_STATE += 5;
+                            
+                            // If we reach the bottom, enable auto-follow again
+                            let messages_len = MESSAGES.lock().unwrap().text.len();
+                            if SCROLL_OFFSET_STATE >= messages_len {
+                                MANUAL_SCROLL_STATE = false;
+                            }
+                        }
+                        return Ok(Some(Action::Render));
+                    },
+                    KeyCode::End => {
+                        unsafe {
+                            // Scroll to the end and re-enable auto-follow
+                            let messages_len = MESSAGES.lock().unwrap().text.len();
+                            SCROLL_OFFSET_STATE = messages_len;
                             MANUAL_SCROLL_STATE = false;
                         }
-                    }
-                    return Ok(Some(Action::Render));
-                },
-                KeyCode::End => {
-                    unsafe {
-                        // Scroll to the end and re-enable auto-follow
-                        let messages_len = MESSAGES.lock().unwrap().text.len();
-                        SCROLL_OFFSET_STATE = messages_len;
-                        MANUAL_SCROLL_STATE = false;
-                    }
-                    return Ok(Some(Action::Render));
-                },
-                KeyCode::Home => {
-                    unsafe {
-                        // Scroll to the top
-                        SCROLL_OFFSET_STATE = 0;
-                        MANUAL_SCROLL_STATE = true;
-                    }
-                    return Ok(Some(Action::Render));
-                },
-                _ => {}
+                        return Ok(Some(Action::Render));
+                    },
+                    KeyCode::Home => {
+                        unsafe {
+                            // Scroll to the top
+                            SCROLL_OFFSET_STATE = 0;
+                            MANUAL_SCROLL_STATE = true;
+                        }
+                        return Ok(Some(Action::Render));
+                    },
+                    _ => {}
+                }
             }
         }
         
@@ -376,6 +415,7 @@ impl Component for Home {
                 KeyCode::Esc => {
                     if self.show_help {
                         self.show_help = false;
+                        self.help_scroll = 0; // Reset help scroll position when closing
                     }
                     Action::Update
                 }
@@ -439,7 +479,12 @@ impl Component for Home {
         match action {
             Action::Tick => self.tick(),
             Action::Render => self.render_tick(),
-            Action::ToggleShowHelp => self.show_help = !self.show_help,
+            Action::ToggleShowHelp => {
+                self.show_help = !self.show_help;
+                if self.show_help {
+                    self.help_scroll = 0; // Reset scroll position when opening help
+                }
+            },
             Action::EnterNormal => {
                 self.prev_mode = self.mode;
                 self.mode = Mode::Normal;
@@ -906,6 +951,20 @@ impl Component for Home {
                 vertical: 2,
             });
             frame.render_widget(Clear, rect);
+            
+            // Create layout with content area and scrollbar
+            let help_layout = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Min(10),      // Content area
+                    Constraint::Length(1),    // Scrollbar
+                ])
+                .split(rect);
+                
+            let content_area = help_layout[0];
+            let scrollbar_area = help_layout[1];
+            
+            // Create the block for the help dialog
             let block = Block::default()
                 .title(Line::from(vec![Span::styled(
                     "Key Bindings",
@@ -914,7 +973,10 @@ impl Component for Home {
                 .title_alignment(Alignment::Center)
                 .borders(Borders::ALL)
                 .border_style(Style::default().bg(Color::Blue).fg(Color::Yellow));
-            frame.render_widget(block, rect);
+                
+            frame.render_widget(block.clone(), content_area);
+            
+            // Create rows for the help table
             let rows = vec![
                 Row::new(vec!["/", "Enter Input Mode"]),
                 Row::new(vec!["enter", "Submit Input"]),
@@ -929,9 +991,38 @@ impl Component for Home {
                 Row::new(vec!["PageDown", "Scroll Down"]),
                 Row::new(vec!["Home", "Scroll to Top"]),
                 Row::new(vec!["End", "Scroll to Bottom"]),
+                // Extra rows to demonstrate scrolling
+                Row::new(vec!["↑/↓", "Scroll Help Up/Down"]),
+                Row::new(vec!["F1", "Show Version Info"]),
+                Row::new(vec!["Tab", "Navigate Dialog Fields"]),
             ];
+            
+            // Calculate available height for the table content
+            let inner_area = content_area.inner(Margin {
+                vertical: 4,
+                horizontal: 4,
+            });
+            
+            let available_height = inner_area.height as usize;
+            
+            // Calculate maximum scroll position
+            let max_scroll = if rows.len() > available_height {
+                rows.len() - available_height
+            } else {
+                0
+            };
+            
+            // Constrain scroll position
+            self.help_scroll = self.help_scroll.min(max_scroll);
+            
+            // Create a scrollable table
             let table = Table::new(
-                rows,
+                // Take a slice of rows based on scroll position
+                rows.iter()
+                   .skip(self.help_scroll)
+                   .take(available_height)
+                   .cloned()
+                   .collect::<Vec<_>>(),
                 [Constraint::Percentage(20), Constraint::Percentage(80)],
             )
             .header(
@@ -944,13 +1035,68 @@ impl Component for Home {
             )
             .column_spacing(5)
             .style(Style::default().bg(Color::DarkGray).fg(Color::White));
-            frame.render_widget(
-                table,
-                rect.inner(Margin {
-                    vertical: 4,
-                    horizontal: 4,
-                }),
-            );
+            
+            // Render the table
+            frame.render_widget(table, inner_area);
+            
+            // Render scrollbar if needed
+            if max_scroll > 0 {
+                // Calculate scrollbar thumb parameters
+                let scrollbar_height = scrollbar_area.height.saturating_sub(2) as usize;
+                let thumb_height = ((available_height as f64 / rows.len() as f64) * scrollbar_height as f64).max(1.0) as usize;
+                let thumb_position = ((self.help_scroll as f64 / max_scroll as f64) * (scrollbar_height - thumb_height) as f64) as usize;
+                
+                // Create scrollbar block
+                let scrollbar_block = Block::default()
+                    .borders(Borders::LEFT | Borders::RIGHT)
+                    .style(Style::default().fg(Color::DarkGray));
+                    
+                frame.render_widget(scrollbar_block, scrollbar_area);
+                
+                // Create scrollbar elements
+                let mut scrollbar = vec![String::from("│"); scrollbar_height];
+                
+                // Draw the thumb
+                for i in thumb_position..thumb_position + thumb_height {
+                    if i < scrollbar_height {
+                        scrollbar[i] = String::from("█");
+                    }
+                }
+                
+                // Render scrollbar thumb
+                for (i, symbol) in scrollbar.iter().enumerate() {
+                    if i < scrollbar_height {
+                        let scrollbar_piece = Paragraph::new(symbol.clone())
+                            .style(Style::default().fg(Color::Gray));
+                        frame.render_widget(
+                            scrollbar_piece,
+                            Rect::new(
+                                scrollbar_area.x,
+                                scrollbar_area.y + 1 + i as u16, // +1 for top border
+                                1,
+                                1
+                            )
+                        );
+                    }
+                }
+                
+                // Add scroll indicators in title if scrollable
+                let scroll_indicator = format!(" [{}/{}] ", self.help_scroll + 1, max_scroll + 1);
+                let scroll_text = Paragraph::new(scroll_indicator)
+                    .alignment(Alignment::Right)
+                    .style(Style::default().fg(Color::Yellow));
+                
+                // Render scroll position indicator
+                frame.render_widget(
+                    scroll_text,
+                    Rect::new(
+                        content_area.x + 2,
+                        content_area.y,
+                        content_area.width - 4,
+                        1
+                    )
+                );
+            }
         };
 
         frame.render_widget(
