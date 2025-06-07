@@ -26,6 +26,30 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::components::home::get_user_input;
 
+/// Transport-specific error types
+#[derive(Debug)]
+pub enum TransportError {
+    ConnectionError(std::io::Error),
+    EncryptionError(String),
+    DecryptionError(String),
+    KeyExchangeError(String),
+    EncodingError(String),
+}
+
+impl std::fmt::Display for TransportError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TransportError::ConnectionError(e) => write!(f, "Connection error: {}", e),
+            TransportError::EncryptionError(msg) => write!(f, "Encryption error: {}", msg),
+            TransportError::DecryptionError(msg) => write!(f, "Decryption error: {}", msg),
+            TransportError::KeyExchangeError(msg) => write!(f, "Key exchange error: {}", msg),
+            TransportError::EncodingError(msg) => write!(f, "Encoding error: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for TransportError {}
+
 /// Shorthand for a pinned boxed stream
 pub type BoxedStream<Item> = Pin<Box<dyn Stream<Item = Item> + Send>>;
 /// Shorthand for a lines framed BoxedStream type we will use
@@ -209,23 +233,24 @@ pub fn client_io_select_loop(
         loop {
             // process any messages
             if !MESSAGES.lock().unwrap().outgoing.is_empty() {
-                let outgoing: Vec<String> = MESSAGES
+                let outgoing_messages: Vec<String> = MESSAGES
                     .lock()
                     .unwrap()
                     .outgoing
-                    .clone()
-                    .iter()
-                    .map(|l| encrypt(shared_aes256_key.clone(), String::from(l.clone())))
-                    .collect();
-                for message in outgoing {
-                    add_text_message(format!(
-                        "{}{}",
-                        "You: ".to_owned(),
-                        decrypt(shared_aes256_key.clone(), message.clone())
-                    ));
-                    let _ = sink.tx.send(message.clone()).await;
-                    MESSAGES.lock().unwrap().outgoing.clear();
+                    .clone();
+                    
+                for original_message in outgoing_messages {
+                    match encrypt(shared_aes256_key.clone(), original_message.clone()) {
+                        Ok(encrypted_message) => {
+                            add_text_message(format!("You: {}", original_message));
+                            let _ = sink.tx.send(encrypted_message).await;
+                        }
+                        Err(e) => {
+                            add_text_message(format!("Failed to encrypt message: {}", e));
+                        }
+                    }
                 }
+                MESSAGES.lock().unwrap().outgoing.clear();
             }
             // select on futures
             select! {
@@ -236,7 +261,14 @@ pub fn client_io_select_loop(
                 },
                 message = stream.rx.next().fuse() => match message {
                     Some(Ok(message)) => {
-                        add_text_message(decrypt(shared_aes256_key.clone(), message.clone()));
+                        match decrypt(shared_aes256_key.clone(), message.clone()) {
+                            Ok(decrypted_message) => {
+                                add_text_message(decrypted_message);
+                            }
+                            Err(e) => {
+                                add_text_message(format!("Failed to decrypt message: {}", e));
+                            }
+                        }
                         continue;
                     },
                     None => {
@@ -256,8 +288,15 @@ pub fn client_io_select_loop(
                 },
                 message = get_user_input(input.clone()).fuse() => match message {
                     Some(message) => {
-                        let _ = sink.tx.send(encrypt(shared_aes256_key.clone(), message.clone())).await;
-                        add_text_message(format!("{}{}", "You: ".to_owned(), message.to_owned()));
+                        match encrypt(shared_aes256_key.clone(), message.clone()) {
+                            Ok(encrypted_message) => {
+                                let _ = sink.tx.send(encrypted_message).await;
+                                add_text_message(format!("You: {}", message));
+                            }
+                            Err(e) => {
+                                add_text_message(format!("Failed to encrypt message: {}", e));
+                            }
+                        }
                     },
                     None => {
                         sleep(Duration::from_millis(250)).await;
@@ -283,28 +322,88 @@ pub async fn disconnect_client() {
 }
 
 // encrypt strings with Aes256Gcm
-fn encrypt(key_str: String, plaintext: String) -> String {
+fn encrypt(key_str: String, plaintext: String) -> Result<String, TransportError> {
     let key = Key::<Aes256Gcm>::from_slice(key_str.as_bytes());
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
     let cipher = Aes256Gcm::new(key);
     let ciphered_data = cipher
         .encrypt(&nonce, plaintext.as_bytes())
-        .expect("failed to encrypt");
+        .map_err(|e| TransportError::EncryptionError(e.to_string()))?;
     // combining nonce and encrypted data together for storage purpose
     let mut encrypted_data: Vec<u8> = nonce.to_vec();
     encrypted_data.extend_from_slice(&ciphered_data);
-    BASE64_STANDARD.encode(encrypted_data)
+    Ok(BASE64_STANDARD.encode(encrypted_data))
 }
 
 // decrypt strings
-fn decrypt(key_str: String, encrypted_data: String) -> String {
-    let encrypted_data = BASE64_STANDARD.decode(encrypted_data).unwrap();
+fn decrypt(key_str: String, encrypted_data: String) -> Result<String, TransportError> {
+    let encrypted_data = BASE64_STANDARD.decode(encrypted_data)
+        .map_err(|e| TransportError::EncodingError(format!("Base64 decode error: {}", e)))?;
     let key = Key::<Aes256Gcm>::from_slice(key_str.as_bytes());
     let (nonce_arr, ciphered_data) = encrypted_data.split_at(12);
     let nonce = Nonce::from_slice(nonce_arr);
     let cipher = Aes256Gcm::new(key);
     let plaintext = cipher
         .decrypt(nonce, ciphered_data)
-        .expect("failed to decrypt data");
-    String::from_utf8(plaintext).expect("failed to convert vector of bytes to string")
+        .map_err(|e| TransportError::DecryptionError(e.to_string()))?;
+    String::from_utf8(plaintext)
+        .map_err(|e| TransportError::EncodingError(format!("UTF-8 conversion error: {}", e)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_encrypt_decrypt_roundtrip() {
+        let key = "test_key_32_bytes_exactly_here!!";
+        let message = "Hello, World!";
+        
+        let encrypted = encrypt(key.to_string(), message.to_string()).expect("Encryption should succeed");
+        let decrypted = decrypt(key.to_string(), encrypted).expect("Decryption should succeed");
+        
+        assert_eq!(message, decrypted);
+    }
+
+    #[test]
+    fn test_decrypt_invalid_base64() {
+        let key = "test_key_32_bytes_exactly_here!!";
+        let invalid_base64 = "not_valid_base64!@#$";
+        
+        match decrypt(key.to_string(), invalid_base64.to_string()) {
+            Err(TransportError::EncodingError(msg)) => {
+                assert!(msg.contains("Base64 decode error"));
+            }
+            _ => panic!("Expected EncodingError for invalid base64"),
+        }
+    }
+
+    #[test]
+    fn test_decrypt_corrupted_data() {
+        let key = "test_key_32_bytes_exactly_here!!";
+        // Valid base64 but corrupted encrypted data (needs to be at least 12 bytes for nonce)
+        let corrupted_data = "SGVsbG8gV29ybGQxMjM0NTY3ODkwMTI="; // Long enough base64, but not properly encrypted
+        
+        match decrypt(key.to_string(), corrupted_data.to_string()) {
+            Err(TransportError::DecryptionError(_)) => {
+                // This is expected - the data is valid base64 but not properly encrypted
+            }
+            _ => panic!("Expected DecryptionError for corrupted data"),
+        }
+    }
+
+    #[test]
+    fn test_error_display() {
+        let conn_error = TransportError::ConnectionError(std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "test"));
+        let enc_error = TransportError::EncryptionError("test encryption error".to_string());
+        let dec_error = TransportError::DecryptionError("test decryption error".to_string());
+        let key_error = TransportError::KeyExchangeError("test key exchange error".to_string());
+        let encoding_error = TransportError::EncodingError("test encoding error".to_string());
+
+        assert!(conn_error.to_string().contains("Connection error"));
+        assert!(enc_error.to_string().contains("Encryption error"));
+        assert!(dec_error.to_string().contains("Decryption error"));
+        assert!(key_error.to_string().contains("Key exchange error"));
+        assert!(encoding_error.to_string().contains("Encoding error"));
+    }
 }

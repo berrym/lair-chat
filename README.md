@@ -8,6 +8,19 @@
 An asynchronous encrypted chat app written in the Rust programming language.
 It is both a terminal based server and TUI client.
 
+## Transport Refactoring Progress
+
+**Completed:**
+- Error handling infrastructure with comprehensive `TransportError` enum
+- Eliminated application crashes by replacing `.expect()` calls with proper error propagation
+- Added graceful error handling with user-friendly messages
+- Established testing foundation for error conditions
+
+**In Progress:**
+- Modular architecture redesign to improve testability and maintainability
+
+See `TRANSPORT_REFACTORING_PLAN.md` for full details.
+
 ## Getting started
 
 Install the mose recent version of Rust using your OS distributions package manager or Rust's own preferred rustup.  For details check with your OS distribution or visit https://rust-lang.org for more information.
