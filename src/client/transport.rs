@@ -23,6 +23,142 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 use crate::components::home::get_user_input;
 use super::encryption::{encrypt, decrypt, EncryptionError};
 
+/// Configuration for establishing a connection
+#[derive(Debug, Clone)]
+pub struct ConnectionConfig {
+    pub address: std::net::SocketAddr,
+    pub timeout_ms: u64,
+}
+
+impl ConnectionConfig {
+    pub fn new(address: std::net::SocketAddr) -> Self {
+        Self {
+            address,
+            timeout_ms: 5000, // 5 second default timeout
+        }
+    }
+    
+    pub fn with_timeout(mut self, timeout_ms: u64) -> Self {
+        self.timeout_ms = timeout_ms;
+        self
+    }
+}
+
+/// Represents a chat message with metadata
+#[derive(Debug, Clone)]
+pub struct Message {
+    pub content: String,
+    pub timestamp: std::time::SystemTime,
+    pub message_type: MessageType,
+}
+
+/// Type of message for display purposes
+#[derive(Debug, Clone, PartialEq)]
+pub enum MessageType {
+    UserMessage,
+    ReceivedMessage, 
+    SystemMessage,
+    ErrorMessage,
+}
+
+impl Message {
+    pub fn user_message(content: String) -> Self {
+        Self {
+            content,
+            timestamp: std::time::SystemTime::now(),
+            message_type: MessageType::UserMessage,
+        }
+    }
+    
+    pub fn received_message(content: String) -> Self {
+        Self {
+            content,
+            timestamp: std::time::SystemTime::now(),
+            message_type: MessageType::ReceivedMessage,
+        }
+    }
+    
+    pub fn system_message(content: String) -> Self {
+        Self {
+            content,
+            timestamp: std::time::SystemTime::now(),
+            message_type: MessageType::SystemMessage,
+        }
+    }
+    
+    pub fn error_message(content: String) -> Self {
+        Self {
+            content,
+            timestamp: std::time::SystemTime::now(),
+            message_type: MessageType::ErrorMessage,
+        }
+    }
+    
+    /// Format message for display
+    pub fn format_for_display(&self) -> String {
+        match self.message_type {
+            MessageType::UserMessage => format!("You: {}", self.content),
+            MessageType::ReceivedMessage => self.content.clone(),
+            MessageType::SystemMessage => self.content.clone(),
+            MessageType::ErrorMessage => format!("Error: {}", self.content),
+        }
+    }
+}
+
+/// Container for storing messages with better organization
+#[derive(Debug, Clone)]
+pub struct MessageStore {
+    pub messages: Vec<Message>,
+    pub outgoing: Vec<String>, // Keep for backward compatibility
+}
+
+impl MessageStore {
+    pub fn new() -> Self {
+        Self {
+            messages: Vec::new(),
+            outgoing: Vec::new(),
+        }
+    }
+    
+    pub fn add_message(&mut self, message: Message) {
+        self.messages.push(message);
+    }
+    
+    pub fn get_display_messages(&self) -> Vec<String> {
+        self.messages.iter()
+            .map(|msg| msg.format_for_display())
+            .collect()
+    }
+    
+    pub fn clear_messages(&mut self) {
+        self.messages.clear();
+    }
+    
+    pub fn clear_outgoing(&mut self) {
+        self.outgoing.clear();
+    }
+}
+
+/// Create a connection configuration from an address string
+pub fn create_connection_config(address: std::net::SocketAddr) -> ConnectionConfig {
+    ConnectionConfig::new(address)
+}
+
+/// Helper function to create a formatted message for display
+pub fn create_user_message(content: String) -> Message {
+    Message::user_message(content)
+}
+
+/// Helper function to create system messages
+pub fn create_system_message(content: String) -> Message {
+    Message::system_message(content)
+}
+
+/// Helper function to create error messages
+pub fn create_error_message(content: String) -> Message {
+    Message::error_message(content)
+}
+
 /// Perform key exchange with the server and return the shared AES key
 async fn perform_key_exchange(
     sink: &mut ClientSink,
@@ -415,13 +551,80 @@ mod tests {
         handle_incoming_message("invalid_base64!@#".to_string(), key);
     }
 
-    #[test] 
+    #[test]
     fn test_handle_connection_closed() {
         // Test that connection cleanup doesn't panic
         handle_connection_closed();
         
         // Verify the status was set to disconnected
         assert_eq!(CLIENT_STATUS.lock().unwrap().status, ConnectionStatus::DISCONNECTED);
+    }
+
+    #[test]
+    fn test_connection_config() {
+        let addr = "127.0.0.1:8080".parse().unwrap();
+        let config = ConnectionConfig::new(addr);
+        
+        assert_eq!(config.address, addr);
+        assert_eq!(config.timeout_ms, 5000);
+        
+        let config_with_timeout = config.with_timeout(10000);
+        assert_eq!(config_with_timeout.timeout_ms, 10000);
+    }
+
+    #[test]
+    fn test_message_creation() {
+        let user_msg = Message::user_message("Hello".to_string());
+        let received_msg = Message::received_message("Hi there".to_string());
+        let system_msg = Message::system_message("Connected".to_string());
+        let error_msg = Message::error_message("Failed".to_string());
+        
+        assert_eq!(user_msg.message_type, MessageType::UserMessage);
+        assert_eq!(received_msg.message_type, MessageType::ReceivedMessage);
+        assert_eq!(system_msg.message_type, MessageType::SystemMessage);
+        assert_eq!(error_msg.message_type, MessageType::ErrorMessage);
+        
+        assert_eq!(user_msg.format_for_display(), "You: Hello");
+        assert_eq!(received_msg.format_for_display(), "Hi there");
+        assert_eq!(system_msg.format_for_display(), "Connected");
+        assert_eq!(error_msg.format_for_display(), "Error: Failed");
+    }
+
+    #[test]
+    fn test_message_store() {
+        let mut store = MessageStore::new();
+        assert!(store.messages.is_empty());
+        
+        let msg1 = Message::user_message("Hello".to_string());
+        let msg2 = Message::system_message("Connected".to_string());
+        
+        store.add_message(msg1);
+        store.add_message(msg2);
+        
+        assert_eq!(store.messages.len(), 2);
+        
+        let display_messages = store.get_display_messages();
+        assert_eq!(display_messages[0], "You: Hello");
+        assert_eq!(display_messages[1], "Connected");
+        
+        store.clear_messages();
+        assert!(store.messages.is_empty());
+    }
+
+    #[test]
+    fn test_helper_functions() {
+        let addr = "127.0.0.1:8080".parse().unwrap();
+        let config = create_connection_config(addr);
+        assert_eq!(config.address, addr);
+        
+        let user_msg = create_user_message("Test".to_string());
+        assert_eq!(user_msg.message_type, MessageType::UserMessage);
+        
+        let system_msg = create_system_message("System".to_string());
+        assert_eq!(system_msg.message_type, MessageType::SystemMessage);
+        
+        let error_msg = create_error_message("Error".to_string());
+        assert_eq!(error_msg.message_type, MessageType::ErrorMessage);
     }
 }
 

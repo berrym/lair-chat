@@ -19,6 +19,7 @@ It is both a terminal based server and TUI client.
 - Extracted key exchange logic into separate function with proper error handling
 - Extracted message processing logic into focused helper functions for better maintainability
 - Fixed scrolling functionality and text rendering issues in the TUI interface
+- Created foundational data structures for connection configuration and message handling
 
 **In Progress:**
 - Modular architecture redesign to improve testability and maintainability
