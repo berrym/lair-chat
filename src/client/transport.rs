@@ -82,6 +82,71 @@ async fn perform_key_exchange(
     Ok(shared_aes256_key)
 }
 
+/// Process and send any pending outgoing messages
+async fn process_outgoing_messages(
+    sink: &mut ClientSink,
+    shared_key: &str,
+) -> Result<(), TransportError> {
+    if !MESSAGES.lock().unwrap().outgoing.is_empty() {
+        let outgoing_messages: Vec<String> = MESSAGES
+            .lock()
+            .unwrap()
+            .outgoing
+            .clone();
+            
+        for original_message in outgoing_messages {
+            match encrypt(shared_key.to_string(), original_message.clone()) {
+                Ok(encrypted_message) => {
+                    add_text_message(format!("You: {}", original_message));
+                    let _ = sink.tx.send(encrypted_message).await;
+                }
+                Err(e) => {
+                    add_text_message(format!("Failed to encrypt message: {}", e));
+                }
+            }
+        }
+        MESSAGES.lock().unwrap().outgoing.clear();
+    }
+    Ok(())
+}
+
+/// Handle incoming message by decrypting and displaying it
+fn handle_incoming_message(message: String, shared_key: &str) {
+    match decrypt(shared_key.to_string(), message) {
+        Ok(decrypted_message) => {
+            add_text_message(decrypted_message);
+        }
+        Err(e) => {
+            add_text_message(format!("Failed to decrypt message: {}", e));
+        }
+    }
+}
+
+/// Handle user input by encrypting and sending the message
+async fn handle_user_input(
+    sink: &mut ClientSink,
+    message: String,
+    shared_key: &str,
+) -> Result<(), TransportError> {
+    match encrypt(shared_key.to_string(), message.clone()) {
+        Ok(encrypted_message) => {
+            let _ = sink.tx.send(encrypted_message).await;
+            add_text_message(format!("You: {}", message));
+        }
+        Err(e) => {
+            add_text_message(format!("Failed to encrypt message: {}", e));
+        }
+    }
+    Ok(())
+}
+
+/// Handle connection closure and cleanup
+fn handle_connection_closed() {
+    CANCEL_TOKEN.lock().unwrap().token.cancel();
+    CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
+    CANCEL_TOKEN.lock().unwrap().token = CancellationToken::new();
+}
+
 /// Transport-specific error types
 #[derive(Debug)]
 pub enum TransportError {
@@ -113,7 +178,7 @@ pub type BoxedStream<Item> = Pin<Box<dyn Stream<Item = Item> + Send>>;
 /// Shorthand for a lines framed BoxedStream type we will use
 pub type ClientTcpStream = BoxedStream<Result<String, std::io::Error>>;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum ConnectionStatus {
     CONNECTED,
     DISCONNECTED,
@@ -250,27 +315,9 @@ pub fn client_io_select_loop(
         };
         // main client loop
         loop {
-            // process any messages
-            if !MESSAGES.lock().unwrap().outgoing.is_empty() {
-                let outgoing_messages: Vec<String> = MESSAGES
-                    .lock()
-                    .unwrap()
-                    .outgoing
-                    .clone();
-                    
-                for original_message in outgoing_messages {
-                    match encrypt(shared_aes256_key.clone(), original_message.clone()) {
-                        Ok(encrypted_message) => {
-                            add_text_message(format!("You: {}", original_message));
-                            let _ = sink.tx.send(encrypted_message).await;
-                        }
-                        Err(e) => {
-                            add_text_message(format!("Failed to encrypt message: {}", e));
-                        }
-                    }
-                }
-                MESSAGES.lock().unwrap().outgoing.clear();
-            }
+            // process any outgoing messages
+            let _ = process_outgoing_messages(&mut sink, &shared_aes256_key).await;
+            
             // select on futures
             select! {
                 _ = cancel_token.cancelled().fuse() => {
@@ -280,42 +327,23 @@ pub fn client_io_select_loop(
                 },
                 message = stream.rx.next().fuse() => match message {
                     Some(Ok(message)) => {
-                        match decrypt(shared_aes256_key.clone(), message.clone()) {
-                            Ok(decrypted_message) => {
-                                add_text_message(decrypted_message);
-                            }
-                            Err(e) => {
-                                add_text_message(format!("Failed to decrypt message: {}", e));
-                            }
-                        }
+                        handle_incoming_message(message, &shared_aes256_key);
                         continue;
                     },
                     None => {
                         add_text_message("The Lair has CLOSED.".to_string());
-                        CANCEL_TOKEN.lock().unwrap().token.cancel();
-                        CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
-                        CANCEL_TOKEN.lock().unwrap().token = CancellationToken::new();
+                        handle_connection_closed();
                         return;
                     },
                     Some(Err(e)) => {
                         add_text_message(format!("Closed connection with error: {e}"));
-                        CANCEL_TOKEN.lock().unwrap().token.cancel();
-                        CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
-                        CANCEL_TOKEN.lock().unwrap().token = CancellationToken::new();
+                        handle_connection_closed();
                         return;
                     }
                 },
                 message = get_user_input(input.clone()).fuse() => match message {
                     Some(message) => {
-                        match encrypt(shared_aes256_key.clone(), message.clone()) {
-                            Ok(encrypted_message) => {
-                                let _ = sink.tx.send(encrypted_message).await;
-                                add_text_message(format!("You: {}", message));
-                            }
-                            Err(e) => {
-                                add_text_message(format!("Failed to encrypt message: {}", e));
-                            }
-                        }
+                        let _ = handle_user_input(&mut sink, message, &shared_aes256_key).await;
                     },
                     None => {
                         sleep(Duration::from_millis(250)).await;
@@ -367,6 +395,33 @@ mod tests {
             }
             _ => panic!("Expected EncryptionError variant"),
         }
+    }
+
+    #[test]
+    fn test_handle_incoming_message() {
+        // Test successful decryption
+        let key = "test_key_32_bytes_exactly_here!!";
+        let original_message = "Hello, World!";
+        
+        // First encrypt a message
+        let encrypted = crate::encryption::encrypt(key.to_string(), original_message.to_string()).unwrap();
+        
+        // Then test decryption through handle_incoming_message
+        // Note: This function adds to global MESSAGES, so we can't easily test the output
+        // without affecting global state, but we can verify it doesn't panic
+        handle_incoming_message(encrypted, key);
+        
+        // Test with invalid message - should not panic
+        handle_incoming_message("invalid_base64!@#".to_string(), key);
+    }
+
+    #[test] 
+    fn test_handle_connection_closed() {
+        // Test that connection cleanup doesn't panic
+        handle_connection_closed();
+        
+        // Verify the status was set to disconnected
+        assert_eq!(CLIENT_STATUS.lock().unwrap().status, ConnectionStatus::DISCONNECTED);
     }
 }
 
