@@ -23,6 +23,73 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 use crate::components::home::get_user_input;
 use super::encryption::{encrypt, decrypt, EncryptionError};
 
+/// Trait abstraction for encryption operations
+pub trait EncryptionService: Send + Sync {
+    /// Encrypt plaintext with the given key
+    fn encrypt(&self, key: &str, plaintext: &str) -> Result<String, EncryptionError>;
+    
+    /// Decrypt ciphertext with the given key
+    fn decrypt(&self, key: &str, ciphertext: &str) -> Result<String, EncryptionError>;
+}
+
+/// Trait abstraction for network transport operations
+pub trait Transport: Send + Sync {
+    /// Send data over the transport
+    async fn send(&mut self, data: &str) -> Result<(), TransportError>;
+    
+    /// Receive data from the transport
+    async fn receive(&mut self) -> Result<Option<String>, TransportError>;
+    
+    /// Close the transport connection
+    async fn close(&mut self) -> Result<(), TransportError>;
+}
+
+/// Trait abstraction for UI notifications and message handling
+pub trait ConnectionObserver: Send + Sync {
+    /// Called when a message should be displayed to the user
+    fn on_message(&self, message: String);
+    
+    /// Called when an error occurs that should be shown to the user
+    fn on_error(&self, error: String);
+    
+    /// Called when connection status changes
+    fn on_status_change(&self, connected: bool);
+}
+
+/// Default implementation of EncryptionService using our existing functions
+pub struct DefaultEncryptionService;
+
+impl EncryptionService for DefaultEncryptionService {
+    fn encrypt(&self, key: &str, plaintext: &str) -> Result<String, EncryptionError> {
+        encrypt(key.to_string(), plaintext.to_string())
+    }
+    
+    fn decrypt(&self, key: &str, ciphertext: &str) -> Result<String, EncryptionError> {
+        decrypt(key.to_string(), ciphertext.to_string())
+    }
+}
+
+/// Default implementation of ConnectionObserver using existing global functions
+pub struct DefaultConnectionObserver;
+
+impl ConnectionObserver for DefaultConnectionObserver {
+    fn on_message(&self, message: String) {
+        add_text_message(message);
+    }
+    
+    fn on_error(&self, error: String) {
+        add_text_message(format!("Error: {}", error));
+    }
+    
+    fn on_status_change(&self, connected: bool) {
+        if connected {
+            add_text_message("Connected to server.".to_string());
+        } else {
+            add_text_message("Disconnected from server.".to_string());
+        }
+    }
+}
+
 /// Configuration for establishing a connection
 #[derive(Debug, Clone)]
 pub struct ConnectionConfig {
@@ -157,6 +224,26 @@ pub fn create_system_message(content: String) -> Message {
 /// Helper function to create error messages
 pub fn create_error_message(content: String) -> Message {
     Message::error_message(content)
+}
+
+/// Create a default encryption service instance
+pub fn create_encryption_service() -> DefaultEncryptionService {
+    DefaultEncryptionService
+}
+
+/// Create a default connection observer instance
+pub fn create_connection_observer() -> DefaultConnectionObserver {
+    DefaultConnectionObserver
+}
+
+/// Factory function to create a boxed encryption service trait object
+pub fn create_boxed_encryption_service() -> Box<dyn EncryptionService> {
+    Box::new(DefaultEncryptionService)
+}
+
+/// Factory function to create a boxed connection observer trait object
+pub fn create_boxed_connection_observer() -> Box<dyn ConnectionObserver> {
+    Box::new(DefaultConnectionObserver)
 }
 
 /// Perform key exchange with the server and return the shared AES key
@@ -625,6 +712,29 @@ mod tests {
         
         let error_msg = create_error_message("Error".to_string());
         assert_eq!(error_msg.message_type, MessageType::ErrorMessage);
+    }
+
+    #[test]
+    fn test_encryption_service_trait() {
+        let service = DefaultEncryptionService;
+        let key = "test_key_32_bytes_exactly_here!!";
+        let message = "Hello, World!";
+        
+        let encrypted = service.encrypt(key, message).expect("Encryption should succeed");
+        let decrypted = service.decrypt(key, &encrypted).expect("Decryption should succeed");
+        
+        assert_eq!(message, decrypted);
+    }
+
+    #[test]
+    fn test_connection_observer_trait() {
+        let observer = DefaultConnectionObserver;
+        
+        // Test that these don't panic - they modify global state
+        observer.on_message("Test message".to_string());
+        observer.on_error("Test error".to_string());
+        observer.on_status_change(true);
+        observer.on_status_change(false);
     }
 }
 

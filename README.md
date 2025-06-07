@@ -20,6 +20,7 @@ It is both a terminal based server and TUI client.
 - Extracted message processing logic into focused helper functions for better maintainability
 - Fixed scrolling functionality and text rendering issues in the TUI interface
 - Created foundational data structures for connection configuration and message handling
+- Implemented trait abstractions for EncryptionService, Transport, and ConnectionObserver interfaces
 
 **In Progress:**
 - Modular architecture redesign to improve testability and maintainability
