@@ -230,11 +230,29 @@ impl Component for Home {
                         unsafe {
                             // Mark as manual scroll to disable auto-follow
                             MANUAL_SCROLL_STATE = true;
+                            // Add message to indicate manual scrolling
+                            add_text_message("Manual scrolling active - press End to resume auto-follow".to_string());
+                            add_text_message("Use ↑/↓ arrows for line-by-line, PageUp/PageDown for page scrolling".to_string());
                             // Scroll up by reducing the scroll offset
                             if SCROLL_OFFSET_STATE > 5 {
                                 SCROLL_OFFSET_STATE -= 5;
                             } else {
                                 SCROLL_OFFSET_STATE = 0;
+                            }
+                        }
+                        return Ok(Some(Action::Render));
+                    },
+                    KeyCode::Up => {
+                        unsafe {
+                            // Mark as manual scroll to disable auto-follow
+                            if !MANUAL_SCROLL_STATE {
+                                MANUAL_SCROLL_STATE = true;
+                                // Add message to indicate manual scrolling
+                                add_text_message("Manual scrolling active - press End to resume auto-follow".to_string());
+                            }
+                            // Scroll up by one line
+                            if SCROLL_OFFSET_STATE > 0 {
+                                SCROLL_OFFSET_STATE -= 1;
                             }
                         }
                         return Ok(Some(Action::Render));
@@ -248,6 +266,23 @@ impl Component for Home {
                             let messages_len = MESSAGES.lock().unwrap().text.len();
                             if SCROLL_OFFSET_STATE >= messages_len {
                                 MANUAL_SCROLL_STATE = false;
+                                // Add message to indicate auto-follow is resumed
+                                add_text_message("Auto-follow enabled".to_string());
+                            }
+                        }
+                        return Ok(Some(Action::Render));
+                    },
+                    KeyCode::Down => {
+                        unsafe {
+                            // Scroll down by one line
+                            SCROLL_OFFSET_STATE += 1;
+                            
+                            // If we reach the bottom, enable auto-follow again
+                            let messages_len = MESSAGES.lock().unwrap().text.len();
+                            if SCROLL_OFFSET_STATE >= messages_len {
+                                MANUAL_SCROLL_STATE = false;
+                                // Add message to indicate auto-follow is resumed
+                                add_text_message("Auto-follow enabled".to_string());
                             }
                         }
                         return Ok(Some(Action::Render));
@@ -671,7 +706,7 @@ impl Component for Home {
         // Render scrollbar if there's enough content to scroll
         if total_lines > available_height {
             // Calculate scrollbar parameters
-            let scrollbar_height = scrollbar_area.height.saturating_sub(2) as usize; // Account for borders
+            let scrollbar_height = scrollbar_area.height.saturating_sub(2) as usize;
             let content_height = total_lines;
             
             // Calculate scrollbar thumb position and size
@@ -682,8 +717,20 @@ impl Component for Home {
             let mut scrollbar = vec![String::from("│"); scrollbar_height];
             
             // Draw the thumb
-            for i in thumb_position..((thumb_position + thumb_height).min(scrollbar_height)) {
-                scrollbar[i] = String::from("█");
+            for i in thumb_position..thumb_position + thumb_height {
+                if i < scrollbar_height {
+                    scrollbar[i] = String::from("█");
+                }
+            }
+            
+            // Add up/down indicators at the ends of the scrollbar when scrollable
+            if scroll_position > 0 {
+                scrollbar[0] = String::from("▲");
+            }
+            if scroll_position + available_height < total_lines {
+                if scrollbar_height > 0 {
+                    scrollbar[scrollbar_height - 1] = String::from("▼");
+                }
             }
             
             // Render scrollbar
@@ -696,14 +743,43 @@ impl Component for Home {
             // Render scrollbar thumb
             for (i, symbol) in scrollbar.iter().enumerate() {
                 if i < scrollbar_height {
+                    // Use brighter color for the indicators
+                    let color = if symbol == "▲" || symbol == "▼" {
+                        Color::Yellow
+                    } else if symbol == "█" {
+                        Color::White
+                    } else {
+                        Color::Gray
+                    };
+                    
                     let scrollbar_piece = Paragraph::new(symbol.clone())
-                        .style(Style::default().fg(Color::Gray));
+                        .style(Style::default().fg(color));
                     frame.render_widget(
                         scrollbar_piece,
                         Rect::new(
                             scrollbar_area.x,
-                            scrollbar_area.y + 1 + i as u16, // +1 to account for top border
+                            scrollbar_area.y + 1 + i as u16, // +1 for top border
                             1,
+                            1
+                        )
+                    );
+                }
+            }
+            
+            // Add scroll position indicator in content title when manually scrolling
+            unsafe {
+                if MANUAL_SCROLL_STATE {
+                    let position_text = format!(" [scroll: {}/{}]", scroll_position + 1, total_lines - available_height + 1);
+                    let scroll_indicator = Paragraph::new(position_text)
+                        .alignment(Alignment::Right)
+                        .style(Style::default().fg(Color::Yellow));
+                    
+                    frame.render_widget(
+                        scroll_indicator,
+                        Rect::new(
+                            content_area.x + 10,
+                            content_area.y,
+                            content_area.width - 20,
                             1
                         )
                     );
@@ -719,7 +795,11 @@ impl Component for Home {
                 .block(
                     Block::default()
                         .title_top(Line::from("v0.4.4".white()).left_aligned())
-                        .title_top(Line::from("THE LAIR".yellow().bold()).centered())
+                        .title_top(Line::from(vec![
+                            Span::styled("THE LAIR", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                            Span::raw(" "),
+                            Span::styled("(↑↓ to scroll, End to auto-follow)", Style::default().fg(Color::DarkGray)),
+                        ]).centered())
                         .title_top(Line::from("(C) 2025".white()).right_aligned())
                         .borders(Borders::ALL & !Borders::RIGHT) // Remove right border when scrollbar is present
                         .border_style(match self.mode {
@@ -987,14 +1067,14 @@ impl Component for Home {
                 Row::new(vec!["q", "Quit"]),
                 Row::new(vec!["ctrl-z", "Suspend Program"]),
                 Row::new(vec!["?", "Open/Close Help"]),
-                Row::new(vec!["PageUp", "Scroll Up"]),
-                Row::new(vec!["PageDown", "Scroll Down"]),
+                Row::new(vec!["↑", "Scroll Up One Line"]),
+                Row::new(vec!["↓", "Scroll Down One Line"]),
+                Row::new(vec!["PageUp", "Scroll Up One Page"]),
+                Row::new(vec!["PageDown", "Scroll Down One Page"]),
                 Row::new(vec!["Home", "Scroll to Top"]),
-                Row::new(vec!["End", "Scroll to Bottom"]),
-                // Extra rows to demonstrate scrolling
-                Row::new(vec!["↑/↓", "Scroll Help Up/Down"]),
-                Row::new(vec!["F1", "Show Version Info"]),
+                Row::new(vec!["End", "Scroll to Bottom (Resume Auto-follow)"]),
                 Row::new(vec!["Tab", "Navigate Dialog Fields"]),
+                Row::new(vec!["F1", "Show Version Info"]),
             ];
             
             // Calculate available height for the table content
