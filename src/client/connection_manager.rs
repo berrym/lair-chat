@@ -349,6 +349,8 @@ impl ConnectionManager {
 mod tests {
     use super::*;
     use std::collections::VecDeque;
+    use crate::encryption::EncryptionError;
+    use crate::aes_gcm_encryption::AesGcmEncryption;
     
     struct MockTransport {
         send_data: Arc<Mutex<Vec<String>>>,
@@ -658,7 +660,7 @@ mod tests {
             }
         }
         
-        #[async_trait]
+        #[async_trait::async_trait]
         impl EncryptionService for HandshakeTrackingEncryption {
             fn encrypt(&self, _key: &str, plaintext: &str) -> Result<String, EncryptionError> {
                 Ok(format!("ENCRYPTED:{}", plaintext))
@@ -709,7 +711,7 @@ mod tests {
         // Create a mock encryption service that fails handshake
         struct FailingHandshakeEncryption;
         
-        #[async_trait]
+        #[async_trait::async_trait]
         impl EncryptionService for FailingHandshakeEncryption {
             fn encrypt(&self, _key: &str, plaintext: &str) -> Result<String, EncryptionError> {
                 Ok(format!("ENCRYPTED:{}", plaintext))

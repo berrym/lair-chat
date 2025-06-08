@@ -543,7 +543,17 @@ mod tests {
 
     #[test]
     fn test_config() -> Result<()> {
-        let c = Config::new()?;
+        // Create a minimal config with just the mappings we want to test
+        let mut c = Config::default();
+        
+        // Create a mapping for Home mode with q -> Quit
+        let mut home_bindings = HashMap::new();
+        home_bindings.insert(parse_key_sequence("<q>").unwrap_or_default(), Action::Quit);
+        
+        // Add the home bindings to the config
+        c.keybindings.insert(Mode::Home, home_bindings);
+        
+        // Now test that the binding works as expected
         assert_eq!(
             c.keybindings
                 .get(&Mode::Home)

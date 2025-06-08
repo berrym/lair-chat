@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, AsyncReadExt};
 use tokio::sync::Mutex;
 use std::sync::Arc;
 use async_trait::async_trait;
@@ -149,7 +149,7 @@ mod tests {
             if let Ok((mut socket, _)) = listener.accept().await {
                 // Read incoming data but ignore it
                 let mut buffer = [0; 1024];
-                let _ = AsyncReadExt::read(&mut socket, &mut buffer).await;
+                let _ = socket.read(&mut buffer).await;
                 
                 // Send our canned response with a newline
                 let _ = socket.write_all(format!("{}\n", response).as_bytes()).await;
