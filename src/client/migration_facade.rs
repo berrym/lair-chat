@@ -132,13 +132,39 @@ pub async fn get_connection_status() -> ConnectionStatus {
 }
 
 /// Send a message using the appropriate implementation
+///
+/// This function will use the ConnectionManager to send messages when using the new
+/// architecture, or fall back to the legacy global queue when using the old system.
+///
+/// # Arguments
+///
+/// * `message` - The message content to send
+///
+/// # Returns
+///
+/// * `Ok(())` - If the message was successfully sent or queued
+/// * `Err(TransportError)` - If there was an error sending the message
 pub async fn send_message(message: String) -> Result<(), TransportError> {
     if is_using_new_impl() {
-        send_message_compat(message).await
+        // Use the ConnectionManager from the compatibility layer
+        let result = send_message_compat(message.clone()).await;
+        
+        // Log the result for debugging
+        match &result {
+            Ok(()) => {
+                tracing::debug!("Message sent successfully through new architecture");
+            }
+            Err(e) => {
+                tracing::warn!("Failed to send message through new architecture: {:?}", e);
+            }
+        }
+        
+        result
     } else {
         // For legacy implementation, we'll add to the outgoing queue
         // This maintains compatibility with the old system
         use crate::transport::{add_outgoing_message};
+        tracing::debug!("Sending message through legacy architecture");
         add_outgoing_message(message);
         Ok(())
     }
