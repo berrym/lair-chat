@@ -3,7 +3,7 @@ use std::time::Duration;
 use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 use std::any::Any;
-use async_trait::async_trait;
+
 use super::transport::{
     ConnectionConfig,
     ConnectionObserver,
@@ -14,8 +14,7 @@ use super::transport::{
     Transport,
     TransportError,
 };
-use super::encryption::EncryptionError;
-use super::aes_gcm_encryption::AesGcmEncryption;
+
 
 
 
@@ -166,7 +165,7 @@ impl ConnectionManager {
         
         // Encrypt the message if encryption is available
         let data = if let Some(encryption) = &self.encryption {
-            let mut encryption_guard = encryption.lock().await;
+            let encryption_guard = encryption.lock().await;
             encryption_guard.encrypt("key", &content)?
         } else {
             content

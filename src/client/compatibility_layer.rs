@@ -75,7 +75,7 @@ async fn get_or_create_manager(address: SocketAddr) -> Result<(), TransportError
 /// 
 /// This function internally uses ConnectionManager but maintains the same signature
 /// and behavior as the original connect_client function.
-pub async fn connect_client_compat(input: Input, address: SocketAddr) -> Result<(), TransportError> {
+pub async fn connect_client_compat(__input: Input, address: SocketAddr) -> Result<(), TransportError> {
     // Initialize the manager
     get_or_create_manager(address).await?;
     
@@ -249,7 +249,6 @@ pub async fn cleanup_compatibility_layer() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
 
     #[tokio::test]
     async fn test_compatibility_observer() {

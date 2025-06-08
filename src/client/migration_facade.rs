@@ -174,7 +174,7 @@ pub async fn send_message(message: String) -> Result<(), TransportError> {
 /// 
 /// This function attempts to gracefully migrate from the legacy implementation
 /// to the new ConnectionManager while preserving connection state.
-pub async fn migrate_connection(address: SocketAddr) -> Result<(), TransportError> {
+pub async fn migrate_connection(_address: SocketAddr) -> Result<(), TransportError> {
     if is_using_new_impl() {
         // Already using new architecture
         return Ok(());
@@ -198,7 +198,7 @@ pub async fn migrate_connection(address: SocketAddr) -> Result<(), TransportErro
     enable_new_architecture();
     
     // Initialize new architecture
-    migrate_to_new_architecture(address).await?;
+    migrate_to_new_architecture(_address).await?;
     
     if was_connected {
         // Reconnect using new system
@@ -306,7 +306,6 @@ pub fn init_with_new_architecture() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
 
     #[test]
     fn test_migration_config_default() {
