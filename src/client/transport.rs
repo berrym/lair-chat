@@ -105,6 +105,27 @@ impl ConnectionObserver for DefaultConnectionObserver {
     }
 }
 
+/// TUI-specific implementation of ConnectionObserver for better UI integration
+pub struct TuiObserver;
+
+impl ConnectionObserver for TuiObserver {
+    fn on_message(&self, message: String) {
+        add_text_message(message);
+    }
+    
+    fn on_error(&self, error: String) {
+        add_text_message(format!("ERROR: {}", error));
+    }
+    
+    fn on_status_change(&self, connected: bool) {
+        if connected {
+            add_text_message("STATUS: Connected to server.".to_string());
+        } else {
+            add_text_message("STATUS: Disconnected from server.".to_string());
+        }
+    }
+}
+
 /// Configuration for establishing a connection
 #[derive(Debug, Clone)]
 pub struct ConnectionConfig {
@@ -259,6 +280,16 @@ pub fn create_boxed_encryption_service() -> Box<dyn EncryptionService> {
 /// Factory function to create a boxed connection observer trait object
 pub fn create_boxed_connection_observer() -> Box<dyn ConnectionObserver> {
     Box::new(DefaultConnectionObserver)
+}
+
+/// Create a TUI observer instance
+pub fn create_tui_observer() -> TuiObserver {
+    TuiObserver
+}
+
+/// Factory function to create a boxed TUI observer trait object
+pub fn create_boxed_tui_observer() -> Box<dyn ConnectionObserver> {
+    Box::new(TuiObserver)
 }
 
 /// Perform key exchange with the server and return the shared AES key
@@ -750,6 +781,85 @@ mod tests {
         observer.on_error("Test error".to_string());
         observer.on_status_change(true);
         observer.on_status_change(false);
+    }
+
+    #[test]
+    fn test_tui_observer() {
+        let observer = TuiObserver;
+        
+        // Test that these don't panic - they modify global state
+        observer.on_message("Test TUI message".to_string());
+        observer.on_error("Test TUI error".to_string());
+        observer.on_status_change(true);
+        observer.on_status_change(false);
+    }
+
+    #[test]
+    fn test_tui_observer_helper_functions() {
+        // Test factory functions
+        let observer = create_tui_observer();
+        observer.on_message("Factory test message".to_string());
+
+        let boxed_observer = create_boxed_tui_observer();
+        boxed_observer.on_message("Boxed factory test message".to_string());
+    }
+
+    #[test]
+    fn test_observer_message_formatting() {
+        // Clear messages first to ensure clean test state
+        MESSAGES.lock().unwrap().text.clear();
+        
+        let tui_observer = TuiObserver;
+        let default_observer = DefaultConnectionObserver;
+        
+        // Test error message formatting differences
+        tui_observer.on_error("Test error".to_string());
+        default_observer.on_error("Test error".to_string());
+        
+        let messages = MESSAGES.lock().unwrap();
+        let tui_error = &messages.text[messages.text.len() - 2]; // Second to last
+        let default_error = &messages.text[messages.text.len() - 1]; // Last
+        
+        assert!(tui_error.contains("ERROR: Test error"));
+        assert!(default_error.contains("Error: Test error"));
+        assert!(!default_error.contains("ERROR:"));
+    }
+
+    #[test]
+    fn test_status_change_formatting() {
+        // Clear messages first to ensure clean test state
+        MESSAGES.lock().unwrap().text.clear();
+        
+        let tui_observer = TuiObserver;
+        let default_observer = DefaultConnectionObserver;
+        
+        // Test connected status formatting
+        tui_observer.on_status_change(true);
+        default_observer.on_status_change(true);
+        
+        let messages = MESSAGES.lock().unwrap();
+        let tui_connected = &messages.text[messages.text.len() - 2]; // Second to last
+        let default_connected = &messages.text[messages.text.len() - 1]; // Last
+        
+        assert!(tui_connected.contains("STATUS: Connected to server."));
+        assert!(default_connected.contains("Connected to server."));
+        assert!(!default_connected.contains("STATUS:"));
+        
+        // Clear for disconnected test
+        drop(messages);
+        MESSAGES.lock().unwrap().text.clear();
+        
+        // Test disconnected status formatting
+        tui_observer.on_status_change(false);
+        default_observer.on_status_change(false);
+        
+        let messages = MESSAGES.lock().unwrap();
+        let tui_disconnected = &messages.text[messages.text.len() - 2]; // Second to last
+        let default_disconnected = &messages.text[messages.text.len() - 1]; // Last
+        
+        assert!(tui_disconnected.contains("STATUS: Disconnected from server."));
+        assert!(default_disconnected.contains("Disconnected from server."));
+        assert!(!default_disconnected.contains("STATUS:"));
     }
 }
 
