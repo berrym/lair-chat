@@ -10,6 +10,7 @@ use crate::{
     action::Action,
     app::Mode,
     config::{key_event_to_string, Config},
+    migration_facade,
     transport::*,
 };
 
@@ -124,7 +125,7 @@ impl Home {
                     
                     let input = self.input.clone();
                     tokio::spawn(async move {
-                        connect_client(input, addr).await;
+                        let _ = migration_facade::connect_client(input, addr).await;
                     });
                     
                     return Ok(Some(Action::Update));
@@ -592,7 +593,7 @@ impl Component for Home {
                 };
                 let input = self.input.clone();
                 tokio::spawn(async move {
-                    connect_client(input, address).await;
+                    let _ = migration_facade::connect_client(input, address).await;
                 });
             }
             Action::ShowConnectionDialog => {
@@ -600,7 +601,7 @@ impl Component for Home {
             }
             Action::DisconnectClient => {
                 tokio::spawn(async move {
-                    disconnect_client().await;
+                    let _ = migration_facade::disconnect_client().await;
                 });
             }
             _ => {}

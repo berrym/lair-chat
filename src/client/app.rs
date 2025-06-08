@@ -9,6 +9,7 @@ use crate::{
     action::Action,
     components::{fps::FpsCounter, home::Home, Component},
     config::Config,
+    migration_facade,
     tui::{Event, Tui},
 };
 
@@ -152,7 +153,7 @@ impl App {
                     // This will be handled by the Home component
                     let input = tui_input::Input::default();
                     tokio::spawn(async move {
-                        crate::transport::connect_client(input, addr).await;
+                        let _ = migration_facade::connect_client(input, addr).await;
                     });
                 }
                 _ => {}
