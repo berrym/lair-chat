@@ -404,7 +404,7 @@ mod tests {
     
     struct MockEncryptionService;
     
-    #[async_trait]
+    #[async_trait::async_trait]
     impl EncryptionService for MockEncryptionService {
         fn encrypt(&self, _key: &str, plaintext: &str) -> Result<String, EncryptionError> {
             Ok(format!("ENCRYPTED:{}", plaintext))
@@ -541,7 +541,7 @@ mod tests {
             }
         }
         
-        #[async_trait]
+        #[async_trait::async_trait]
         impl Transport for ConnectTrackingTransport {
             async fn connect(&mut self) -> Result<(), TransportError> {
                 let mut called = self.connect_called.lock().await;
