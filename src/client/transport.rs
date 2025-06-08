@@ -35,6 +35,9 @@ pub trait EncryptionService: Send + Sync {
 /// Trait abstraction for network transport operations
 #[async_trait::async_trait]
 pub trait Transport: Send + Sync {
+    /// Establish a connection to the remote endpoint
+    async fn connect(&mut self) -> Result<(), TransportError>;
+    
     /// Send data over the transport
     async fn send(&mut self, data: &str) -> Result<(), TransportError>;
     

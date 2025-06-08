@@ -3,6 +3,7 @@ use std::time::Duration;
 use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 use std::any::Any;
+use async_trait::async_trait;
 use super::transport::{
     ConnectionConfig,
     ConnectionObserver,
@@ -105,7 +106,14 @@ impl ConnectionManager {
             ));
         }
 
-        // Set status to connecting
+        // Actually establish the transport connection first
+        if let Some(transport) = &self.transport {
+            let mut transport_guard = transport.lock().await;
+            transport_guard.connect().await?;
+        }
+
+        // Set status to connected
+        *self.status.write().await = ConnectionStatus::CONNECTED;
         self.notify_status_change(ConnectionStatus::CONNECTED);
         
         // Start the connection processing tasks
@@ -360,6 +368,11 @@ mod tests {
     
     #[async_trait::async_trait]
     impl Transport for MockTransport {
+        async fn connect(&mut self) -> Result<(), TransportError> {
+            // Mock implementation - always succeeds
+            Ok(())
+        }
+
         async fn send(&mut self, data: &str) -> Result<(), TransportError> {
             let mut send_data = self.send_data.lock().await;
             send_data.push(data.to_string());
@@ -477,20 +490,77 @@ mod tests {
         }
         
         // Verify message was added to store
-        {
-            let messages = manager.get_message_store().lock().await;
-            assert_eq!(messages.messages.len(), 1);
-            assert_eq!(messages.messages[0].content, "Hello world");
-        }
+        let message_store = manager.get_message_store();
+        let messages = message_store.lock().await;
+        assert_eq!(messages.messages.len(), 1);
+        assert_eq!(messages.messages[0].content, "Hello world");
     }
     
     #[test]
-    fn test_connection_manager_creation() {
+    fn test_connection_manager_basic_creation() {
         // Simple test for basic ConnectionManager creation
         let config = ConnectionConfig::new("127.0.0.1:8080".parse().unwrap());
         let _manager = ConnectionManager::new_for_test(config);
         
         // Test passes if we reach here without panicking
         assert!(true);
+    }
+
+    #[tokio::test]
+    async fn test_connection_establishment() {
+        let config = ConnectionConfig::new("127.0.0.1:8080".parse().unwrap());
+        let mut manager = ConnectionManager::new_for_test(config);
+        
+        // Create mock transport that tracks connect calls
+        struct ConnectTrackingTransport {
+            connect_called: Arc<Mutex<bool>>,
+        }
+        
+        impl ConnectTrackingTransport {
+            fn new() -> (Self, Arc<Mutex<bool>>) {
+                let connect_called = Arc::new(Mutex::new(false));
+                let transport = Self {
+                    connect_called: connect_called.clone(),
+                };
+                (transport, connect_called)
+            }
+        }
+        
+        #[async_trait]
+        impl Transport for ConnectTrackingTransport {
+            async fn connect(&mut self) -> Result<(), TransportError> {
+                let mut called = self.connect_called.lock().await;
+                *called = true;
+                Ok(())
+            }
+            
+            async fn send(&mut self, _data: &str) -> Result<(), TransportError> {
+                Ok(())
+            }
+            
+            async fn receive(&mut self) -> Result<Option<String>, TransportError> {
+                Ok(None)
+            }
+            
+            async fn close(&mut self) -> Result<(), TransportError> {
+                Ok(())
+            }
+        }
+        
+        let (transport, connect_tracker) = ConnectTrackingTransport::new();
+        manager.with_transport(Box::new(transport));
+        
+        // Verify connect wasn't called yet
+        assert!(!*connect_tracker.lock().await);
+        
+        // Call connect on the manager
+        let result = manager.connect().await;
+        assert!(result.is_ok());
+        
+        // Verify that the transport's connect method was actually called
+        assert!(*connect_tracker.lock().await);
+        
+        // Verify status is set to connected
+        assert_eq!(manager.get_status().await, ConnectionStatus::CONNECTED);
     }
 }

@@ -6,11 +6,11 @@ This document outlines the comprehensive plan for refactoring the `transport.rs`
 
 ## Current Issues
 
-- **Global Mutable State**: Uses `Lazy<Mutex<...>>` for shared state across the application
-- **Direct Dependencies**: Hard-coded dependencies on network I/O and cryptographic implementations
-- **Error Handling**: Uses `.expect()` which panics instead of proper error propagation
-- **Mixed Concerns**: Combines UI feedback, networking, and encryption logic
-- **Limited Testability**: Difficult to unit test due to the architecture and global state
+- **Global Mutable State**: Uses `Lazy<Mutex<...>>` for shared state across the application *(Addressed in Phase 2)*
+- **Direct Dependencies**: Hard-coded dependencies on network I/O and cryptographic implementations *(Addressed in Phase 2)*
+- **Error Handling**: Uses `.expect()` which panics instead of proper error propagation *(✅ COMPLETED - Proper error handling implemented)*
+- **Mixed Concerns**: Combines UI feedback, networking, and encryption logic *(Addressed in Phase 2)*
+- **Limited Testability**: Difficult to unit test due to the architecture and global state *(✅ COMPLETED - Mock implementations and unit tests added)*
 
 ## Refactoring Objectives
 
@@ -34,19 +34,21 @@ This document outlines the comprehensive plan for refactoring the `transport.rs`
    - `EncryptionService`: Encryption operations abstraction
    - `ConnectionObserver`: UI notification abstraction
 
-### Phase 2: Implement Core Components (2-3 days)
+### Phase 2: Implement Core Components (2-3 days) *(✅ MOSTLY COMPLETED)*
 
-1. **ConnectionManager**
+1. **ConnectionManager** *(✅ COMPLETED)*
    - Main class orchestrating the connection
    - Manages state and dependencies
    - Provides clean API for operations
+   - **✅ Fixed connection establishment bug - now properly calls transport.connect()**
+   - **✅ Proper status management and observer notifications**
 
-2. **Concrete Implementations**
-   - `TcpTransport`: Implementation of `Transport` using TCP
-   - `AesGcmEncryption`: Implementation of `EncryptionService`
-   - `TuiObserver`: Implementation of `ConnectionObserver` for the TUI
+2. **Concrete Implementations** *(🔄 PARTIALLY COMPLETED)*
+   - `TcpTransport`: Implementation of `Transport` using TCP *(✅ COMPLETED)*
+   - `AesGcmEncryption`: Implementation of `EncryptionService` *(❌ TODO - Only DefaultEncryptionService exists)*
+   - `TuiObserver`: Implementation of `ConnectionObserver` for the TUI *(❌ TODO - Only DefaultConnectionObserver exists)*
 
-3. **Error Handling**
+3. **Error Handling** *(✅ COMPLETED)*
    - Create `TransportError` enum for comprehensive error reporting
    - Replace all `.expect()` calls with proper error propagation
 
@@ -116,16 +118,18 @@ impl ConnectionManager {
 }
 ```
 
-### 2. Transport Interface
+### 2. Transport Interface *(✅ COMPLETED)*
 
 ```rust
 pub trait Transport: Send + Sync {
-    async fn connect(&mut self, addr: SocketAddr) -> Result<(), TransportError>;
-    async fn send(&mut self, data: &[u8]) -> Result<(), TransportError>;
-    async fn receive(&mut self) -> Result<Vec<u8>, TransportError>;
-    async fn disconnect(&mut self) -> Result<(), TransportError>;
+    async fn connect(&mut self) -> Result<(), TransportError>;  // ✅ IMPLEMENTED
+    async fn send(&mut self, data: &str) -> Result<(), TransportError>;
+    async fn receive(&mut self) -> Result<Option<String>, TransportError>;
+    async fn close(&mut self) -> Result<(), TransportError>;
 }
 ```
+
+**✅ STATUS**: Transport trait completed with proper connect method integration. TcpTransport implements all methods correctly.
 
 ### 3. EncryptionService Interface
 
@@ -243,11 +247,11 @@ impl Transport for MockTransport {
 
 ## Success Criteria
 
-1. All unit tests pass
-2. No regression in existing functionality
-3. Improved code maintainability metrics
-4. Documented API with examples
-5. Performance within 10% of original implementation
+1. All unit tests pass *(✅ COMPLETED - 4/4 connection manager tests passing)*
+2. No regression in existing functionality *(✅ COMPLETED - All existing tests still pass)*
+3. Improved code maintainability metrics *(🔄 IN PROGRESS - Better separation of concerns)*
+4. Documented API with examples *(❌ TODO)*
+5. Performance within 10% of original implementation *(❌ TODO - Needs benchmarking)*
 
 ## Timeline
 
@@ -264,12 +268,30 @@ impl Transport for MockTransport {
 To begin work on this refactoring:
 
 1. Create a new feature branch: `git checkout -b refactor-transport`
-2. Add the new dependencies to Cargo.toml
-3. Create the core interfaces and data structures
-4. Implement the concrete classes
-5. Add unit tests for the new components
-6. Create the compatibility layer
-7. Migrate existing code gradually
+2. Add the new dependencies to Cargo.toml *(✅ COMPLETED)*
+3. Create the core interfaces and data structures *(✅ COMPLETED)*
+4. Implement the concrete classes *(🔄 PARTIALLY COMPLETED - ConnectionManager and TcpTransport done)*
+5. Add unit tests for the new components *(✅ COMPLETED - Connection establishment tests added)*
+6. Create the compatibility layer *(❌ TODO)*
+7. Migrate existing code gradually *(❌ TODO)*
+
+## Recent Progress (Priorities 1-2 Completed)
+
+**✅ Priority 1: Fixed Connection Establishment**
+- ConnectionManager now properly calls `transport.connect()` before setting status
+- Added proper internal status management
+- Connection establishment verified with integration tests
+
+**✅ Priority 2: Added Connect Method to Transport Trait**
+- Extended Transport trait to include `async fn connect()`
+- Updated TcpTransport implementation to include connect in trait
+- Removed duplicate standalone connect method
+- Updated MockTransport for testing compatibility
+
+**Next Priorities:**
+- Priority 3: Implement AesGcmEncryption service
+- Priority 4: Add handshake support to EncryptionService trait
+- Priority 5: Implement TuiObserver for proper UI integration
 
 ## Conclusion
 

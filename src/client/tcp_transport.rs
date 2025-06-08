@@ -22,8 +22,12 @@ impl TcpTransport {
         }
     }
 
-    /// Connect to the remote endpoint
-    pub async fn connect(&mut self) -> Result<(), TransportError> {
+}
+
+#[async_trait]
+impl Transport for TcpTransport {
+    /// Establish a connection to the remote endpoint
+    async fn connect(&mut self) -> Result<(), TransportError> {
         // Connect to the remote address
         let stream = TcpStream::connect(self.config.address)
             .await
@@ -34,10 +38,7 @@ impl TcpTransport {
         
         Ok(())
     }
-}
 
-#[async_trait]
-impl Transport for TcpTransport {
     /// Send data over the transport
     async fn send(&mut self, data: &str) -> Result<(), TransportError> {
         if let Some(stream) = &self.stream {
