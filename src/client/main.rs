@@ -9,9 +9,11 @@ mod app;
 mod cli;
 mod components;
 mod config;
+mod connection_manager;
 mod encryption;
 mod errors;
 mod logging;
+mod tcp_transport;
 mod transport;
 mod tui;
 
