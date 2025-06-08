@@ -15,6 +15,7 @@ use super::transport::{
     TransportError,
 };
 use super::encryption::EncryptionError;
+use super::aes_gcm_encryption::AesGcmEncryption;
 
 
 
@@ -562,5 +563,65 @@ mod tests {
         
         // Verify status is set to connected
         assert_eq!(manager.get_status().await, ConnectionStatus::CONNECTED);
+    }
+
+    #[tokio::test]
+    async fn test_connection_manager_with_aes_gcm_encryption() {
+        let config = ConnectionConfig::new("127.0.0.1:8080".parse().unwrap());
+        let mut manager = ConnectionManager::new_for_test(config);
+        
+        // Create AES-GCM encryption service
+        let aes_encryption = AesGcmEncryption::new("test_password_for_connection");
+        
+        // Create mock transport
+        let transport = MockTransport::new();
+        
+        // Configure the manager with both transport and encryption
+        manager
+            .with_transport(Box::new(transport))
+            .with_encryption(Box::new(aes_encryption));
+        
+        // Send a message that should be encrypted
+        let test_message = "This message should be encrypted with AES-GCM";
+        let result = manager.send_message(test_message.to_string()).await;
+        
+        // Should succeed even though we're not connected (mock transport allows it)
+        assert!(result.is_ok());
+        
+        // Verify message was stored in the message store
+        let message_store = manager.get_message_store();
+        let messages = message_store.lock().await;
+        assert_eq!(messages.messages.len(), 1);
+        assert_eq!(messages.messages[0].content, test_message);
+    }
+
+    #[tokio::test]
+    async fn test_aes_gcm_encryption_compatibility() {
+        // Test that AesGcmEncryption works as expected with the EncryptionService trait
+        let encryption: Box<dyn EncryptionService + Send + Sync> = 
+            Box::new(AesGcmEncryption::new("consistent_password"));
+        
+        let original_message = "Secret message for encryption test";
+        
+        // Encrypt and decrypt through the trait interface
+        let encrypted = encryption.encrypt("ignored_key", original_message)
+            .expect("Encryption should succeed");
+        let decrypted = encryption.decrypt("ignored_key", &encrypted)
+            .expect("Decryption should succeed");
+        
+        assert_eq!(original_message, decrypted);
+        
+        // Verify that encrypted data is different from original
+        assert_ne!(original_message, encrypted);
+        
+        // Verify that the same message encrypts to different ciphertexts (due to random nonce)
+        let encrypted2 = encryption.encrypt("ignored_key", original_message)
+            .expect("Second encryption should succeed");
+        assert_ne!(encrypted, encrypted2);
+        
+        // But both should decrypt to the same original message
+        let decrypted2 = encryption.decrypt("ignored_key", &encrypted2)
+            .expect("Second decryption should succeed");
+        assert_eq!(original_message, decrypted2);
     }
 }

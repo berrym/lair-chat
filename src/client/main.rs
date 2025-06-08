@@ -5,6 +5,7 @@ use color_eyre::Result;
 use crate::app::App;
 
 mod action;
+mod aes_gcm_encryption;
 mod app;
 mod cli;
 mod components;
