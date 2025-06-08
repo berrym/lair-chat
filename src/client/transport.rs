@@ -19,17 +19,22 @@ use tokio_util::{
 };
 use tui_input::Input;
 use x25519_dalek::{EphemeralSecret, PublicKey};
+use async_trait::async_trait;
 
 use crate::components::home::get_user_input;
 use super::encryption::{encrypt, decrypt, EncryptionError};
 
 /// Trait abstraction for encryption operations
+#[async_trait]
 pub trait EncryptionService: Send + Sync {
     /// Encrypt plaintext with the given key
     fn encrypt(&self, key: &str, plaintext: &str) -> Result<String, EncryptionError>;
     
     /// Decrypt ciphertext with the given key
     fn decrypt(&self, key: &str, ciphertext: &str) -> Result<String, EncryptionError>;
+    
+    /// Perform key exchange handshake with remote peer
+    async fn perform_handshake(&mut self, transport: &mut dyn Transport) -> Result<(), TransportError>;
 }
 
 /// Trait abstraction for network transport operations
@@ -63,6 +68,7 @@ pub trait ConnectionObserver: Send + Sync {
 /// Default implementation of EncryptionService using our existing functions
 pub struct DefaultEncryptionService;
 
+#[async_trait]
 impl EncryptionService for DefaultEncryptionService {
     fn encrypt(&self, key: &str, plaintext: &str) -> Result<String, EncryptionError> {
         encrypt(key.to_string(), plaintext.to_string())
@@ -70,6 +76,11 @@ impl EncryptionService for DefaultEncryptionService {
     
     fn decrypt(&self, key: &str, ciphertext: &str) -> Result<String, EncryptionError> {
         decrypt(key.to_string(), ciphertext.to_string())
+    }
+    
+    async fn perform_handshake(&mut self, _transport: &mut dyn Transport) -> Result<(), TransportError> {
+        // Default implementation - no handshake performed
+        Ok(())
     }
 }
 

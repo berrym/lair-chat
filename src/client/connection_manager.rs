@@ -113,6 +113,14 @@ impl ConnectionManager {
             transport_guard.connect().await?;
         }
 
+        // Perform key exchange handshake if encryption is configured
+        if let (Some(transport), Some(encryption)) = (&self.transport, &self.encryption) {
+            let mut encryption_guard = encryption.lock().await;
+            let mut transport_guard = transport.lock().await;
+            encryption_guard.perform_handshake(&mut **transport_guard).await?;
+            self.notify_message(Message::system_message("Key exchange completed".to_string()));
+        }
+
         // Set status to connected
         *self.status.write().await = ConnectionStatus::CONNECTED;
         self.notify_status_change(ConnectionStatus::CONNECTED);
@@ -396,6 +404,7 @@ mod tests {
     
     struct MockEncryptionService;
     
+    #[async_trait]
     impl EncryptionService for MockEncryptionService {
         fn encrypt(&self, _key: &str, plaintext: &str) -> Result<String, EncryptionError> {
             Ok(format!("ENCRYPTED:{}", plaintext))
@@ -407,6 +416,11 @@ mod tests {
             } else {
                 Err(EncryptionError::DecryptionError("Invalid ciphertext".to_string()))
             }
+        }
+        
+        async fn perform_handshake(&mut self, _transport: &mut dyn Transport) -> Result<(), TransportError> {
+            // Mock implementation - no handshake performed
+            Ok(())
         }
     }
     
@@ -623,5 +637,107 @@ mod tests {
         let decrypted2 = encryption.decrypt("ignored_key", &encrypted2)
             .expect("Second decryption should succeed");
         assert_eq!(original_message, decrypted2);
+    }
+
+    #[tokio::test]
+    async fn test_connection_manager_calls_handshake() {
+        let config = ConnectionConfig::new("127.0.0.1:8080".parse().unwrap());
+        let mut manager = ConnectionManager::new_for_test(config);
+        
+        // Create a mock encryption service that tracks handshake calls
+        struct HandshakeTrackingEncryption {
+            handshake_called: std::sync::Arc<tokio::sync::Mutex<bool>>,
+        }
+        
+        impl HandshakeTrackingEncryption {
+            fn new() -> (Self, std::sync::Arc<tokio::sync::Mutex<bool>>) {
+                let handshake_called = std::sync::Arc::new(tokio::sync::Mutex::new(false));
+                let service = Self {
+                    handshake_called: handshake_called.clone(),
+                };
+                (service, handshake_called)
+            }
+        }
+        
+        #[async_trait]
+        impl EncryptionService for HandshakeTrackingEncryption {
+            fn encrypt(&self, _key: &str, plaintext: &str) -> Result<String, EncryptionError> {
+                Ok(format!("ENCRYPTED:{}", plaintext))
+            }
+            
+            fn decrypt(&self, _key: &str, ciphertext: &str) -> Result<String, EncryptionError> {
+                if ciphertext.starts_with("ENCRYPTED:") {
+                    Ok(ciphertext.replace("ENCRYPTED:", ""))
+                } else {
+                    Err(EncryptionError::DecryptionError("Invalid ciphertext".to_string()))
+                }
+            }
+            
+            async fn perform_handshake(&mut self, _transport: &mut dyn Transport) -> Result<(), TransportError> {
+                let mut called = self.handshake_called.lock().await;
+                *called = true;
+                Ok(())
+            }
+        }
+        
+        let (encryption_service, handshake_tracker) = HandshakeTrackingEncryption::new();
+        let transport = MockTransport::new();
+        
+        // Configure the manager
+        manager
+            .with_transport(Box::new(transport))
+            .with_encryption(Box::new(encryption_service));
+        
+        // Verify handshake wasn't called yet
+        assert!(!*handshake_tracker.lock().await);
+        
+        // Connect - this should trigger the handshake
+        let result = manager.connect().await;
+        assert!(result.is_ok());
+        
+        // Verify handshake was called
+        assert!(*handshake_tracker.lock().await);
+        
+        // Verify connection status
+        assert_eq!(manager.get_status().await, ConnectionStatus::CONNECTED);
+    }
+
+    #[tokio::test]
+    async fn test_connection_manager_handshake_failure() {
+        let config = ConnectionConfig::new("127.0.0.1:8080".parse().unwrap());
+        let mut manager = ConnectionManager::new_for_test(config);
+        
+        // Create a mock encryption service that fails handshake
+        struct FailingHandshakeEncryption;
+        
+        #[async_trait]
+        impl EncryptionService for FailingHandshakeEncryption {
+            fn encrypt(&self, _key: &str, plaintext: &str) -> Result<String, EncryptionError> {
+                Ok(format!("ENCRYPTED:{}", plaintext))
+            }
+            
+            fn decrypt(&self, _key: &str, ciphertext: &str) -> Result<String, EncryptionError> {
+                Ok(ciphertext.replace("ENCRYPTED:", ""))
+            }
+            
+            async fn perform_handshake(&mut self, _transport: &mut dyn Transport) -> Result<(), TransportError> {
+                Err(TransportError::EncryptionError(EncryptionError::EncryptionError("Handshake failed".to_string())))
+            }
+        }
+        
+        let encryption_service = FailingHandshakeEncryption;
+        let transport = MockTransport::new();
+        
+        // Configure the manager
+        manager
+            .with_transport(Box::new(transport))
+            .with_encryption(Box::new(encryption_service));
+        
+        // Connect - this should fail due to handshake failure
+        let result = manager.connect().await;
+        assert!(result.is_err());
+        
+        // Verify connection status remains disconnected
+        assert_eq!(manager.get_status().await, ConnectionStatus::DISCONNECTED);
     }
 }

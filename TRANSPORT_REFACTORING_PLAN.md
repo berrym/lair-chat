@@ -131,15 +131,18 @@ pub trait Transport: Send + Sync {
 
 **✅ STATUS**: Transport trait completed with proper connect method integration. TcpTransport implements all methods correctly.
 
-### 3. EncryptionService Interface
+### 3. EncryptionService Interface *(✅ COMPLETED)*
 
 ```rust
+#[async_trait]
 pub trait EncryptionService: Send + Sync {
-    fn encrypt(&self, plaintext: &str) -> Result<String, TransportError>;
-    fn decrypt(&self, ciphertext: &str) -> Result<String, TransportError>;
+    fn encrypt(&self, key: &str, plaintext: &str) -> Result<String, EncryptionError>;
+    fn decrypt(&self, key: &str, ciphertext: &str) -> Result<String, EncryptionError>;
     async fn perform_handshake(&mut self, transport: &mut dyn Transport) -> Result<(), TransportError>;
 }
 ```
+
+**✅ STATUS**: EncryptionService trait completed with X25519 key exchange handshake support. AesGcmEncryption implements secure key derivation from shared secrets.
 
 ### 4. ConnectionObserver Interface
 
@@ -247,7 +250,7 @@ impl Transport for MockTransport {
 
 ## Success Criteria
 
-1. All unit tests pass *(✅ COMPLETED - 6/6 connection manager tests + 10/10 AES-GCM tests passing)*
+1. All unit tests pass *(✅ COMPLETED - 8/8 connection manager tests + 16/16 AES-GCM encryption tests + 6/6 handshake tests passing)*
 2. No regression in existing functionality *(✅ COMPLETED - All existing tests still pass)*
 3. Improved code maintainability metrics *(🔄 IN PROGRESS - Better separation of concerns)*
 4. Documented API with examples *(❌ TODO)*
@@ -271,7 +274,7 @@ To begin work on this refactoring:
 2. Add the new dependencies to Cargo.toml *(✅ COMPLETED)*
 3. Create the core interfaces and data structures *(✅ COMPLETED)*
 4. Implement the concrete classes *(🔄 PARTIALLY COMPLETED - ConnectionManager and TcpTransport done)*
-5. Add unit tests for the new components *(✅ COMPLETED - Connection establishment and AES-GCM encryption tests added)*
+5. Add unit tests for the new components *(✅ COMPLETED - Connection establishment, AES-GCM encryption, and handshake protocol tests added)*
 6. Create the compatibility layer *(❌ TODO)*
 7. Migrate existing code gradually *(❌ TODO)*
 
@@ -298,8 +301,17 @@ To begin work on this refactoring:
 - Added integration tests with ConnectionManager
 - Added helper functions for creating boxed encryption services
 
+**✅ Priority 4: Added Handshake Support to EncryptionService Trait**
+- Extended EncryptionService trait with `perform_handshake` async method
+- Implemented X25519 Elliptic Curve Diffie-Hellman key exchange in AesGcmEncryption
+- Added secure shared secret derivation using SHA-256 with domain separation
+- Updated DefaultEncryptionService with no-op handshake for backward compatibility
+- Integrated handshake protocol into ConnectionManager connection establishment
+- Added 6 comprehensive handshake tests covering success and failure scenarios
+- Added 2 integration tests for ConnectionManager handshake integration
+- Added proper error handling for all handshake failure modes
+
 **Next Priorities:**
-- Priority 4: Add handshake support to EncryptionService trait
 - Priority 5: Implement TuiObserver for proper UI integration
 
 ## Conclusion
