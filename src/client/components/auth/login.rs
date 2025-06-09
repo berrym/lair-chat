@@ -147,18 +147,18 @@ impl Component for LoginScreen {
         let vertical_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Percentage(20),  // Top padding
-                Constraint::Length(18),      // Login form
-                Constraint::Percentage(20),  // Bottom padding
+                Constraint::Percentage(15),  // Top padding
+                Constraint::Length(22),      // Login form (increased height)
+                Constraint::Percentage(15),  // Bottom padding
             ])
             .split(area);
 
         let horizontal_chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Percentage(25),  // Left padding
-                Constraint::Percentage(50),  // Login form
-                Constraint::Percentage(25),  // Right padding
+                Constraint::Percentage(15),  // Left padding (reduced)
+                Constraint::Percentage(70),  // Login form (increased width)
+                Constraint::Percentage(15),  // Right padding (reduced)
             ])
             .split(vertical_chunks[1]);
 
@@ -185,13 +185,13 @@ impl Component for LoginScreen {
             .direction(Direction::Vertical)
             .margin(1)
             .constraints([
-                Constraint::Length(3),   // Mode selection and instructions
+                Constraint::Length(4),   // Mode selection and instructions (taller)
                 Constraint::Length(1),   // Spacer
-                Constraint::Length(3),   // Username input
-                Constraint::Length(3),   // Password input
+                Constraint::Length(4),   // Username input (taller)
+                Constraint::Length(4),   // Password input (taller)
                 Constraint::Length(1),   // Spacer
-                Constraint::Length(2),   // Instructions
-                Constraint::Length(2),   // Status/Error
+                Constraint::Length(6),   // Instructions (much taller)
+                Constraint::Length(3),   // Status/Error (taller)
             ])
             .split(form_area);
 
@@ -247,15 +247,16 @@ impl Component for LoginScreen {
                 Style::default().fg(Color::Gray)
             });
 
-        let username_display = if self.username.value().is_empty() && self.focused_field == 0 {
-            format!("{}_", self.username.value())
+        let username_display = if self.focused_field == 0 {
+            format!("{}|", self.username.value())
         } else {
             self.username.value().to_string()
         };
 
         let username_input = Paragraph::new(username_display)
             .style(username_style)
-            .block(username_block);
+            .block(username_block)
+            .wrap(ratatui::widgets::Wrap { trim: false });
         f.render_widget(username_input, form_chunks[2]);
 
         // Draw password field with better styling
@@ -280,14 +281,15 @@ impl Component for LoginScreen {
                 Style::default().fg(Color::Gray)
             });
 
-        let masked_password = if self.password.value().is_empty() && self.focused_field == 1 {
-            "_".to_string()
+        let masked_password = if self.focused_field == 1 {
+            format!("{}|", "•".repeat(self.password.value().len()))
         } else {
             "•".repeat(self.password.value().len())
         };
         let password_input = Paragraph::new(masked_password)
             .style(password_style)
-            .block(password_block);
+            .block(password_block)
+            .wrap(ratatui::widgets::Wrap { trim: false });
         f.render_widget(password_input, form_chunks[3]);
 
         // Draw comprehensive navigation instructions
@@ -318,7 +320,8 @@ impl Component for LoginScreen {
             ]),
         ])
         .style(Style::default().fg(Color::Cyan))
-        .block(Block::default().borders(Borders::ALL).title("How to Use"));
+        .block(Block::default().borders(Borders::ALL).title("How to Use"))
+        .wrap(ratatui::widgets::Wrap { trim: false });
         f.render_widget(instructions, form_chunks[5]);
 
         // Draw status/error message
@@ -329,7 +332,8 @@ impl Component for LoginScreen {
                     Span::styled(error.as_str(), Style::default().fg(Color::Red)),
                 ]),
             ])
-            .block(Block::default().borders(Borders::ALL).title("Status"));
+            .block(Block::default().borders(Borders::ALL).title("Status"))
+            .wrap(ratatui::widgets::Wrap { trim: false });
             f.render_widget(error_msg, form_chunks[6]);
         } else if self.processing {
             let status_msg = Paragraph::new(vec![
@@ -337,7 +341,8 @@ impl Component for LoginScreen {
                     Span::styled("Processing...", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
                 ]),
             ])
-            .block(Block::default().borders(Borders::ALL).title("Status"));
+            .block(Block::default().borders(Borders::ALL).title("Status"))
+            .wrap(ratatui::widgets::Wrap { trim: false });
             f.render_widget(status_msg, form_chunks[6]);
         } else {
             let ready_msg = Paragraph::new(vec![
@@ -345,7 +350,8 @@ impl Component for LoginScreen {
                     Span::styled("Ready to authenticate", Style::default().fg(Color::Green)),
                 ]),
             ])
-            .block(Block::default().borders(Borders::ALL).title("Status"));
+            .block(Block::default().borders(Borders::ALL).title("Status"))
+            .wrap(ratatui::widgets::Wrap { trim: false });
             f.render_widget(ready_msg, form_chunks[6]);
         }
 

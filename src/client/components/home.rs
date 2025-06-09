@@ -471,7 +471,7 @@ impl Component for Home {
                         add_text_message("Already connected to a server.".to_string());
                         return Ok(Some(Action::Update));
                     }
-                    self.show_dialog();
+                    add_text_message("Connection dialog disabled. Use authentication to connect.".to_string());
                     Action::Update
                 }
                 KeyCode::Char('c') => {
@@ -479,7 +479,7 @@ impl Component for Home {
                         add_text_message("Already connected to a server.".to_string());
                         return Ok(Some(Action::Update));
                     }
-                    self.show_dialog();
+                    add_text_message("Connection dialog disabled. Use authentication to connect.".to_string());
                     Action::Update
                 }
                 KeyCode::Char('d') => {
@@ -501,7 +501,7 @@ impl Component for Home {
                         add_text_message("Already connected to a server.".to_string());
                         return Ok(Some(Action::Update));
                     }
-                    self.show_dialog();
+                    add_text_message("Connection dialog disabled. Use authentication to connect.".to_string());
                     Action::Update
                 }
                 KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -519,7 +519,7 @@ impl Component for Home {
                 KeyCode::Enter => {
                     let client_status = CLIENT_STATUS.lock().unwrap();
                     if client_status.status == ConnectionStatus::DISCONNECTED {
-                        self.show_dialog();
+                        add_text_message("Not connected. Please restart application to re-authenticate.".to_string());
                         return Ok(Some(Action::Update));
                     }
                     let message = self.input.value();
@@ -606,7 +606,7 @@ impl Component for Home {
                 });
             }
             Action::ShowConnectionDialog => {
-                self.show_dialog();
+                add_text_message("Connection dialog disabled. Use authentication to connect.".to_string());
             }
             Action::DisconnectClient => {
                 tokio::spawn(async move {
@@ -1075,9 +1075,8 @@ impl Component for Home {
                 Row::new(vec!["PageUp", "Scroll Up One Page"]),
                 Row::new(vec!["PageDown", "Scroll Down One Page"]),
                 Row::new(vec!["Home", "Scroll to Top"]),
-                Row::new(vec!["End/Esc", "Return to Auto-follow"]),
-                Row::new(vec!["Tab", "Navigate Dialog Fields"]),
-                Row::new(vec!["F1", "Show Version Info"]),
+                Row::new(vec!["End", "Scroll to Bottom"]),
+                Row::new(vec!["f", "Toggle FPS counter"]),
             ];
             
             // Calculate available height for the table content
