@@ -935,12 +935,7 @@ impl Component for Home {
             });
             
             // Render the host value in the inner area only
-            let host_text = Paragraph::new(if self.dialog_cursor_position == 0 {
-                // Show cursor when this field is selected
-                format!("{}_", host_value)
-            } else {
-                host_value
-            })
+            let host_text = Paragraph::new(host_value)
             .style(Style::default()
                 .fg(Color::White)  // White is more readable on dark gray background
                 .add_modifier(Modifier::BOLD))
@@ -979,11 +974,7 @@ impl Component for Home {
             });
             
             // Render the port value with enhanced visibility - make it stand out more
-            let display_text = if self.dialog_cursor_position == 1 {
-                format!("{}_", port_value)
-            } else {
-                port_value.clone()
-            };
+            let display_text = port_value;
             
             // Use a bold, bright text to ensure visibility
             let value_text = Paragraph::new(display_text)
