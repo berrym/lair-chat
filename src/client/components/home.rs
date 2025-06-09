@@ -455,11 +455,12 @@ impl Component for Home {
                     if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::DISCONNECTED {
                         add_text_message(" ".to_owned());
                         add_text_message(
-                            "Before you can send messages, you must connect to a server."
+                            "🔌 Connection lost! You are now disconnected from the chat server."
                                 .to_owned(),
                         );
                         add_text_message(
-                            "Type an address e.g. 127.0.0.1:8080 then press Enter".to_owned(),
+                            "💡 Try reconnecting or restart the application to re-authenticate."
+                                .to_owned(),
                         );
                         add_text_message(" ".to_owned());
                     }
@@ -527,7 +528,7 @@ impl Component for Home {
                         self.input.reset();
                     } else {
                         if !message.is_empty() {
-                            add_text_message("Connect to a server to send messages.".to_string());
+                            add_text_message("❌ Cannot send message: Connection lost. Please restart the application.".to_string());
                         }
                         if client_status.status == ConnectionStatus::CONNECTED {
                             add_text_message("Can't send an empty message.".to_string());
@@ -655,7 +656,21 @@ impl Component for Home {
             .map(|l| Line::from(l.clone()))
             .collect();
         if messages.is_empty() {
-            text.push("No messages to display.".dim().into());
+            text.push("".into());
+            text.push("🎉 Welcome to Lair Chat! You are now connected and ready to chat.".cyan().into());
+            text.push("".into());
+            text.push("💬 To send a message:".white().bold().into());
+            text.push("   1. Press '/' to enter insert mode".yellow().into());
+            text.push("   2. Type your message".yellow().into());
+            text.push("   3. Press Enter to send".yellow().into());
+            text.push("".into());
+            text.push("🔧 Other controls:".white().bold().into());
+            text.push("   ? - Show/hide help".cyan().into());
+            text.push("   f - Toggle FPS counter".cyan().into());
+            text.push("   q - Quit application".cyan().into());
+            text.push("".into());
+            text.push("Start chatting by pressing '/' and typing your first message! 🚀".green().bold().into());
+            text.push("".into());
         } else {
             for l in messages {
                 text.push(l.into());
@@ -1047,12 +1062,10 @@ impl Component for Home {
             
             // Create rows for the help table
             let rows = vec![
-                Row::new(vec!["/", "Enter Input Mode"]),
-                Row::new(vec!["enter", "Submit Input"]),
-                Row::new(vec!["esc", "Exit Input Mode"]),
-                Row::new(vec!["c", "Open Connection Dialog"]),
-                Row::new(vec!["F2", "Open Connection Dialog"]),
-                Row::new(vec!["d", "Disconnect"]),
+                Row::new(vec!["/", "Enter Message Input Mode"]),
+                Row::new(vec!["enter", "Send Message"]),
+                Row::new(vec!["esc", "Exit Message Input Mode"]),
+                Row::new(vec!["Ctrl+C", "Quit Application"]),
                 Row::new(vec!["q", "Quit"]),
                 Row::new(vec!["ctrl-z", "Suspend Program"]),
                 Row::new(vec!["?", "Open/Close Help"]),

@@ -290,12 +290,35 @@ impl Component for LoginScreen {
             .block(password_block);
         f.render_widget(password_input, form_chunks[3]);
 
-        // Draw navigation instructions
+        // Draw comprehensive navigation instructions
         let instructions = Paragraph::new(vec![
-            Line::from("⌨️  Tab/Shift+Tab - Switch fields | Enter - Submit | Ctrl+T - Switch mode | Ctrl+C - Quit"),
+            Line::from(vec![
+                Span::styled("🔧 Key Controls:", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Tab/Shift+Tab", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(" - Switch between username/password fields", Style::default().fg(Color::White)),
+            ]),
+            Line::from(vec![
+                Span::styled("Enter", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled(" - Submit login/registration", Style::default().fg(Color::White)),
+            ]),
+            Line::from(vec![
+                Span::styled("Ctrl+T", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+                Span::styled(" - Toggle between Login ↔ Register modes", Style::default().fg(Color::White)),
+            ]),
+            Line::from(vec![
+                Span::styled("Ctrl+C", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::styled(" - Quit application", Style::default().fg(Color::White)),
+            ]),
+            Line::from(vec![
+                Span::styled("Type normally", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(" - Enter text in focused field", Style::default().fg(Color::White)),
+            ]),
         ])
         .style(Style::default().fg(Color::Cyan))
-        .block(Block::default().borders(Borders::ALL).title("Controls"));
+        .block(Block::default().borders(Borders::ALL).title("🎮 How to Use"));
         f.render_widget(instructions, form_chunks[5]);
 
         // Draw status/error message

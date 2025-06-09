@@ -321,6 +321,18 @@ impl App {
                 
                 if let AuthState::Authenticated { ref profile, .. } = auth_state {
                     info!("User {} authenticated successfully", profile.username);
+                    
+                    // Auto-connect to server after successful authentication
+                    use crate::transport::{CLIENT_STATUS, ConnectionStatus, add_text_message};
+                    CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
+                    info!("Auto-connected to chat server");
+                    
+                    // Add welcome message to chat
+                    add_text_message(" ".to_string());
+                    add_text_message(format!("🎉 Welcome to Lair Chat, {}!", profile.username));
+                    add_text_message("✅ You are now connected and ready to chat!".to_string());
+                    add_text_message("💡 Press '/' to start typing your first message.".to_string());
+                    add_text_message(" ".to_string());
                 }
             }
             
