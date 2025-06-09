@@ -29,6 +29,8 @@ pub struct LoginScreen {
     processing: bool,
     show_help: bool,
     help_scroll: usize,
+    show_error: bool,
+    error_scroll: usize,
 }
 
 impl LoginScreen {
@@ -44,6 +46,8 @@ impl LoginScreen {
             processing: false,
             show_help: false,
             help_scroll: 0,
+            show_error: false,
+            error_scroll: 0,
         }
     }
 
@@ -138,6 +142,8 @@ impl LoginScreen {
     pub fn handle_error(&mut self, error: AuthError) {
         self.processing = false;
         self.error_message = Some(error.to_string());
+        self.show_error = true;
+        self.error_scroll = 0;
     }
 
     pub fn handle_auth_state(&mut self, state: &AuthState) {
@@ -163,19 +169,23 @@ impl Component for LoginScreen {
 
         match key.code {
             crossterm::event::KeyCode::Tab => {
-                if !self.show_help {
+                if !self.show_help && !self.show_error {
                     self.focused_field = (self.focused_field + 1) % 4;
                 }
                 None
             }
             crossterm::event::KeyCode::BackTab => {
-                if !self.show_help {
+                if !self.show_help && !self.show_error {
                     self.focused_field = if self.focused_field == 0 { 3 } else { self.focused_field - 1 };
                 }
                 None
             }
             crossterm::event::KeyCode::Enter => {
-                if self.show_help {
+                if self.show_error {
+                    self.show_error = false;
+                    self.error_scroll = 0;
+                    None
+                } else if self.show_help {
                     // If help is open, close it instead of submitting
                     self.show_help = false;
                     self.help_scroll = 0;
@@ -189,12 +199,18 @@ impl Component for LoginScreen {
                 None
             }
             crossterm::event::KeyCode::Char('?') => {
-                self.show_help = !self.show_help;
-                self.help_scroll = 0; // Reset scroll when opening help
+                if !self.show_error {
+                    self.show_help = !self.show_help;
+                    self.help_scroll = 0; // Reset scroll when opening help
+                }
                 None
             }
             crossterm::event::KeyCode::Esc => {
-                if self.show_help {
+                if self.show_error {
+                    self.show_error = false;
+                    self.error_scroll = 0;
+                    None
+                } else if self.show_help {
                     self.show_help = false;
                     self.help_scroll = 0;
                     None
@@ -202,26 +218,40 @@ impl Component for LoginScreen {
                     None
                 }
             }
-            crossterm::event::KeyCode::Up if self.show_help => {
-                if self.help_scroll > 0 {
+            crossterm::event::KeyCode::Up if self.show_help || self.show_error => {
+                if self.show_help && self.help_scroll > 0 {
                     self.help_scroll -= 1;
+                } else if self.show_error && self.error_scroll > 0 {
+                    self.error_scroll -= 1;
                 }
                 None
             }
-            crossterm::event::KeyCode::Down if self.show_help => {
-                self.help_scroll += 1;
+            crossterm::event::KeyCode::Down if self.show_help || self.show_error => {
+                if self.show_help {
+                    self.help_scroll += 1;
+                } else if self.show_error {
+                    self.error_scroll += 1;
+                }
                 None
             }
-            crossterm::event::KeyCode::PageUp if self.show_help => {
-                self.help_scroll = self.help_scroll.saturating_sub(5);
+            crossterm::event::KeyCode::PageUp if self.show_help || self.show_error => {
+                if self.show_help {
+                    self.help_scroll = self.help_scroll.saturating_sub(5);
+                } else if self.show_error {
+                    self.error_scroll = self.error_scroll.saturating_sub(5);
+                }
                 None
             }
-            crossterm::event::KeyCode::PageDown if self.show_help => {
-                self.help_scroll += 5;
+            crossterm::event::KeyCode::PageDown if self.show_help || self.show_error => {
+                if self.show_help {
+                    self.help_scroll += 5;
+                } else if self.show_error {
+                    self.error_scroll += 5;
+                }
                 None
             }
             crossterm::event::KeyCode::Char(c) => {
-                if !self.show_help {
+                if !self.show_help && !self.show_error {
                     match self.focused_field {
                         0 => { self.username = self.username.clone().with_value(format!("{}{}", self.username.value(), c)); },
                         1 => { self.password = self.password.clone().with_value(format!("{}{}", self.password.value(), c)); },
@@ -233,7 +263,7 @@ impl Component for LoginScreen {
                 None
             }
             crossterm::event::KeyCode::Backspace => {
-                if !self.show_help {
+                if !self.show_help && !self.show_error {
                     match self.focused_field {
                         0 => { 
                             let value = self.username.value();
@@ -487,21 +517,13 @@ impl Component for LoginScreen {
             .wrap(ratatui::widgets::Wrap { trim: false });
         f.render_widget(port_input, form_chunks[5]);
 
-        // Draw simple help label with error if present
-        let help_text = if let Some(error) = &self.error_message {
-            Paragraph::new(vec![
-                Line::from(vec![
-                    Span::styled("Error: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                    Span::styled(error.as_str(), Style::default().fg(Color::Red)),
-                ]),
-                Line::from(vec![
-                    Span::styled("Press ? for help", Style::default().fg(Color::Blue)),
-                ]),
-            ])
-            .wrap(ratatui::widgets::Wrap { trim: false })
-        } else if self.processing {
+        // Draw simple help label
+        let help_text = if self.processing {
             Paragraph::new("Processing... | Press ? for help")
                 .style(Style::default().fg(Color::Yellow))
+        } else if self.error_message.is_some() {
+            Paragraph::new("Error occurred | Press Esc to view details | Press ? for help")
+                .style(Style::default().fg(Color::Red))
         } else {
             Paragraph::new("Press ? for help")
                 .style(Style::default().fg(Color::Blue))
@@ -512,6 +534,11 @@ impl Component for LoginScreen {
         // Draw help popup if visible
         if self.show_help {
             self.draw_help_popup(f, area)?;
+        }
+        
+        // Draw error popup if visible
+        if self.show_error {
+            self.draw_error_popup(f, area)?;
         }
 
         Ok(())
@@ -669,6 +696,92 @@ impl LoginScreen {
                     }
                 );
             }
+        }
+
+        Ok(())
+    }
+
+    fn draw_error_popup(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
+        // Create centered popup for error display
+        let popup_area = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Percentage(20),
+                Constraint::Percentage(60),
+                Constraint::Percentage(20),
+            ])
+            .split(area)[1];
+
+        let popup_area = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(10),
+                Constraint::Percentage(80),
+                Constraint::Percentage(10),
+            ])
+            .split(popup_area)[1];
+
+        // Clear background
+        f.render_widget(Clear, popup_area);
+
+        if let Some(error) = &self.error_message {
+            let error_lines = vec![
+                Line::from(vec![
+                    Span::styled("Connection Error", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                ]),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("Error: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                    Span::styled(error.as_str(), Style::default().fg(Color::White)),
+                ]),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("Troubleshooting:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                ]),
+                Line::from("1. Make sure the server is running:"),
+                Line::from("   cargo run --bin lair-chat-server"),
+                Line::from(""),
+                Line::from("2. Check server address and port are correct"),
+                Line::from("3. Verify no firewall is blocking the connection"),
+                Line::from("4. Try restarting both client and server"),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("Navigation:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                ]),
+                Line::from("Up/Down - Scroll | Esc/Enter - Close"),
+            ];
+
+            // Calculate scrolling
+            let content_height = popup_area.height.saturating_sub(2) as usize;
+            let max_scroll = error_lines.len().saturating_sub(content_height);
+            
+            if self.error_scroll > max_scroll {
+                self.error_scroll = max_scroll;
+            }
+
+            let visible_lines: Vec<Line> = error_lines
+                .iter()
+                .skip(self.error_scroll)
+                .take(content_height)
+                .cloned()
+                .collect();
+
+            let title = if max_scroll > 0 {
+                format!("Error Details - Press Esc to close ({}/{})", 
+                        self.error_scroll + 1, 
+                        error_lines.len())
+            } else {
+                "Error Details - Press Esc to close".to_string()
+            };
+
+            let error_popup = Paragraph::new(visible_lines)
+                .block(Block::default()
+                    .borders(Borders::ALL)
+                    .title(title)
+                    .border_style(Style::default().fg(Color::Red)))
+                .wrap(ratatui::widgets::Wrap { trim: false });
+
+            f.render_widget(error_popup, popup_area);
         }
 
         Ok(())

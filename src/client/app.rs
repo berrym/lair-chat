@@ -451,7 +451,8 @@ impl App {
                                 add_text_message(format!("Failed to connect to {}: {}", server_addr, e));
                                 add_text_message("Authentication failed - could not connect to server".to_string());
                                 add_text_message("Start the server with: cargo run --bin lair-chat-server".to_string());
-                                let _ = tx.send(Action::AuthenticationFailure("Connection failed. Is the server running? Start with: cargo run --bin lair-chat-server".to_string()));
+                                let detailed_error = format!("Connection to {} failed: {}. This could be due to: (1) Server not running - start with 'cargo run --bin lair-chat-server', (2) Server starting up - wait a moment and retry, (3) Port already in use, (4) Firewall blocking connection, (5) Server crashed or not listening properly.", server_addr, e);
+                                let _ = tx.send(Action::AuthenticationFailure(detailed_error));
                             }
                         }
                     }
@@ -519,7 +520,8 @@ impl App {
                                 add_text_message(format!("Failed to connect to {}: {}", server_addr, e));
                                 add_text_message("Registration failed - could not connect to server".to_string());
                                 add_text_message("Start the server with: cargo run --bin lair-chat-server".to_string());
-                                let _ = tx.send(Action::AuthenticationFailure("Connection failed. Is the server running? Start with: cargo run --bin lair-chat-server".to_string()));
+                                let detailed_error = format!("Connection to {} failed: {}. This could be due to: (1) Server not running - start with 'cargo run --bin lair-chat-server', (2) Server starting up - wait a moment and retry, (3) Port already in use, (4) Firewall blocking connection, (5) Server crashed or not listening properly.", server_addr, e);
+                                let _ = tx.send(Action::AuthenticationFailure(detailed_error));
                             }
                         }
                     }
