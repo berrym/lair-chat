@@ -13,6 +13,7 @@ use crate::{
     history::CommandHistory,
     migration_facade,
     transport::*,
+    errors::display::{show_validation_error, show_disconnection, show_info, show_warning},
 };
 
 /// Get any text in the input box
@@ -116,14 +117,14 @@ impl Home {
             
             // Validate inputs
             if host.is_empty() {
-                add_text_message("Host cannot be empty".to_string());
+                show_validation_error("Host", "cannot be empty");
                 return Ok(None);
             }
             
             let port = match port_str.parse::<u16>() {
                 Ok(p) => p,
                 Err(_) => {
-                    add_text_message("Invalid port number".to_string());
+                    show_validation_error("Port", "must be a valid number (1-65535)");
                     return Ok(None);
                 }
             };
@@ -147,7 +148,7 @@ impl Home {
                     return Ok(Some(Action::Update));
                 }
                 Err(_) => {
-                    add_text_message("Invalid address format".to_string());
+                    show_validation_error("Address", "invalid format - use host:port (e.g., 127.0.0.1:8080)");
                 }
             }
         }
@@ -469,33 +470,25 @@ impl Component for Home {
                 KeyCode::Char('?') => Action::ToggleShowHelp,
                 KeyCode::Char('/') => {
                     if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::DISCONNECTED {
-                        add_text_message(" ".to_owned());
-                        add_text_message(
-                            "Connection lost! You are now disconnected from the chat server."
-                                .to_owned(),
-                        );
-                        add_text_message(
-                            "Try reconnecting or restart the application to re-authenticate."
-                                .to_owned(),
-                        );
-                        add_text_message(" ".to_owned());
+                        show_disconnection();
+                        return Ok(Some(Action::EnterInsert));
                     }
                     Action::EnterInsert
                 }
                 KeyCode::F(2) => {
                     if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
-                        add_text_message("Already connected to a server.".to_string());
+                        show_warning("Already connected to a server");
                         return Ok(Some(Action::Update));
                     }
-                    add_text_message("Connection dialog disabled. Use authentication to connect.".to_string());
+                    show_info("Please use the authentication system to connect (restart the application)");
                     Action::Update
                 }
                 KeyCode::Char('c') => {
                     if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
-                        add_text_message("Already connected to a server.".to_string());
+                        show_warning("Already connected to a server");
                         return Ok(Some(Action::Update));
                     }
-                    add_text_message("Connection dialog disabled. Use authentication to connect.".to_string());
+                    show_info("Please use the authentication system to connect (restart the application)");
                     Action::Update
                 }
                 KeyCode::Char('d') => {
@@ -514,10 +507,10 @@ impl Component for Home {
             Mode::Insert => match key.code {
                 KeyCode::F(2) => {
                     if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
-                        add_text_message("Already connected to a server.".to_string());
+                        show_warning("Already connected to a server");
                         return Ok(Some(Action::Update));
                     }
-                    add_text_message("Connection dialog disabled. Use authentication to connect.".to_string());
+                    show_info("Please use the authentication system to connect (restart the application)");
                     Action::Update
                 }
                 KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -535,7 +528,7 @@ impl Component for Home {
                 KeyCode::Enter => {
                     let client_status = CLIENT_STATUS.lock().unwrap();
                     if client_status.status == ConnectionStatus::DISCONNECTED {
-                        add_text_message("Not connected. Please restart application to re-authenticate.".to_string());
+                        show_warning("Not connected - please restart the application to reconnect and authenticate");
                         return Ok(Some(Action::Update));
                     }
                     let message = self.input.value();
@@ -556,10 +549,10 @@ impl Component for Home {
                         return Ok(Some(action));
                     } else {
                         if !message.is_empty() {
-                            add_text_message("Cannot send message: Connection lost. Please restart the application.".to_string());
+                            show_warning("Cannot send message - connection lost. Please restart the application");
                         }
                         if client_status.status == ConnectionStatus::CONNECTED {
-                            add_text_message("Can't send an empty message.".to_string());
+                            show_info("Please enter a message before pressing Enter");
                         }
                     }
                     Action::Update
@@ -650,16 +643,13 @@ impl Component for Home {
                 let user_input = self.input.value().to_string();
                 self.input.reset();
                 if user_input.is_empty() {
-                    add_text_message(
-                        "Enter a address:port string in the input box, e.g. 127.0.0.1:8080"
-                            .to_string(),
-                    );
+                    show_info("Enter a server address in the format host:port (e.g., 127.0.0.1:8080)");
                     return Ok(Some(Action::Update));
                 }
                 let address: SocketAddr = match user_input.parse() {
                     Ok(address) => address,
                     Err(_) => {
-                        add_text_message("Failed to get server address.".to_string());
+                        show_validation_error("Server address", "invalid format - use host:port");
                         return Ok(Some(Action::Update));
                     }
                 };
@@ -669,7 +659,7 @@ impl Component for Home {
                 });
             }
             Action::ShowConnectionDialog => {
-                add_text_message("Connection dialog disabled. Use authentication to connect.".to_string());
+                show_info("Please use the authentication system to connect (restart the application)");
             }
             Action::DisconnectClient => {
                 tokio::spawn(async move {

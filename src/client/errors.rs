@@ -3,6 +3,17 @@ use std::env;
 use color_eyre::Result;
 use tracing::error;
 
+#[path = "errors/display.rs"]
+pub mod display;
+
+pub use display::{
+    ErrorDisplay, ErrorDisplayConfig,
+    show_connection_error, show_validation_error, show_info, 
+    show_success, show_warning, show_disconnection, 
+    show_connection_help, show_usage_help,
+    init_error_display, get_error_display,
+};
+
 pub fn init() -> Result<()> {
     let (panic_hook, eyre_hook) = color_eyre::config::HookBuilder::default()
         .panic_section(format!(
