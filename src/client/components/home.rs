@@ -455,11 +455,11 @@ impl Component for Home {
                     if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::DISCONNECTED {
                         add_text_message(" ".to_owned());
                         add_text_message(
-                            "🔌 Connection lost! You are now disconnected from the chat server."
+                            "Connection lost! You are now disconnected from the chat server."
                                 .to_owned(),
                         );
                         add_text_message(
-                            "💡 Try reconnecting or restart the application to re-authenticate."
+                            "Try reconnecting or restart the application to re-authenticate."
                                 .to_owned(),
                         );
                         add_text_message(" ".to_owned());
@@ -524,11 +524,12 @@ impl Component for Home {
                     }
                     let message = self.input.value();
                     if !message.is_empty() && client_status.status == ConnectionStatus::CONNECTED {
-                        add_outgoing_message(message.to_string());
+                        let action = Action::SendMessage(message.to_string());
                         self.input.reset();
+                        return Ok(Some(action));
                     } else {
                         if !message.is_empty() {
-                            add_text_message("❌ Cannot send message: Connection lost. Please restart the application.".to_string());
+                            add_text_message("Cannot send message: Connection lost. Please restart the application.".to_string());
                         }
                         if client_status.status == ConnectionStatus::CONNECTED {
                             add_text_message("Can't send an empty message.".to_string());
@@ -657,19 +658,19 @@ impl Component for Home {
             .collect();
         if messages.is_empty() {
             text.push("".into());
-            text.push("🎉 Welcome to Lair Chat! You are now connected and ready to chat.".cyan().into());
+            text.push("Welcome to Lair Chat! You are now connected and ready to chat.".cyan().into());
             text.push("".into());
-            text.push("💬 To send a message:".white().bold().into());
+            text.push("To send a message:".white().bold().into());
             text.push("   1. Press '/' to enter insert mode".yellow().into());
             text.push("   2. Type your message".yellow().into());
             text.push("   3. Press Enter to send".yellow().into());
             text.push("".into());
-            text.push("🔧 Other controls:".white().bold().into());
+            text.push("Other controls:".white().bold().into());
             text.push("   ? - Show/hide help".cyan().into());
             text.push("   f - Toggle FPS counter".cyan().into());
             text.push("   q - Quit application".cyan().into());
             text.push("".into());
-            text.push("Start chatting by pressing '/' and typing your first message! 🚀".green().bold().into());
+            text.push("Start chatting by pressing '/' and typing your first message!".green().bold().into());
             text.push("".into());
         } else {
             for l in messages {

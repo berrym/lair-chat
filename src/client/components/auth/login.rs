@@ -169,8 +169,8 @@ impl Component for LoginScreen {
 
         // Create the main box with title
         let main_title = match self.mode {
-            LoginMode::Login => "🔐 Lair Chat - Login",
-            LoginMode::Register => "📝 Lair Chat - Register",
+            LoginMode::Login => "Lair Chat - Login",
+            LoginMode::Register => "Lair Chat - Register",
         };
 
         let main_block = Block::default()
@@ -197,8 +197,8 @@ impl Component for LoginScreen {
 
         // Draw mode selection and instructions
         let mode_instruction = match self.mode {
-            LoginMode::Login => "👤 Login Mode - Press Ctrl+T to switch to Register Mode",
-            LoginMode::Register => "🆕 Register Mode - Press Ctrl+T to switch to Login Mode",
+            LoginMode::Login => "Login Mode - Press Ctrl+T to switch to Register Mode",
+            LoginMode::Register => "Register Mode - Press Ctrl+T to switch to Login Mode",
         };
 
         let mode_display = Paragraph::new(vec![
@@ -293,7 +293,7 @@ impl Component for LoginScreen {
         // Draw comprehensive navigation instructions
         let instructions = Paragraph::new(vec![
             Line::from(vec![
-                Span::styled("🔧 Key Controls:", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled("Key Controls:", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
             ]),
             Line::from(""),
             Line::from(vec![
@@ -306,7 +306,7 @@ impl Component for LoginScreen {
             ]),
             Line::from(vec![
                 Span::styled("Ctrl+T", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-                Span::styled(" - Toggle between Login ↔ Register modes", Style::default().fg(Color::White)),
+                Span::styled(" - Toggle between Login and Register modes", Style::default().fg(Color::White)),
             ]),
             Line::from(vec![
                 Span::styled("Ctrl+C", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
@@ -318,14 +318,14 @@ impl Component for LoginScreen {
             ]),
         ])
         .style(Style::default().fg(Color::Cyan))
-        .block(Block::default().borders(Borders::ALL).title("🎮 How to Use"));
+        .block(Block::default().borders(Borders::ALL).title("How to Use"));
         f.render_widget(instructions, form_chunks[5]);
 
         // Draw status/error message
         if let Some(error) = &self.error_message {
             let error_msg = Paragraph::new(vec![
                 Line::from(vec![
-                    Span::styled("❌ Error: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                    Span::styled("Error: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
                     Span::styled(error.as_str(), Style::default().fg(Color::Red)),
                 ]),
             ])
@@ -334,7 +334,6 @@ impl Component for LoginScreen {
         } else if self.processing {
             let status_msg = Paragraph::new(vec![
                 Line::from(vec![
-                    Span::styled("⏳ ", Style::default().fg(Color::Yellow)),
                     Span::styled("Processing...", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
                 ]),
             ])
@@ -343,7 +342,6 @@ impl Component for LoginScreen {
         } else {
             let ready_msg = Paragraph::new(vec![
                 Line::from(vec![
-                    Span::styled("✓ ", Style::default().fg(Color::Green)),
                     Span::styled("Ready to authenticate", Style::default().fg(Color::Green)),
                 ]),
             ])

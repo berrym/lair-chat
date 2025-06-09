@@ -324,14 +324,30 @@ impl App {
                     
                     // Auto-connect to server after successful authentication
                     use crate::transport::{CLIENT_STATUS, ConnectionStatus, add_text_message};
-                    CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
-                    info!("Auto-connected to chat server");
+                    
+                    // Spawn async task to connect to server
+                    let action_tx = self.action_tx.clone();
+                    tokio::spawn(async move {
+                        use crate::compatibility_layer::connect_client_compat;
+                        let address: std::net::SocketAddr = "127.0.0.1:8080".parse().unwrap();
+                        let input = tui_input::Input::default();
+                        let connection_result = connect_client_compat(input, address).await;
+                        match connection_result {
+                            Ok(()) => {
+                                CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
+                                add_text_message("Successfully connected to chat server".to_string());
+                            }
+                            Err(e) => {
+                                add_text_message(format!("Failed to connect to server: {}", e));
+                            }
+                        }
+                    });
                     
                     // Add welcome message to chat
                     add_text_message(" ".to_string());
-                    add_text_message(format!("🎉 Welcome to Lair Chat, {}!", profile.username));
-                    add_text_message("✅ You are now connected and ready to chat!".to_string());
-                    add_text_message("💡 Press '/' to start typing your first message.".to_string());
+                    add_text_message(format!("Welcome to Lair Chat, {}!", profile.username));
+                    add_text_message("You are now connected and ready to chat!".to_string());
+                    add_text_message("Press '/' to start typing your first message.".to_string());
                     add_text_message(" ".to_string());
                 }
             }
@@ -359,6 +375,34 @@ impl App {
             Action::ToggleShowHelp => {
                 // Toggle help display
                 self.home_component.update(action.clone())?;
+            }
+            
+            Action::SendMessage(message) => {
+                // Handle message sending
+                use crate::transport::{CLIENT_STATUS, ConnectionStatus, add_text_message, add_outgoing_message};
+                let client_status = CLIENT_STATUS.lock().unwrap();
+                
+                if client_status.status == ConnectionStatus::CONNECTED {
+                    // Add message to outgoing queue for server transmission
+                    add_outgoing_message(message.clone());
+                    
+                    // Add message to local display with username
+                    if let AuthState::Authenticated { ref profile, .. } = self.auth_state {
+                        add_text_message(format!("{}: {}", profile.username, message));
+                    } else {
+                        add_text_message(format!("You: {}", message));
+                    }
+                    
+                    info!("Message sent: {}", message);
+                } else {
+                    add_text_message("Cannot send message: Not connected to server".to_string());
+                }
+            }
+            
+            Action::ReceiveMessage(message) => {
+                // Handle received messages
+                use crate::transport::add_text_message;
+                add_text_message(message.to_string());
             }
             
             // Pass other actions to appropriate components
