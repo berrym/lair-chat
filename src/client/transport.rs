@@ -373,11 +373,15 @@ async fn process_outgoing_messages(
             
             match encrypt(shared_key.to_string(), actual_message.clone()) {
                 Ok(encrypted_message) => {
-                    // Only show non-silent messages in chat
+                    let _ = sink.tx.send(encrypted_message).await;
+                    
+                    // Add small delay to ensure proper message ordering
+                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                    
+                    // Only show non-silent messages in chat after sending
                     if !is_silent {
                         add_text_message(format!("You: {}", actual_message));
                     }
-                    let _ = sink.tx.send(encrypted_message).await;
                 }
                 Err(e) => {
                     add_text_message(format!("Failed to encrypt message: {}", e));
@@ -393,6 +397,7 @@ async fn process_outgoing_messages(
 fn handle_incoming_message(message: String, shared_key: &str) {
     match decrypt(shared_key.to_string(), message) {
         Ok(decrypted_message) => {
+            // Add received message immediately to ensure proper ordering
             add_text_message(decrypted_message);
         }
         Err(e) => {

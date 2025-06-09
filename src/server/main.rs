@@ -252,6 +252,9 @@ async fn process(
                     &decrypt(shared_aes256_key.clone(), message)
                 ).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid auth request"))?;
 
+                // Store username before auth_request is moved
+                let username = auth_request.username.clone();
+                
                 let state = state.lock().await;
                 let result = if auth_request.is_registration {
                     // Register the user first
@@ -260,24 +263,36 @@ async fn process(
                         &auth_request.password,
                     ).await {
                         Ok(_registered_user) => {
+                            tracing::info!("User {} registered successfully, attempting auto-login", username);
                             // After successful registration, automatically log them in
                             match state.auth_service.login(auth_request).await {
                                 Ok(response) => {
-                                    session = Some(response.session);
+                                    session = Some(response.session.clone());
+                                    tracing::info!("Auto-login successful for {}, session: {}", response.user.username, response.session.token);
                                     Ok(response.user)
                                 }
-                                Err(e) => Err(e),
+                                Err(e) => {
+                                    tracing::error!("Auto-login failed for {}: {}", username, e);
+                                    Err(e)
+                                }
                             }
                         }
-                        Err(e) => Err(e),
+                        Err(e) => {
+                            tracing::error!("Registration failed for {}: {}", username, e);
+                            Err(e)
+                        }
                     }
                 } else {
                     match state.auth_service.login(auth_request).await {
                         Ok(response) => {
-                            session = Some(response.session);
+                            session = Some(response.session.clone());
+                            tracing::info!("Login successful for {}, session: {}", response.user.username, response.session.token);
                             Ok(response.user)
                         }
-                        Err(e) => Err(e),
+                        Err(e) => {
+                            tracing::error!("Login failed for {}: {}", username, e);
+                            Err(e)
+                        }
                     }
                 };
 
@@ -361,8 +376,11 @@ async fn process(
         state.peers.remove(&addr);
 
         // Cleanup user session
+        tracing::info!("Cleaning up session for {} (token: {})", user.username, session.token);
         if let Err(e) = state.auth_service.logout(&session.token).await {
-            tracing::error!("Failed to cleanup session: {}", e);
+            tracing::error!("Failed to cleanup session for {}: {}", user.username, e);
+        } else {
+            tracing::info!("Session cleanup successful for {}", user.username);
         }
 
         let message = format!("{} has left the chat", user.username);

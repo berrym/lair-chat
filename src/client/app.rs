@@ -3,7 +3,7 @@ use crossterm::event::KeyEvent;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     action::Action,
@@ -263,7 +263,7 @@ impl App {
                 self.mode = Mode::Home;
                 
                 if let AuthState::Authenticated { ref profile, .. } = auth_state {
-                    info!("User {} authenticated successfully", profile.username);
+                    info!("User {} authenticated successfully - transitioning to home mode", profile.username);
                     
                     // Update status bar with authentication info
                     self.status_bar.set_auth_state(auth_state.clone());
@@ -271,7 +271,9 @@ impl App {
                     
                     // Initialize chat system for authenticated user
                     if let Err(e) = self.home_component.initialize_chat(profile.username.clone()) {
-                        error!("Failed to initialize chat system: {}", e);
+                        error!("Failed to initialize chat system for {}: {}", profile.username, e);
+                    } else {
+                        info!("Chat system initialized successfully for {}", profile.username);
                     }
                     
                     // Connection is already established during authentication
@@ -283,6 +285,8 @@ impl App {
                     add_text_message("You are now connected and ready to chat!".to_string());
                     add_text_message("Press '/' to start typing your first message.".to_string());
                     add_text_message(" ".to_string());
+                    
+                    info!("Welcome messages added for user {}", profile.username);
                 }
             }
             
@@ -323,8 +327,9 @@ impl App {
                     // Update status bar message count
                     self.status_bar.record_sent_message();
                     
-                    info!("Message sent: {}", message);
+                    debug!("Message queued for sending: {}", message);
                 } else {
+                    warn!("Cannot send message - client not connected: {}", message);
                     add_text_message("Cannot send message: Not connected to server".to_string());
                 }
             }
@@ -555,17 +560,30 @@ async fn wait_for_auth_response(username: String) -> Result<crate::auth::AuthSta
     use uuid::Uuid;
     use std::time::{SystemTime, UNIX_EPOCH};
     
+    info!("Starting authentication response wait for user: {}", username);
+    
     // Monitor incoming messages for authentication response
-    for _attempt in 0..50 { // Wait up to 5 seconds (50 * 100ms)
+    for attempt in 0..150 { // Wait up to 15 seconds (150 * 100ms)
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         
+        // Log progress every 3 seconds
+        if attempt % 30 == 0 && attempt > 0 {
+            info!("Authentication wait progress: {} seconds elapsed for user {}", attempt / 10, username);
+        }
+        
         let messages = MESSAGES.lock().unwrap();
-        let recent_messages: Vec<String> = messages.text.iter().rev().take(5).cloned().collect();
+        let recent_messages: Vec<String> = messages.text.iter().rev().take(10).cloned().collect();
         drop(messages);
         
         for message in recent_messages {
-            // Check for authentication success indicators
-            if message.contains("Welcome back") || message.contains(&format!("{} has joined", username)) {
+            debug!("Checking auth message for {}: {}", username, message);
+            
+            // Check for authentication success indicators - handle both login and registration
+            if message.contains("Welcome back") || 
+               message.contains(&format!("Welcome back, {}", username)) ||
+               message.contains(&format!("{} has joined", username)) ||
+               message.contains("Registration successful") {
+                info!("Authentication success detected for user: {}", username);
                 add_text_message("Authentication successful!".to_string());
                 
                 let now = SystemTime::now()
@@ -590,13 +608,17 @@ async fn wait_for_auth_response(username: String) -> Result<crate::auth::AuthSta
             }
             
             // Check for authentication failure indicators
-            if message.contains("Authentication failed") || message.contains("Login failed") {
+            if message.contains("Authentication failed") || 
+               message.contains("Login failed") ||
+               message.contains("Registration failed") {
+                error!("Authentication failure detected for user {}: {}", username, message);
                 return Err("Server rejected authentication credentials".to_string());
             }
         }
     }
     
-    Err("Authentication timeout - no response from server".to_string())
+    error!("Authentication timeout after 15 seconds for user: {}", username);
+    Err("Authentication timeout - no response from server after 15 seconds".to_string())
 }
 
 /// Send registration request to server

@@ -52,12 +52,15 @@ pub struct Home {
     room_manager: RoomManager,
     current_room_id: Option<uuid::Uuid>,
     current_user_id: Option<uuid::Uuid>,
+    
+    // Scroll state fields to replace unsafe static variables
+    scroll_offset: usize,
+    prev_text_len: usize,
+    manual_scroll: bool,
 }
 
 // Static state variables for scrolling
-static mut SCROLL_OFFSET_STATE: usize = 0;
-static mut PREV_TEXT_LEN_STATE: usize = 0;
-static mut MANUAL_SCROLL_STATE: bool = false;
+// Removed unsafe static variables - moved to struct fields
 
 impl Default for Home {
     fn default() -> Self {
@@ -92,6 +95,9 @@ impl Default for Home {
             room_manager: RoomManager::new(),
             current_room_id: None,
             current_user_id: None,
+            scroll_offset: 0,
+            prev_text_len: 0,
+            manual_scroll: false,
         }
     }
 }
@@ -323,93 +329,79 @@ impl Component for Home {
                 // Handle scrolling for the main content
                 match key.code {
                     KeyCode::PageUp => {
-                        unsafe {
-                            // Mark as manual scroll to disable auto-follow
-                            MANUAL_SCROLL_STATE = true;
-                            // Scroll up by reducing the scroll offset
-                            if SCROLL_OFFSET_STATE > 5 {
-                                SCROLL_OFFSET_STATE -= 5;
-                            } else {
-                                SCROLL_OFFSET_STATE = 0;
-                            }
+                        // Enter manual scroll mode
+                        self.manual_scroll = true;
+                        
+                        // Scroll up by decreasing the scroll offset
+                        if self.scroll_offset >= 5 {
+                            self.scroll_offset -= 5;
+                        } else {
+                            self.scroll_offset = 0;
                         }
                         return Ok(Some(Action::Render));
                     },
                     KeyCode::Up => {
-                        unsafe {
-                            // Mark as manual scroll to disable auto-follow
-                            MANUAL_SCROLL_STATE = true;
-                            // Scroll up by one line
-                            if SCROLL_OFFSET_STATE > 0 {
-                                SCROLL_OFFSET_STATE -= 1;
-                            }
+                        // Enter manual scroll mode
+                        self.manual_scroll = true;
+                        
+                        // Scroll up by one line
+                        if self.scroll_offset > 0 {
+                            self.scroll_offset -= 1;
                         }
                         return Ok(Some(Action::Render));
                     },
                     KeyCode::PageDown => {
-                        unsafe {
-                            // Scroll down by increasing the scroll offset
-                            SCROLL_OFFSET_STATE += 5;
-                            
-                            // If we reach the bottom, enable auto-follow again
-                            let messages_len = MESSAGES.lock().unwrap().text.len();
-                            if SCROLL_OFFSET_STATE >= messages_len {
-                                MANUAL_SCROLL_STATE = false;
-                            }
+                        // Scroll down by increasing the scroll offset
+                        self.scroll_offset += 5;
+                        
+                        // If we reach the bottom, enable auto-follow again
+                        let messages_len = MESSAGES.lock().unwrap().text.len();
+                        if self.scroll_offset >= messages_len {
+                            self.manual_scroll = false;
                         }
                         return Ok(Some(Action::Render));
                     },
                     KeyCode::Down => {
-                        unsafe {
-                            // Scroll down by one line
-                            SCROLL_OFFSET_STATE += 1;
-                            
-                            // If we reach the bottom, enable auto-follow again
-                            let messages_len = MESSAGES.lock().unwrap().text.len();
-                            if SCROLL_OFFSET_STATE >= messages_len {
-                                MANUAL_SCROLL_STATE = false;
-                            }
+                        // Scroll down by one line
+                        self.scroll_offset += 1;
+                        
+                        // If we reach the bottom, enable auto-follow again
+                        let messages_len = MESSAGES.lock().unwrap().text.len();
+                        if self.scroll_offset >= messages_len {
+                            self.manual_scroll = false;
                         }
                         return Ok(Some(Action::Render));
                     },
                     KeyCode::End => {
-                        unsafe {
-                            // Scroll to the end and re-enable auto-follow
-                            let messages_len = MESSAGES.lock().unwrap().text.len();
-                            SCROLL_OFFSET_STATE = messages_len;
-                            MANUAL_SCROLL_STATE = false;
-                        }
+                        // Scroll to the end and re-enable auto-follow
+                        let messages_len = MESSAGES.lock().unwrap().text.len();
+                        self.scroll_offset = messages_len;
+                        self.manual_scroll = false;
                         return Ok(Some(Action::Render));
                     },
                     // Cancel scroll mode and return to auto-follow on Escape
                     KeyCode::Esc => {
                         if !self.show_help {
-                            unsafe {
-                                let messages_len = MESSAGES.lock().unwrap().text.len();
-                                SCROLL_OFFSET_STATE = messages_len;
-                                MANUAL_SCROLL_STATE = false;
-                            }
+                            let messages_len = MESSAGES.lock().unwrap().text.len();
+                            self.scroll_offset = messages_len;
+                            self.manual_scroll = false;
                             return Ok(Some(Action::Render));
                         }
                     },
                     KeyCode::Home => {
-                        unsafe {
-                            // Scroll to the top
-                            SCROLL_OFFSET_STATE = 0;
-                            MANUAL_SCROLL_STATE = true;
-                        }
+                        // Scroll to the top
+                        self.scroll_offset = 0;
+                        self.manual_scroll = true;
                         return Ok(Some(Action::Render));
                     },
                     // Any other key press exits manual scroll mode
                     _ => {
-                        unsafe {
-                            // Exit manual scrolling mode on any non-scroll key
-                            if MANUAL_SCROLL_STATE {
-                                MANUAL_SCROLL_STATE = false;
-                                // When exiting manual scroll, set position to follow most recent messages
-                                let messages_len = MESSAGES.lock().unwrap().text.len();
-                                SCROLL_OFFSET_STATE = messages_len;
-                            }
+                        // Exit manual scrolling mode on any non-scroll key
+                        if self.manual_scroll {
+                            self.manual_scroll = false;
+                            // When exiting manual scroll, set position to follow most recent messages
+                            let messages_len = MESSAGES.lock().unwrap().text.len();
+                            self.scroll_offset = messages_len;
                         }
                     }
                 }
@@ -419,12 +411,10 @@ impl Component for Home {
         // Exit manual scroll mode and handle dialog keys if dialog is visible
         if self.dialog_visible {
             // Exit manual scroll mode when dialog is opened
-            unsafe {
-                MANUAL_SCROLL_STATE = false;
-                // Also reset scroll position to follow latest messages
-                let messages_len = MESSAGES.lock().unwrap().text.len();
-                SCROLL_OFFSET_STATE = messages_len;
-            }
+            self.manual_scroll = false;
+            // Also reset scroll position to follow latest messages
+            let messages_len = MESSAGES.lock().unwrap().text.len();
+            self.scroll_offset = messages_len;
             
             match key.code {
                 KeyCode::Esc => {
@@ -510,14 +500,12 @@ impl Component for Home {
         
         // Handle regular keys when dialog is not visible
         // Exit manual scroll mode for any action key in normal mode
-        unsafe {
-            if (self.mode == Mode::Normal || self.mode == Mode::Processing) && MANUAL_SCROLL_STATE {
-                // We're not handling a scroll key at this point, so exit manual scroll
-                MANUAL_SCROLL_STATE = false;
-                // Also reset scroll position to follow latest messages
-                let messages_len = MESSAGES.lock().unwrap().text.len();
-                SCROLL_OFFSET_STATE = messages_len;
-            }
+        if (self.mode == Mode::Normal || self.mode == Mode::Processing) && self.manual_scroll {
+            // We're not handling a scroll key at this point, so exit manual scroll
+            self.manual_scroll = false;
+            // Also reset scroll position to follow latest messages
+            let messages_len = MESSAGES.lock().unwrap().text.len();
+            self.scroll_offset = messages_len;
         }
         
         let action = match self.mode {
@@ -695,12 +683,10 @@ impl Component for Home {
                 self.prev_mode = self.mode;
                 self.mode = Mode::Insert;
                 // Automatically exit manual scrolling when entering input mode
-                unsafe {
-                    MANUAL_SCROLL_STATE = false;
-                    // Also reset scroll position to follow latest messages
-                    let messages_len = MESSAGES.lock().unwrap().text.len();
-                    SCROLL_OFFSET_STATE = messages_len;
-                }
+                self.manual_scroll = false;
+                // Also reset scroll position to follow latest messages
+                let messages_len = MESSAGES.lock().unwrap().text.len();
+                self.scroll_offset = messages_len;
             }
             Action::EnterProcessing => {
                 self.prev_mode = self.mode;
@@ -815,29 +801,30 @@ impl Component for Home {
         let text_len = text.len();
         
         // Always auto-scroll to show latest messages unless in manual scroll mode
-        let scroll_position = unsafe {
-            let old_text_len = PREV_TEXT_LEN_STATE;
+        let scroll_position = {
+            let old_text_len = self.prev_text_len;
             
             // Update scroll state when new content is added or not in manual mode
-            if text_len > old_text_len || !MANUAL_SCROLL_STATE {
-                MANUAL_SCROLL_STATE = false; // Ensure we're in auto mode
+            if text_len > old_text_len || !self.manual_scroll {
+                self.manual_scroll = false; // Ensure we're in auto mode
             }
             
-            PREV_TEXT_LEN_STATE = text_len;
+            self.prev_text_len = text_len;
             
             // Always show the bottom-most content
-            if !MANUAL_SCROLL_STATE {
+            if !self.manual_scroll {
                 if text_len > available_height {
                     // Show the latest messages at the bottom by scrolling to show the last available_height lines
-                    text_len.saturating_sub(available_height)
+                    // Add 1 to ensure we see the very latest message
+                    text_len.saturating_sub(available_height.saturating_sub(1))
                 } else {
                     0
                 }
             } else {
                 // In manual scroll mode, use stored scroll position
                 if text_len > available_height {
-                    // Clamp SCROLL_OFFSET_STATE to valid range
-                    SCROLL_OFFSET_STATE.min(text_len.saturating_sub(available_height))
+                    // Clamp scroll_offset to valid range
+                    self.scroll_offset.min(text_len.saturating_sub(available_height))
                 } else {
                     0
                 }
