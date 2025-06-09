@@ -102,17 +102,18 @@ pub async fn connect_client_compat(input: Input, address: SocketAddr) -> Result<
 
 /// Send authentication request using legacy transport system
 pub async fn authenticate_compat(username: String, password: String) -> Result<(), TransportError> {
-    use crate::transport::add_outgoing_message;
+    use crate::transport::add_silent_outgoing_message;
     
     // Create authentication request in the format expected by server
     let auth_request = serde_json::json!({
         "username": username,
         "password": password,
+        "fingerprint": "client_fingerprint_placeholder",
         "is_registration": false
     });
     
     add_text_message("Sending authentication request...".to_string());
-    add_outgoing_message(auth_request.to_string());
+    add_silent_outgoing_message(auth_request.to_string());
     
     Ok(())
 }

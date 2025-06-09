@@ -364,9 +364,19 @@ async fn process_outgoing_messages(
             .clone();
             
         for original_message in outgoing_messages {
-            match encrypt(shared_key.to_string(), original_message.clone()) {
+            // Check if this is a silent message (authentication request)
+            let (is_silent, actual_message) = if original_message.starts_with("SILENT:") {
+                (true, original_message.strip_prefix("SILENT:").unwrap_or(&original_message).to_string())
+            } else {
+                (false, original_message.clone())
+            };
+            
+            match encrypt(shared_key.to_string(), actual_message.clone()) {
                 Ok(encrypted_message) => {
-                    add_text_message(format!("You: {}", original_message));
+                    // Only show non-silent messages in chat
+                    if !is_silent {
+                        add_text_message(format!("You: {}", actual_message));
+                    }
                     let _ = sink.tx.send(encrypted_message).await;
                 }
                 Err(e) => {
@@ -549,6 +559,13 @@ pub fn add_text_message(s: String) {
 /// Add a message to the outgoing buffer
 pub fn add_outgoing_message(s: String) {
     MESSAGES.lock().unwrap().outgoing.insert(0, s);
+}
+
+pub fn add_silent_outgoing_message(s: String) {
+    // Add message to outgoing queue but mark it as silent (auth request)
+    let mut messages = MESSAGES.lock().unwrap();
+    // Insert with special prefix to indicate silent message
+    messages.outgoing.insert(0, format!("SILENT:{}", s));
 }
 
 pub fn split_tcp_stream(stream: TcpStream) -> Result<(ClientStream, ClientSink)> {
