@@ -28,6 +28,7 @@ pub struct LoginScreen {
     focused_field: usize,
     processing: bool,
     show_help: bool,
+    help_scroll: usize,
 }
 
 impl LoginScreen {
@@ -42,6 +43,7 @@ impl LoginScreen {
             focused_field: 0,
             processing: false,
             show_help: false,
+            help_scroll: 0,
         }
     }
 
@@ -166,15 +168,35 @@ impl Component for LoginScreen {
             }
             crossterm::event::KeyCode::Char('?') => {
                 self.show_help = !self.show_help;
+                self.help_scroll = 0; // Reset scroll when opening help
                 None
             }
             crossterm::event::KeyCode::Esc => {
                 if self.show_help {
                     self.show_help = false;
+                    self.help_scroll = 0;
                     None
                 } else {
                     None
                 }
+            }
+            crossterm::event::KeyCode::Up if self.show_help => {
+                if self.help_scroll > 0 {
+                    self.help_scroll -= 1;
+                }
+                None
+            }
+            crossterm::event::KeyCode::Down if self.show_help => {
+                self.help_scroll += 1;
+                None
+            }
+            crossterm::event::KeyCode::PageUp if self.show_help => {
+                self.help_scroll = self.help_scroll.saturating_sub(5);
+                None
+            }
+            crossterm::event::KeyCode::PageDown if self.show_help => {
+                self.help_scroll += 5;
+                None
             }
             crossterm::event::KeyCode::Char(c) => {
                 match self.focused_field {
@@ -270,8 +292,7 @@ impl Component for LoginScreen {
                 Constraint::Length(3),   // Server input
                 Constraint::Length(3),   // Port input
                 Constraint::Length(1),   // Spacer
-                Constraint::Length(12),  // Instructions (much taller for 8 lines)
-                Constraint::Length(4),   // Status/Error (taller)
+                Constraint::Length(3),   // Simple help prompt
             ])
             .split(form_area);
 
@@ -440,76 +461,49 @@ impl Component for LoginScreen {
             .wrap(ratatui::widgets::Wrap { trim: false });
         f.render_widget(port_input, form_chunks[5]);
 
-        // Draw comprehensive navigation instructions
-        let instructions = Paragraph::new(vec![
-            Line::from(vec![
-                Span::styled("Key Controls:", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("Tab/Shift+Tab", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                Span::styled(" - Move between fields", Style::default().fg(Color::White)),
-            ]),
-            Line::from(vec![
-                Span::styled("Enter", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-                Span::styled(" - Submit login/registration", Style::default().fg(Color::White)),
-            ]),
-            Line::from(vec![
-                Span::styled("Ctrl+T", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-                Span::styled(" - Toggle Login/Register", Style::default().fg(Color::White)),
-            ]),
-            Line::from(vec![
-                Span::styled("?", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
-                Span::styled(" - Show detailed help", Style::default().fg(Color::White)),
-            ]),
-            Line::from(vec![
-                Span::styled("Ctrl+C", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                Span::styled(" - Quit application", Style::default().fg(Color::White)),
-            ]),
-            Line::from(vec![
-                Span::styled("Type/Backspace", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                Span::styled(" - Edit focused field", Style::default().fg(Color::White)),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("Need help? Press ? for detailed instructions", Style::default().fg(Color::Yellow)),
-            ]),
-        ])
-        .style(Style::default().fg(Color::Cyan))
-        .block(Block::default().borders(Borders::ALL).title("How to Use"))
-        .wrap(ratatui::widgets::Wrap { trim: false });
-        f.render_widget(instructions, form_chunks[6]);
-
-        // Draw status/error message
-        if let Some(error) = &self.error_message {
-            let error_msg = Paragraph::new(vec![
+        // Draw simple help prompt with error display
+        let help_content = if let Some(error) = &self.error_message {
+            vec![
                 Line::from(vec![
                     Span::styled("Error: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
                     Span::styled(error.as_str(), Style::default().fg(Color::Red)),
                 ]),
-            ])
-            .block(Block::default().borders(Borders::ALL).title("Status"))
-            .wrap(ratatui::widgets::Wrap { trim: false });
-            f.render_widget(error_msg, form_chunks[7]);
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("Press ? for help", Style::default().fg(Color::Blue)),
+                ]),
+            ]
         } else if self.processing {
-            let status_msg = Paragraph::new(vec![
+            vec![
                 Line::from(vec![
                     Span::styled("Processing...", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
                 ]),
-            ])
-            .block(Block::default().borders(Borders::ALL).title("Status"))
-            .wrap(ratatui::widgets::Wrap { trim: false });
-            f.render_widget(status_msg, form_chunks[7]);
-        } else {
-            let ready_msg = Paragraph::new(vec![
+                Line::from(""),
                 Line::from(vec![
-                    Span::styled("Ready to authenticate", Style::default().fg(Color::Green)),
+                    Span::styled("Press ? for help", Style::default().fg(Color::Blue)),
                 ]),
-            ])
-            .block(Block::default().borders(Borders::ALL).title("Status"))
+            ]
+        } else {
+            vec![
+                Line::from(vec![
+                    Span::styled("Tab", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    Span::styled(" - navigate | ", Style::default().fg(Color::White)),
+                    Span::styled("Enter", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                    Span::styled(" - submit | ", Style::default().fg(Color::White)),
+                    Span::styled("Ctrl+T", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+                    Span::styled(" - switch mode", Style::default().fg(Color::White)),
+                ]),
+                Line::from(vec![
+                    Span::styled("Press ? for detailed help and instructions", Style::default().fg(Color::Blue)),
+                ]),
+            ]
+        };
+
+        let help_prompt = Paragraph::new(help_content)
+            .style(Style::default())
+            .block(Block::default().borders(Borders::ALL).title("Controls"))
             .wrap(ratatui::widgets::Wrap { trim: false });
-            f.render_widget(ready_msg, form_chunks[7]);
-        }
+        f.render_widget(help_prompt, form_chunks[6]);
 
         // Draw help popup if visible
         if self.show_help {
@@ -526,9 +520,9 @@ impl LoginScreen {
         let popup_area = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Percentage(15),
-                Constraint::Percentage(70),
-                Constraint::Percentage(15),
+                Constraint::Percentage(10),
+                Constraint::Percentage(80),
+                Constraint::Percentage(10),
             ])
             .split(area)[1];
 
@@ -544,7 +538,7 @@ impl LoginScreen {
         // Clear background
         f.render_widget(Clear, popup_area);
 
-        let help_text = vec![
+        let all_help_text = vec![
             Line::from(vec![
                 Span::styled("Lair Chat - Login Help", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
             ]),
@@ -563,33 +557,111 @@ impl LoginScreen {
             Line::from("Tab/Shift+Tab - Move between fields"),
             Line::from("Enter - Submit login/registration"),
             Line::from("Ctrl+T - Toggle Login/Register mode"),
-            Line::from("? - Show/hide this help"),
-            Line::from("Esc - Close help popup"),
-            Line::from("Ctrl+C - Quit application"),
+            Line::from("Backspace - Delete characters"),
+            Line::from("Type - Enter text in focused field"),
             Line::from(""),
             Line::from(vec![
                 Span::styled("Modes:", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
             ]),
             Line::from("Login - Sign in with existing account"),
             Line::from("Register - Create new account"),
+            Line::from("(Use Ctrl+T to switch between modes)"),
             Line::from(""),
             Line::from(vec![
                 Span::styled("Server Setup:", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
             ]),
-            Line::from("Make sure lair-chat-server is running:"),
+            Line::from("Before connecting, start the server:"),
             Line::from("cargo run --bin lair-chat-server"),
+            Line::from(""),
+            Line::from("Default server: 127.0.0.1:8080"),
+            Line::from("You can change this in the login form"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Help Navigation:", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
+            ]),
+            Line::from("Up/Down - Scroll help text"),
+            Line::from("PageUp/PageDown - Scroll faster"),
+            Line::from("? or Esc - Close help popup"),
+            Line::from("Ctrl+C - Quit application"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Troubleshooting:", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            ]),
+            Line::from("- Make sure server is running first"),
+            Line::from("- Check server address and port are correct"),
+            Line::from("- Username and password cannot be empty"),
+            Line::from("- Port must be a number between 1-65535"),
             Line::from(""),
             Line::from("Press Esc or ? to close this help"),
         ];
 
-        let help_popup = Paragraph::new(help_text)
+        // Calculate available height for content
+        let content_height = popup_area.height.saturating_sub(2) as usize; // -2 for borders
+        let max_scroll = all_help_text.len().saturating_sub(content_height);
+        
+        // Limit scroll to prevent scrolling past content
+        if self.help_scroll > max_scroll {
+            self.help_scroll = max_scroll;
+        }
+
+        // Get visible portion of help text
+        let visible_text: Vec<Line> = all_help_text
+            .iter()
+            .skip(self.help_scroll)
+            .take(content_height)
+            .cloned()
+            .collect();
+
+        let title = if max_scroll > 0 {
+            format!("Help - Press Esc to close ({}/{})", 
+                    self.help_scroll + 1, 
+                    all_help_text.len())
+        } else {
+            "Help - Press Esc to close".to_string()
+        };
+
+        let help_popup = Paragraph::new(visible_text)
             .block(Block::default()
                 .borders(Borders::ALL)
-                .title("Help - Press Esc to close")
+                .title(title)
                 .border_style(Style::default().fg(Color::Yellow)))
             .wrap(ratatui::widgets::Wrap { trim: false });
 
         f.render_widget(help_popup, popup_area);
+
+        // Draw scrollbar if needed
+        if max_scroll > 0 {
+            let scrollbar_area = Rect {
+                x: popup_area.x + popup_area.width - 1,
+                y: popup_area.y + 1,
+                width: 1,
+                height: popup_area.height - 2,
+            };
+
+            let scrollbar_pos = if max_scroll > 0 {
+                (self.help_scroll * (scrollbar_area.height as usize - 1)) / max_scroll
+            } else {
+                0
+            };
+
+            for y in 0..scrollbar_area.height {
+                let style = if y as usize == scrollbar_pos {
+                    Style::default().bg(Color::Yellow)
+                } else {
+                    Style::default().bg(Color::DarkGray)
+                };
+                f.render_widget(
+                    Paragraph::new(" ").style(style),
+                    Rect {
+                        x: scrollbar_area.x,
+                        y: scrollbar_area.y + y,
+                        width: 1,
+                        height: 1,
+                    }
+                );
+            }
+        }
+
         Ok(())
     }
 }
