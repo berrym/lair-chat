@@ -63,31 +63,31 @@ impl LoginScreen {
         // Clear any previous error
         self.error_message = None;
         
-        println!("DEBUG: Submit called");
+
         
         // Validate username and password
         if self.username.value().trim().is_empty() {
             self.error_message = Some("Username cannot be empty".to_string());
-            println!("DEBUG: Username empty");
+
             return None;
         }
         
         if self.password.value().trim().is_empty() {
             self.error_message = Some("Password cannot be empty".to_string());
-            println!("DEBUG: Password empty");
+
             return None;
         }
 
         // Validate server and port
         if self.server.value().trim().is_empty() {
             self.error_message = Some("Server address cannot be empty".to_string());
-            println!("DEBUG: Server empty");
+
             return None;
         }
         
         if self.port.value().trim().is_empty() {
             self.error_message = Some("Port cannot be empty".to_string());
-            println!("DEBUG: Port empty");
+
             return None;
         }
 
@@ -96,13 +96,13 @@ impl LoginScreen {
             Ok(port) => {
                 if port == 0 {
                     self.error_message = Some("Port must be greater than 0".to_string());
-                    println!("DEBUG: Port is 0");
+
                     return None;
                 }
             }
             Err(_) => {
                 self.error_message = Some("Port must be a valid number (1-65535)".to_string());
-                println!("DEBUG: Port not a number");
+
                 return None;
             }
         }
@@ -117,26 +117,21 @@ impl LoginScreen {
         // Validate server address format
         if server_address.parse::<std::net::SocketAddr>().is_err() {
             self.error_message = Some("Invalid server address format".to_string());
-            println!("DEBUG: Invalid address format: {}", server_address);
+
             return None;
         }
 
         self.processing = true;
         self.error_message = None;
         
-        println!("DEBUG: Submitting {} with server: {}", 
-                match self.mode {
-                    LoginMode::Login => "login",
-                    LoginMode::Register => "registration"
-                }, 
-                server_address);
+
         
         let action = match self.mode {
             LoginMode::Login => Action::LoginWithServer(credentials, server_address),
             LoginMode::Register => Action::RegisterWithServer(credentials, server_address),
         };
         
-        println!("DEBUG: Returning action: {:?}", action);
+
         Some(action)
     }
 
@@ -176,7 +171,7 @@ impl Component for LoginScreen {
                 None
             }
             crossterm::event::KeyCode::Enter => {
-                println!("DEBUG: Enter key pressed");
+
                 self.submit()
             }
             crossterm::event::KeyCode::Char('t') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
