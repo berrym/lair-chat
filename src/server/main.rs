@@ -251,10 +251,23 @@ async fn process(
 
                 let state = state.lock().await;
                 let result = if auth_request.is_registration {
-                    state.auth_service.register(
+                    // Register the user first
+                    match state.auth_service.register(
                         auth_request.username.clone(),
                         &auth_request.password,
-                    ).await
+                    ).await {
+                        Ok(_registered_user) => {
+                            // After successful registration, automatically log them in
+                            match state.auth_service.login(auth_request).await {
+                                Ok(response) => {
+                                    session = Some(response.session);
+                                    Ok(response.user)
+                                }
+                                Err(e) => Err(e),
+                            }
+                        }
+                        Err(e) => Err(e),
+                    }
                 } else {
                     match state.auth_service.login(auth_request).await {
                         Ok(response) => {
