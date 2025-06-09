@@ -7,6 +7,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use once_cell::sync::Lazy;
 use std::net::SocketAddr;
+use std::error::Error;
 
 use tui_input::Input;
 use crate::connection_manager::ConnectionManager;
@@ -59,7 +60,20 @@ async fn get_or_create_manager(address: SocketAddr) -> Result<(), TransportError
     // If no manager exists or we're connecting to a different address, create a new one
     if manager_guard.is_none() {
         let config = ConnectionConfig::new(address);
-        let mut manager = ConnectionManager::new(config);
+        let mut manager = ConnectionManager::new(config.clone());
+        
+        // Create and configure a TCP transport
+        use crate::tcp_transport::TcpTransport;
+        let transport = Box::new(TcpTransport::new(config));
+        manager.with_transport(transport);
+        
+        // Verify transport was set correctly
+        if !manager.has_transport() {
+            eprintln!("ERROR: Failed to configure transport for ConnectionManager");
+            return Err(TransportError::ConnectionError(
+                std::io::Error::new(std::io::ErrorKind::Other, "Failed to configure transport")
+            ));
+        }
         
         // Register observers for compatibility
         manager.register_observer(Arc::new(CompatibilityObserver));
@@ -76,6 +90,8 @@ async fn get_or_create_manager(address: SocketAddr) -> Result<(), TransportError
 /// This function internally uses ConnectionManager but maintains the same signature
 /// and behavior as the original connect_client function.
 pub async fn connect_client_compat(__input: Input, address: SocketAddr) -> Result<(), TransportError> {
+    add_text_message(format!("Initializing connection to {}...", address));
+    
     // Initialize the manager
     get_or_create_manager(address).await?;
     
@@ -93,11 +109,18 @@ pub async fn connect_client_compat(__input: Input, address: SocketAddr) -> Resul
         // Add connecting message for compatibility
         add_text_message(format!("Connecting to {}", address));
         
-        // Attempt connection
+        // Verify transport is still configured before attempting connection
+        if !manager.has_transport() {
+            eprintln!("ERROR: Transport not configured before connection attempt");
+            return Err(TransportError::ConnectionError(
+                std::io::Error::new(std::io::ErrorKind::Other, "Transport not configured")
+            ));
+        }
+        
         match manager.connect().await {
             Ok(()) => {
                 // Connection successful - the observers will handle status updates
-                add_text_message("".to_owned()); // Empty line for formatting compatibility
+                add_text_message("Connection established successfully!".to_owned());
                 
                 // Spawn background task to handle the connection lifecycle
                 let manager_arc_clone = manager_arc.clone();
@@ -125,11 +148,16 @@ pub async fn connect_client_compat(__input: Input, address: SocketAddr) -> Resul
                 Ok(())
             }
             Err(e) => {
-                add_text_message(format!("Connection failed: {}", e));
+                add_text_message(format!("Connection failed: {} (address: {})", e, address));
+                // Try to print more detailed debug info
+                if let Some(inner) = e.source() {
+                    add_text_message(format!("Caused by: {}", inner));
+                }
                 Err(e)
             }
         }
     } else {
+        eprintln!("ERROR: No connection manager found in global state");
         Err(TransportError::ConnectionError(
             std::io::Error::new(std::io::ErrorKind::Other, "Failed to initialize connection manager")
         ))

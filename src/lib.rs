@@ -55,6 +55,8 @@ pub mod transport;
 #[path = "client/tui.rs"]
 pub mod tui;
 
+
+
 // Group client modules under a client namespace for cleaner imports
 pub mod client {
     pub use super::{
@@ -75,5 +77,6 @@ pub mod client {
         tcp_transport::*,
         transport::*,
         tui::*,
+
     };
 }

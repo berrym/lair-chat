@@ -434,7 +434,15 @@ impl std::fmt::Display for TransportError {
     }
 }
 
-impl std::error::Error for TransportError {}
+impl std::error::Error for TransportError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            TransportError::ConnectionError(e) => Some(e),
+            TransportError::EncryptionError(e) => Some(e),
+            _ => None,
+        }
+    }
+}
 
 impl From<EncryptionError> for TransportError {
     fn from(err: EncryptionError) -> Self {

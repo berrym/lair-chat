@@ -161,6 +161,11 @@ impl ConnectionManager {
         self
     }
 
+    /// Check if transport is configured (for debugging)
+    pub fn has_transport(&self) -> bool {
+        self.transport.is_some()
+    }
+
     /// Establish a connection to the remote endpoint
     pub async fn connect(&mut self) -> Result<(), TransportError> {
         if self.transport.is_none() {
