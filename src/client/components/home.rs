@@ -690,24 +690,24 @@ impl Component for Home {
         // Calculate scroll position - start from the bottom of the text
         let text_len = text.len();
         
-        // Use auto-scrolling to follow the latest messages
-        // Only update the scroll position when new content is added
+        // Simplified auto-scrolling logic
         unsafe {
             let old_text_len = PREV_TEXT_LEN_STATE;
-            // Auto-scroll when new content is added or we're not in manual mode
-            if text_len > old_text_len && !MANUAL_SCROLL_STATE {
-                // Update to follow new content
-                SCROLL_OFFSET_STATE = text_len;
-            } else if !MANUAL_SCROLL_STATE {
-                // Always ensure we're at the bottom when not in manual scroll mode
+            
+            // Auto-scroll to bottom when new content is added or not in manual mode
+            if text_len > old_text_len || !MANUAL_SCROLL_STATE {
                 SCROLL_OFFSET_STATE = text_len;
             }
+            
             PREV_TEXT_LEN_STATE = text_len;
         }
         
         // Calculate scroll position to show the most recent messages
         let scroll_position = if text_len > available_height {
-            unsafe { (SCROLL_OFFSET_STATE.saturating_sub(available_height)).min(text_len.saturating_sub(available_height)) }
+            unsafe { 
+                let max_scroll = text_len.saturating_sub(available_height);
+                (SCROLL_OFFSET_STATE.saturating_sub(available_height)).min(max_scroll)
+            }
         } else {
             0
         };

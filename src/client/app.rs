@@ -301,21 +301,26 @@ impl App {
             
             Action::SendMessage(message) => {
                 // Handle message sending
-                use crate::transport::{CLIENT_STATUS, ConnectionStatus, add_text_message, add_outgoing_message};
+                use crate::transport::{CLIENT_STATUS, ConnectionStatus, add_text_message};
+                use crate::compatibility_layer::send_message_compat;
                 let client_status = CLIENT_STATUS.lock().unwrap();
                 
                 if client_status.status == ConnectionStatus::CONNECTED {
-                    // Add message to outgoing queue for server transmission
-                    add_outgoing_message(message.clone());
+                    // Send message through ConnectionManager
+                    let msg_clone = message.clone();
                     
-                    // Add message to local display with username
-                    if let AuthState::Authenticated { ref profile, .. } = self.auth_state {
-                        add_text_message(format!("{}: {}", profile.username, message));
-                    } else {
-                        add_text_message(format!("You: {}", message));
-                    }
-                    
-                    info!("Message sent: {}", message);
+                    tokio::spawn(async move {
+                        match send_message_compat(msg_clone.clone()).await {
+                            Ok(()) => {
+                                // Don't add message to local display here - 
+                                // the server will echo it back if authentication is working
+                                info!("Message sent: {}", msg_clone);
+                            }
+                            Err(e) => {
+                                add_text_message(format!("Failed to send message: {}", e));
+                            }
+                        }
+                    });
                 } else {
                     add_text_message("Cannot send message: Not connected to server".to_string());
                 }
@@ -419,33 +424,54 @@ impl App {
                                 CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
                                 add_text_message(format!("Connected to server at {}", server_addr));
                                 
-                                // Mock successful authentication after connection
-                                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                                // Send authentication request to server
+                                use serde_json;
+                                use crate::compatibility_layer::send_message_compat;
                                 
-                                use crate::auth::{UserProfile, Session};
-                                use uuid::Uuid;
-                                use std::time::{SystemTime, UNIX_EPOCH};
+                                let auth_request = serde_json::json!({
+                                    "username": creds.username,
+                                    "password": creds.password,
+                                    "is_registration": false
+                                });
                                 
-                                let now = SystemTime::now()
-                                    .duration_since(UNIX_EPOCH)
-                                    .unwrap()
-                                    .as_secs();
+                                add_text_message("Authenticating with server...".to_string());
                                 
-                                let profile = UserProfile {
-                                    id: Uuid::new_v4(),
-                                    username: creds.username,
-                                    roles: vec!["user".to_string()],
-                                };
-                                
-                                let session = Session {
-                                    id: Uuid::new_v4(),
-                                    token: "mock_session_token".to_string(),
-                                    created_at: now,
-                                    expires_at: now + 3600,
-                                };
-                                
-                                let auth_state = AuthState::Authenticated { profile, session };
-                                let _ = tx.send(Action::AuthenticationSuccess(auth_state));
+                                match send_message_compat(auth_request.to_string()).await {
+                                    Ok(()) => {
+                                        // Wait for authentication response from server
+                                        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+                                        
+                                        // Create authenticated state (server should have sent welcome message)
+                                        use crate::auth::{UserProfile, Session};
+                                        use uuid::Uuid;
+                                        use std::time::{SystemTime, UNIX_EPOCH};
+                                        
+                                        let now = SystemTime::now()
+                                            .duration_since(UNIX_EPOCH)
+                                            .unwrap()
+                                            .as_secs();
+                                        
+                                        let profile = UserProfile {
+                                            id: Uuid::new_v4(),
+                                            username: creds.username,
+                                            roles: vec!["user".to_string()],
+                                        };
+                                        
+                                        let session = Session {
+                                            id: Uuid::new_v4(),
+                                            token: "authenticated_session".to_string(),
+                                            created_at: now,
+                                            expires_at: now + 3600,
+                                        };
+                                        
+                                        let auth_state = AuthState::Authenticated { profile, session };
+                                        let _ = tx.send(Action::AuthenticationSuccess(auth_state));
+                                    }
+                                    Err(e) => {
+                                        add_text_message(format!("Authentication failed: {}", e));
+                                        let _ = tx.send(Action::AuthenticationFailure("Failed to send authentication request".to_string()));
+                                    }
+                                }
                             }
                             Err(e) => {
                                 add_text_message(format!("Failed to connect to {}: {}", server_addr, e));
