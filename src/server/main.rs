@@ -15,6 +15,12 @@ use tokio_util::codec::{Framed, LinesCodec};
 use tracing_subscriber::fmt::format::FmtSpan;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
+mod auth;
+use auth::{
+    AuthError, AuthRequest, AuthService, MemorySessionStorage,
+    MemoryUserStorage, Session, User,
+};
+
 /// Shorthand for the transmit half of the message channel.
 pub type Tx<T> = mpsc::UnboundedSender<T>;
 /// Shorthand for the receive half of the message channel.
@@ -29,15 +35,19 @@ pub type WriteData = (String, Tx<String>);
 /// `Tx`.
 struct SharedState {
     peers: HashMap<SocketAddr, WriteData>,
-    nicknames: Vec<String>,
+    auth_service: Arc<AuthService>,
 }
 
 impl SharedState {
     /// Create a new, empty, instance of `SharedState`.
     fn new() -> Self {
+        let user_storage = Arc::new(MemoryUserStorage::new());
+        let session_storage = Arc::new(MemorySessionStorage::new());
+        let auth_service = Arc::new(AuthService::new(user_storage, session_storage, None));
+        
         SharedState {
             peers: HashMap::new(),
-            nicknames: Vec::new(),
+            auth_service,
         }
     }
 
@@ -206,57 +216,71 @@ async fn process(
     let shared_secret = server_secret_key.diffie_hellman(&PublicKey::from(peer_public_key_array));
     let shared_aes256_key = format!("{:x}", md5::compute(BASE64_STANDARD.encode(shared_secret)));
 
-    // Send a welcome prompt to the client then ask client to enter their nickname.
+    // Send a welcome prompt to the client
     transport
         .send(encrypt(
             shared_aes256_key.clone(),
-            "Welcome to The Lair!".to_string(),
-        ))
-        .await?;
-    transport
-        .send(encrypt(
-            shared_aes256_key.clone(),
-            "Please enter a nickname:".to_string(),
+            "Welcome to The Lair! Please login or register.".to_string(),
         ))
         .await?;
 
-    // Read from the `LinesCodec` stream to get the nickname.
-    let mut nickname = String::new();
-    loop {
+    // Handle authentication
+    let mut user = None;
+    let mut session = None;
+
+    while user.is_none() {
         match transport.next().await {
             Some(Ok(message)) => {
-                let message = decrypt(shared_aes256_key.clone(), message);
-                let mut state = state.lock().await;
-                if state.nicknames.is_empty() {
-                    state.nicknames = vec!["You".into(), "you".into(), "me".into(), "Me".into()];
-                }
-                if state.nicknames.contains(&message.clone()) {
-                    transport
-                        .send(encrypt(
-                            shared_aes256_key.clone(),
-                            "Nickname already in use, try again:".to_string(),
-                        ))
-                        .await?;
+                let auth_request: AuthRequest = serde_json::from_str(
+                    &decrypt(shared_aes256_key.clone(), message)
+                ).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid auth request"))?;
+
+                let state = state.lock().await;
+                let result = if auth_request.is_registration {
+                    state.auth_service.register(
+                        auth_request.username.clone(),
+                        &auth_request.password,
+                    ).await
                 } else {
-                    nickname = message;
-                    state.nicknames.push(nickname.clone());
-                    transport
-                        .send(encrypt(
-                            shared_aes256_key.clone(),
-                            format!("You've logged in to The Lair, happy chatting {}", nickname),
-                        ))
-                        .await?;
-                    break;
+                    match state.auth_service.login(auth_request).await {
+                        Ok(response) => {
+                            session = Some(response.session);
+                            Ok(response.user)
+                        }
+                        Err(e) => Err(e),
+                    }
+                };
+
+                match result {
+                    Ok(authenticated_user) => {
+                        user = Some(authenticated_user.clone());
+                        transport
+                            .send(encrypt(
+                                shared_aes256_key.clone(),
+                                format!("Welcome back, {}!", authenticated_user.username),
+                            ))
+                            .await?;
+                        break;
+                    }
+                    Err(e) => {
+                        transport
+                            .send(encrypt(
+                                shared_aes256_key.clone(),
+                                format!("Authentication failed: {}", e),
+                            ))
+                            .await?;
+                    }
                 }
             }
-            // We didn't get a message so we return early here.
             _ => {
-                drop(nickname);
-                tracing::error!("Failed to get nickname from {}. Client disconnected.", addr);
+                tracing::error!("Client disconnected during authentication: {}", addr);
                 return Ok(());
             }
-        };
+        }
     }
+
+    let user = user.unwrap();
+    let session = session.unwrap();
 
     // Register our peer with state which internally sets up some channels.
     let mut peer = Peer::new(state.clone(), transport, shared_aes256_key.clone()).await?;
@@ -264,7 +288,7 @@ async fn process(
     // A client has connected, let's let everyone know.
     {
         let mut state = state.lock().await;
-        let message = format!("{} has joined the chat", nickname);
+        let message = format!("{} has joined the chat", user.username);
         tracing::info!("{}", message);
         state.broadcast(addr, &message).await;
     }
@@ -282,7 +306,7 @@ async fn process(
                 Some(Ok(message)) => {
                     let message = decrypt(shared_aes256_key.clone(), message);
                     let mut state = state.lock().await;
-                    let message = format!("{}: {}", nickname, message);
+                    let message = format!("{}: {}", user.username, message);
 
                     state.broadcast(addr, &message).await;
                 }
@@ -306,10 +330,12 @@ async fn process(
         let mut state = state.lock().await;
         state.peers.remove(&addr);
 
-        let index = state.nicknames.iter().position(|s| *s == nickname).unwrap();
-        state.nicknames.remove(index);
+        // Cleanup user session
+        if let Err(e) = state.auth_service.logout(&session.token).await {
+            tracing::error!("Failed to cleanup session: {}", e);
+        }
 
-        let message = format!("{} has left the chat", nickname);
+        let message = format!("{} has left the chat", user.username);
         tracing::info!("{}", message);
         state.broadcast(addr, &message).await;
     }

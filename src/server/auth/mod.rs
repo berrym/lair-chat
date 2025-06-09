@@ -4,6 +4,7 @@
 mod types;
 mod storage;
 mod service;
+mod protocol;
 
 pub use types::{
     AuthError,
@@ -26,6 +27,12 @@ pub use storage::{
 pub use service::{
     AuthService,
     RateLimitConfig,
+};
+
+pub use protocol::{
+    AuthenticationMessage,
+    AuthenticationResponse,
+    error_codes,
 };
 
 /// Default rate limiting configuration

@@ -200,12 +200,14 @@ impl Session {
     }
 }
 
-/// Authentication request for login
-#[derive(Debug, Deserialize)]
+/// Authentication request for login or registration
+#[derive(Debug, Clone, Deserialize)]
 pub struct AuthRequest {
     pub username: String,
     pub password: String,
     pub fingerprint: String,
+    /// Whether this is a registration request
+    pub is_registration: bool,
 }
 
 /// Authentication response containing session information
