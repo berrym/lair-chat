@@ -18,15 +18,33 @@ pub struct AuthManager {
     state: Arc<RwLock<AuthState>>,
     /// Transport for sending/receiving auth messages
     transport: Arc<Box<dyn Transport>>,
+    /// Token storage for persistence
+    token_storage: Arc<Box<dyn TokenStorage>>,
 }
 
 impl AuthManager {
     /// Create a new authentication manager
-    pub fn new(transport: Arc<Box<dyn Transport>>) -> Self {
+    pub fn new(transport: Arc<Box<dyn Transport>>, token_storage: Box<dyn TokenStorage>) -> Self {
         Self {
             state: Arc::new(RwLock::new(AuthState::Unauthenticated)),
             transport,
+            token_storage: Arc::new(token_storage),
         }
+    }
+
+    /// Initialize the auth manager and attempt to restore previous session
+    pub async fn initialize(&self) -> AuthResult<()> {
+        if let Some(stored_auth) = self.token_storage.load_auth().await? {
+            if !stored_auth.session.is_expired() {
+                let mut state = self.state.write().await;
+                *state = AuthState::Authenticated {
+                    profile: stored_auth.profile,
+                    session: stored_auth.session,
+                };
+                return Ok(());
+            }
+        }
+        Ok(())
     }
     
     /// Get the current authentication state
@@ -76,12 +94,25 @@ impl AuthManager {
                     // Handle response
                     match auth_response.into_session_and_profile() {
                         Ok((session, profile)) => {
-                            // Update state to authenticated
-                            let mut state = self.state.write().await;
-                            *state = AuthState::Authenticated {
-                                session,
+                            // Update state to authenticated and persist
+                            {
+                                let mut state = self.state.write().await;
+                                *state = AuthState::Authenticated {
+                                    session: session.clone(),
+                                    profile: profile.clone(),
+                                };
+                            }
+                            
+                            // Store authentication data
+                            let stored_auth = StoredAuth {
                                 profile,
+                                session,
+                                stored_at: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs(),
                             };
+                            self.token_storage.save_auth(stored_auth).await?;
                             Ok(())
                         }
                         Err(e) => {
@@ -184,6 +215,9 @@ impl AuthManager {
             Some(session) => session.token,
             None => return Ok(()),
         };
+
+        // Clear stored authentication
+        self.token_storage.clear_auth().await?;
         
         // Send logout request
         let request = AuthRequest::logout(token);
@@ -248,11 +282,13 @@ mod tests {
     use std::sync::Arc;
     use tokio::sync::mpsc;
     use crate::client::transport::MockTransport;
+    use crate::client::auth::storage::MemoryTokenStorage;
     
     async fn setup_test_manager() -> (AuthManager, mpsc::UnboundedSender<String>) {
         let (tx, rx) = mpsc::unbounded_channel();
         let transport = Arc::new(Box::new(MockTransport::new(rx)));
-        let manager = AuthManager::new(transport);
+        let storage = Box::new(MemoryTokenStorage::new());
+        let manager = AuthManager::new(transport, storage);
         (manager, tx)
     }
     

@@ -35,6 +35,7 @@ pub struct ConnectionManager {
     observers: Vec<Arc<dyn ConnectionObserver + Send + Sync + 'static>>,
     cancel_token: CancellationToken,
     auth_manager: Option<Arc<AuthManager>>,
+    token_storage: Option<Arc<Box<dyn TokenStorage + Send + Sync>>>,
 }
 
 // Extension trait for downcasting Arc<dyn ConnectionObserver>
@@ -111,13 +112,22 @@ impl ConnectionManager {
             observers: vec![Arc::new(DefaultConnectionObserver)],
             cancel_token: CancellationToken::new(),
             auth_manager: None,
+            token_storage: None,
         }
     }
 
     /// Enable authentication for this connection manager
     pub fn with_auth(&mut self) -> &mut Self {
         if let Some(transport) = &self.transport {
-            self.auth_manager = Some(Arc::new(AuthManager::new(Arc::clone(transport))));
+            if let Ok(token_storage) = FileTokenStorage::new() {
+                let token_storage = Box::new(token_storage);
+                let auth_manager = AuthManager::new(
+                    Arc::clone(transport),
+                    token_storage.clone(),
+                );
+                self.token_storage = Some(Arc::new(token_storage));
+                self.auth_manager = Some(Arc::new(auth_manager));
+            }
         }
         self
     }
@@ -161,9 +171,24 @@ impl ConnectionManager {
             transport_guard.connect().await?;
         }
 
-        // Initialize authentication if configured
-        if self.transport.is_some() && self.auth_manager.is_none() {
-            self.with_auth();
+        // Initialize authentication if transport is available
+        if let Some(transport) = &self.transport {
+            if self.auth_manager.is_none() {
+                let token_storage = Box::new(FileTokenStorage::new()?);
+                let auth_manager = AuthManager::new(
+                    Arc::clone(transport),
+                    token_storage.clone(),
+                );
+                self.token_storage = Some(Arc::new(token_storage));
+                self.auth_manager = Some(Arc::new(auth_manager));
+            
+                // Try to restore previous session
+                if let Some(auth_manager) = &self.auth_manager {
+                    if let Err(e) = auth_manager.initialize().await {
+                        self.notify_error(format!("Failed to restore session: {}", e));
+                    }
+                }
+            }
         }
 
         // Perform key exchange handshake if encryption is configured
