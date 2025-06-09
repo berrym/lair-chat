@@ -450,13 +450,14 @@ impl App {
                             Err(e) => {
                                 add_text_message(format!("Failed to connect to {}: {}", server_addr, e));
                                 add_text_message("Authentication failed - could not connect to server".to_string());
-                                let _ = tx.send(Action::AuthenticationFailure("Connection failed".to_string()));
+                                add_text_message("Start the server with: cargo run --bin lair-chat-server".to_string());
+                                let _ = tx.send(Action::AuthenticationFailure("Connection failed. Is the server running? Start with: cargo run --bin lair-chat-server".to_string()));
                             }
                         }
                     }
                     Err(_) => {
                         add_text_message(format!("Invalid server address: {}", server_addr));
-                        let _ = tx.send(Action::AuthenticationFailure("Invalid server address".to_string()));
+                        let _ = tx.send(Action::AuthenticationFailure("Invalid server address format".to_string()));
                     }
                 }
             }
@@ -517,13 +518,14 @@ impl App {
                             Err(e) => {
                                 add_text_message(format!("Failed to connect to {}: {}", server_addr, e));
                                 add_text_message("Registration failed - could not connect to server".to_string());
-                                let _ = tx.send(Action::AuthenticationFailure("Connection failed".to_string()));
+                                add_text_message("Start the server with: cargo run --bin lair-chat-server".to_string());
+                                let _ = tx.send(Action::AuthenticationFailure("Connection failed. Is the server running? Start with: cargo run --bin lair-chat-server".to_string()));
                             }
                         }
                     }
                     Err(_) => {
                         add_text_message(format!("Invalid server address: {}", server_addr));
-                        let _ = tx.send(Action::AuthenticationFailure("Invalid server address".to_string()));
+                        let _ = tx.send(Action::AuthenticationFailure("Invalid server address format".to_string()));
                     }
                 }
             }

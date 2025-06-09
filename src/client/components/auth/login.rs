@@ -304,7 +304,7 @@ impl Component for LoginScreen {
                 Constraint::Length(3),   // Server input
                 Constraint::Length(3),   // Port input
                 Constraint::Length(1),   // Spacer
-                Constraint::Length(1),   // Simple help label
+                Constraint::Length(3),   // Help label (taller for error wrapping)
             ])
             .split(form_area);
 
@@ -479,9 +479,12 @@ impl Component for LoginScreen {
                 Line::from(vec![
                     Span::styled("Error: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
                     Span::styled(error.as_str(), Style::default().fg(Color::Red)),
-                    Span::styled(" | Press ? for help", Style::default().fg(Color::Blue)),
+                ]),
+                Line::from(vec![
+                    Span::styled("Press ? for help", Style::default().fg(Color::Blue)),
                 ]),
             ])
+            .wrap(ratatui::widgets::Wrap { trim: false })
         } else if self.processing {
             Paragraph::new(vec![
                 Line::from(vec![
@@ -496,7 +499,7 @@ impl Component for LoginScreen {
             ])
         };
         
-        f.render_widget(help_text, form_chunks[6]);
+        f.render_widget(help_text.block(Block::default().borders(Borders::ALL).title("Status")), form_chunks[6]);
 
         // Draw help popup if visible
         if self.show_help {
@@ -563,11 +566,16 @@ impl LoginScreen {
             Line::from(vec![
                 Span::styled("Server Setup:", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
             ]),
-            Line::from("Before connecting, start the server:"),
-            Line::from("cargo run --bin lair-chat-server"),
+            Line::from("IMPORTANT: Start the server first in another terminal:"),
+            Line::from("  cargo run --bin lair-chat-server"),
             Line::from(""),
-            Line::from("Default server: 127.0.0.1:8080"),
-            Line::from("You can change this in the login form"),
+            Line::from("The server will listen on 127.0.0.1:8080 by default"),
+            Line::from("Make sure this matches your login form settings"),
+            Line::from(""),
+            Line::from("Common connection issues:"),
+            Line::from("- Server not running (start it first!)"),
+            Line::from("- Wrong server address or port"),
+            Line::from("- Firewall blocking connection"),
             Line::from(""),
             Line::from(vec![
                 Span::styled("Help Navigation:", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
