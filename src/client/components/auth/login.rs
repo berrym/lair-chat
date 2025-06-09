@@ -163,16 +163,26 @@ impl Component for LoginScreen {
 
         match key.code {
             crossterm::event::KeyCode::Tab => {
-                self.focused_field = (self.focused_field + 1) % 4;
+                if !self.show_help {
+                    self.focused_field = (self.focused_field + 1) % 4;
+                }
                 None
             }
             crossterm::event::KeyCode::BackTab => {
-                self.focused_field = if self.focused_field == 0 { 3 } else { self.focused_field - 1 };
+                if !self.show_help {
+                    self.focused_field = if self.focused_field == 0 { 3 } else { self.focused_field - 1 };
+                }
                 None
             }
             crossterm::event::KeyCode::Enter => {
-
-                self.submit()
+                if self.show_help {
+                    // If help is open, close it instead of submitting
+                    self.show_help = false;
+                    self.help_scroll = 0;
+                    None
+                } else {
+                    self.submit()
+                }
             }
             crossterm::event::KeyCode::Char('t') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
                 self.toggle_mode();
@@ -211,42 +221,46 @@ impl Component for LoginScreen {
                 None
             }
             crossterm::event::KeyCode::Char(c) => {
-                match self.focused_field {
-                    0 => { self.username = self.username.clone().with_value(format!("{}{}", self.username.value(), c)); },
-                    1 => { self.password = self.password.clone().with_value(format!("{}{}", self.password.value(), c)); },
-                    2 => { self.server = self.server.clone().with_value(format!("{}{}", self.server.value(), c)); },
-                    3 => { self.port = self.port.clone().with_value(format!("{}{}", self.port.value(), c)); },
-                    _ => {}
+                if !self.show_help {
+                    match self.focused_field {
+                        0 => { self.username = self.username.clone().with_value(format!("{}{}", self.username.value(), c)); },
+                        1 => { self.password = self.password.clone().with_value(format!("{}{}", self.password.value(), c)); },
+                        2 => { self.server = self.server.clone().with_value(format!("{}{}", self.server.value(), c)); },
+                        3 => { self.port = self.port.clone().with_value(format!("{}{}", self.port.value(), c)); },
+                        _ => {}
+                    }
                 }
                 None
             }
             crossterm::event::KeyCode::Backspace => {
-                match self.focused_field {
-                    0 => { 
-                        let value = self.username.value();
-                        if !value.is_empty() {
-                            self.username = self.username.clone().with_value(value[..value.len()-1].to_string());
-                        }
-                    },
-                    1 => { 
-                        let value = self.password.value();
-                        if !value.is_empty() {
-                            self.password = self.password.clone().with_value(value[..value.len()-1].to_string());
-                        }
-                    },
-                    2 => { 
-                        let value = self.server.value();
-                        if !value.is_empty() {
-                            self.server = self.server.clone().with_value(value[..value.len()-1].to_string());
-                        }
-                    },
-                    3 => { 
-                        let value = self.port.value();
-                        if !value.is_empty() {
-                            self.port = self.port.clone().with_value(value[..value.len()-1].to_string());
-                        }
-                    },
-                    _ => {}
+                if !self.show_help {
+                    match self.focused_field {
+                        0 => { 
+                            let value = self.username.value();
+                            if !value.is_empty() {
+                                self.username = self.username.clone().with_value(value[..value.len()-1].to_string());
+                            }
+                        },
+                        1 => { 
+                            let value = self.password.value();
+                            if !value.is_empty() {
+                                self.password = self.password.clone().with_value(value[..value.len()-1].to_string());
+                            }
+                        },
+                        2 => { 
+                            let value = self.server.value();
+                            if !value.is_empty() {
+                                self.server = self.server.clone().with_value(value[..value.len()-1].to_string());
+                            }
+                        },
+                        3 => { 
+                            let value = self.port.value();
+                            if !value.is_empty() {
+                                self.port = self.port.clone().with_value(value[..value.len()-1].to_string());
+                            }
+                        },
+                        _ => {}
+                    }
                 }
                 None
             }
@@ -304,7 +318,7 @@ impl Component for LoginScreen {
                 Constraint::Length(3),   // Server input
                 Constraint::Length(3),   // Port input
                 Constraint::Length(1),   // Spacer
-                Constraint::Length(3),   // Help label (taller for error wrapping)
+                Constraint::Length(1),   // Simple help label
             ])
             .split(form_area);
 
@@ -473,33 +487,19 @@ impl Component for LoginScreen {
             .wrap(ratatui::widgets::Wrap { trim: false });
         f.render_widget(port_input, form_chunks[5]);
 
-        // Draw simple help label or error message
+        // Draw simple help label with error if present
         let help_text = if let Some(error) = &self.error_message {
-            Paragraph::new(vec![
-                Line::from(vec![
-                    Span::styled("Error: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                    Span::styled(error.as_str(), Style::default().fg(Color::Red)),
-                ]),
-                Line::from(vec![
-                    Span::styled("Press ? for help", Style::default().fg(Color::Blue)),
-                ]),
-            ])
-            .wrap(ratatui::widgets::Wrap { trim: false })
+            Paragraph::new(format!("Error: {} | Press ? for help", error))
+                .style(Style::default().fg(Color::Red))
         } else if self.processing {
-            Paragraph::new(vec![
-                Line::from(vec![
-                    Span::styled("Processing...", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                ]),
-            ])
+            Paragraph::new("Processing... | Press ? for help")
+                .style(Style::default().fg(Color::Yellow))
         } else {
-            Paragraph::new(vec![
-                Line::from(vec![
-                    Span::styled("Press ? for help", Style::default().fg(Color::Blue)),
-                ]),
-            ])
+            Paragraph::new("Press ? for help")
+                .style(Style::default().fg(Color::Blue))
         };
         
-        f.render_widget(help_text.block(Block::default().borders(Borders::ALL).title("Status")), form_chunks[6]);
+        f.render_widget(help_text, form_chunks[6]);
 
         // Draw help popup if visible
         if self.show_help {
