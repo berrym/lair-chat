@@ -690,26 +690,32 @@ impl Component for Home {
         // Calculate scroll position - start from the bottom of the text
         let text_len = text.len();
         
-        // Simplified auto-scrolling logic
-        unsafe {
+        // Always auto-scroll to show latest messages unless in manual scroll mode
+        let scroll_position = unsafe {
             let old_text_len = PREV_TEXT_LEN_STATE;
             
-            // Auto-scroll to bottom when new content is added or not in manual mode
+            // Update scroll state when new content is added or not in manual mode
             if text_len > old_text_len || !MANUAL_SCROLL_STATE {
-                SCROLL_OFFSET_STATE = text_len;
+                MANUAL_SCROLL_STATE = false; // Ensure we're in auto mode
             }
             
             PREV_TEXT_LEN_STATE = text_len;
-        }
-        
-        // Calculate scroll position to show the most recent messages
-        let scroll_position = if text_len > available_height {
-            unsafe { 
-                let max_scroll = text_len.saturating_sub(available_height);
-                (SCROLL_OFFSET_STATE.saturating_sub(available_height)).min(max_scroll)
+            
+            // Always show the bottom-most content
+            if !MANUAL_SCROLL_STATE {
+                if text_len > available_height {
+                    text_len.saturating_sub(available_height)
+                } else {
+                    0
+                }
+            } else {
+                // In manual scroll mode, use stored scroll position
+                if text_len > available_height {
+                    (SCROLL_OFFSET_STATE.saturating_sub(available_height)).min(text_len.saturating_sub(available_height))
+                } else {
+                    0
+                }
             }
-        } else {
-            0
         };
         
         // Simplified line counting - let ratatui handle wrapping
