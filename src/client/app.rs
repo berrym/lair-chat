@@ -179,7 +179,9 @@ impl App {
     fn handle_actions(&mut self, tui: &mut Tui) -> Result<()> {
         // Process all pending actions
         while let Ok(action) = self.action_rx.try_recv() {
+            println!("DEBUG: Action received in handle_actions: {:?}", action);
             if let Some(action) = self.update(&action)? {
+                println!("DEBUG: Sending secondary action: {:?}", action);
                 self.action_tx.send(action)?;
             }
         }
@@ -190,6 +192,7 @@ impl App {
     }
 
     fn update(&mut self, action: &Action) -> Result<Option<Action>> {
+        println!("DEBUG: App received action: {:?}", action);
         match action {
             Action::Quit => {
                 self.should_quit = true;
@@ -225,10 +228,12 @@ impl App {
             }
             
             Action::LoginWithServer(credentials, server_address) => {
+                println!("DEBUG: Processing LoginWithServer action");
                 self.handle_login_with_server(credentials.clone(), server_address.clone());
             }
             
             Action::RegisterWithServer(credentials, server_address) => {
+                println!("DEBUG: Processing RegisterWithServer action");
                 self.handle_register_with_server(credentials.clone(), server_address.clone());
             }
             

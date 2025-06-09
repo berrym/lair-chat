@@ -56,28 +56,38 @@ impl LoginScreen {
     }
 
     fn submit(&mut self) -> Option<Action> {
+        if self.processing {
+            return None;
+        }
+        
         // Clear any previous error
         self.error_message = None;
+        
+        println!("DEBUG: Submit called");
         
         // Validate username and password
         if self.username.value().trim().is_empty() {
             self.error_message = Some("Username cannot be empty".to_string());
+            println!("DEBUG: Username empty");
             return None;
         }
         
         if self.password.value().trim().is_empty() {
             self.error_message = Some("Password cannot be empty".to_string());
+            println!("DEBUG: Password empty");
             return None;
         }
 
         // Validate server and port
         if self.server.value().trim().is_empty() {
             self.error_message = Some("Server address cannot be empty".to_string());
+            println!("DEBUG: Server empty");
             return None;
         }
         
         if self.port.value().trim().is_empty() {
             self.error_message = Some("Port cannot be empty".to_string());
+            println!("DEBUG: Port empty");
             return None;
         }
 
@@ -86,11 +96,13 @@ impl LoginScreen {
             Ok(port) => {
                 if port == 0 {
                     self.error_message = Some("Port must be greater than 0".to_string());
+                    println!("DEBUG: Port is 0");
                     return None;
                 }
             }
             Err(_) => {
                 self.error_message = Some("Port must be a valid number (1-65535)".to_string());
+                println!("DEBUG: Port not a number");
                 return None;
             }
         }
@@ -105,23 +117,27 @@ impl LoginScreen {
         // Validate server address format
         if server_address.parse::<std::net::SocketAddr>().is_err() {
             self.error_message = Some("Invalid server address format".to_string());
+            println!("DEBUG: Invalid address format: {}", server_address);
             return None;
         }
 
         self.processing = true;
         self.error_message = None;
         
-        println!("Submitting {} with server: {}", 
+        println!("DEBUG: Submitting {} with server: {}", 
                 match self.mode {
                     LoginMode::Login => "login",
                     LoginMode::Register => "registration"
                 }, 
                 server_address);
         
-        match self.mode {
-            LoginMode::Login => Some(Action::LoginWithServer(credentials, server_address)),
-            LoginMode::Register => Some(Action::RegisterWithServer(credentials, server_address)),
-        }
+        let action = match self.mode {
+            LoginMode::Login => Action::LoginWithServer(credentials, server_address),
+            LoginMode::Register => Action::RegisterWithServer(credentials, server_address),
+        };
+        
+        println!("DEBUG: Returning action: {:?}", action);
+        Some(action)
     }
 
     pub fn handle_error(&mut self, error: AuthError) {
@@ -160,6 +176,7 @@ impl Component for LoginScreen {
                 None
             }
             crossterm::event::KeyCode::Enter => {
+                println!("DEBUG: Enter key pressed");
                 self.submit()
             }
             crossterm::event::KeyCode::Char('t') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
@@ -292,7 +309,7 @@ impl Component for LoginScreen {
                 Constraint::Length(3),   // Server input
                 Constraint::Length(3),   // Port input
                 Constraint::Length(1),   // Spacer
-                Constraint::Length(3),   // Simple help prompt
+                Constraint::Length(1),   // Simple help label
             ])
             .split(form_area);
 
@@ -461,49 +478,30 @@ impl Component for LoginScreen {
             .wrap(ratatui::widgets::Wrap { trim: false });
         f.render_widget(port_input, form_chunks[5]);
 
-        // Draw simple help prompt with error display
-        let help_content = if let Some(error) = &self.error_message {
-            vec![
+        // Draw simple help label or error message
+        let help_text = if let Some(error) = &self.error_message {
+            Paragraph::new(vec![
                 Line::from(vec![
                     Span::styled("Error: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
                     Span::styled(error.as_str(), Style::default().fg(Color::Red)),
+                    Span::styled(" | Press ? for help", Style::default().fg(Color::Blue)),
                 ]),
-                Line::from(""),
-                Line::from(vec![
-                    Span::styled("Press ? for help", Style::default().fg(Color::Blue)),
-                ]),
-            ]
+            ])
         } else if self.processing {
-            vec![
+            Paragraph::new(vec![
                 Line::from(vec![
                     Span::styled("Processing...", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
                 ]),
-                Line::from(""),
+            ])
+        } else {
+            Paragraph::new(vec![
                 Line::from(vec![
                     Span::styled("Press ? for help", Style::default().fg(Color::Blue)),
                 ]),
-            ]
-        } else {
-            vec![
-                Line::from(vec![
-                    Span::styled("Tab", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                    Span::styled(" - navigate | ", Style::default().fg(Color::White)),
-                    Span::styled("Enter", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-                    Span::styled(" - submit | ", Style::default().fg(Color::White)),
-                    Span::styled("Ctrl+T", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-                    Span::styled(" - switch mode", Style::default().fg(Color::White)),
-                ]),
-                Line::from(vec![
-                    Span::styled("Press ? for detailed help and instructions", Style::default().fg(Color::Blue)),
-                ]),
-            ]
+            ])
         };
-
-        let help_prompt = Paragraph::new(help_content)
-            .style(Style::default())
-            .block(Block::default().borders(Borders::ALL).title("Controls"))
-            .wrap(ratatui::widgets::Wrap { trim: false });
-        f.render_widget(help_prompt, form_chunks[6]);
+        
+        f.render_widget(help_text, form_chunks[6]);
 
         // Draw help popup if visible
         if self.show_help {
