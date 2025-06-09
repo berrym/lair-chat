@@ -8,8 +8,15 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{action::Action, config::Config, tui::Event};
 
+pub mod app;
+pub mod auth;
+pub mod chat;
 pub mod fps;
 pub mod home;
+
+pub use app::App;
+pub use auth::{AuthStatusBar, LoginScreen};
+pub use chat::ChatView;
 
 /// `Component` is a trait that represents a visual and interactive element of the user interface.
 ///
@@ -82,8 +89,7 @@ pub trait Component {
     ///
     /// * `Result<Option<Action>>` - An action to be processed or none.
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
-        let _ = key; // to appease clippy
-        Ok(None)
+        Ok(self.handle_key(key))
     }
     /// Handle mouse events and produce actions if necessary.
     ///
@@ -122,4 +128,19 @@ pub trait Component {
     ///
     /// * `Result<()>` - An Ok result or an error.
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()>;
+
+    /// Handle a key event directly
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The key event to handle
+    ///
+    /// # Returns
+    ///
+    /// * `Option<Action>` - An optional action to perform
+    fn handle_key(&mut self, key: KeyEvent) -> Option<Action> {
+        let _ = key;
+        None
+    }
+}
 }

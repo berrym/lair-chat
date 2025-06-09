@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use strum::Display;
+use crate::client::auth::Credentials;
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
 pub enum Action {
@@ -24,4 +25,12 @@ pub enum Action {
     Update,
     ShowConnectionDialog,
     Connect(SocketAddr),
+    // Authentication actions
+    Login(Credentials),
+    Register(Credentials),
+    Logout,
+    RefreshSession,
+    // Message actions
+    SendMessage(String),
+    ReceiveMessage(String),
 }
