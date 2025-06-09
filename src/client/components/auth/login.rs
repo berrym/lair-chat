@@ -1,9 +1,9 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Tabs};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use tui_input::Input;
-use crossterm::event::KeyEvent;
+
 use color_eyre::Result;
 
 use crate::auth::{AuthError, AuthState, Credentials};
@@ -143,106 +143,186 @@ impl Component for LoginScreen {
     }
 
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
-        // Create a centered box for the login form
-        let area = Layout::default()
+        // Create a larger centered box for the login form
+        let vertical_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Percentage(35),
-                Constraint::Length(7),
-                Constraint::Percentage(35),
-            ])
-            .split(area)[1];
-
-        // Draw a clear background
-        f.render_widget(Clear, area);
-
-        // Create the main box
-        let block = Block::default()
-            .title(match self.mode {
-                LoginMode::Login => "Login",
-                LoginMode::Register => "Register",
-            })
-            .borders(Borders::ALL)
-            .style(Style::default());
-
-        // Split the area into sections
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .margin(1)
-            .constraints([
-                Constraint::Length(1),  // Mode tabs
-                Constraint::Length(1),  // Username
-                Constraint::Length(1),  // Password
-                Constraint::Length(1),  // Status/Error
+                Constraint::Percentage(20),  // Top padding
+                Constraint::Length(18),      // Login form
+                Constraint::Percentage(20),  // Bottom padding
             ])
             .split(area);
 
-        // Draw the main box
-        f.render_widget(block, area);
+        let horizontal_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(25),  // Left padding
+                Constraint::Percentage(50),  // Login form
+                Constraint::Percentage(25),  // Right padding
+            ])
+            .split(vertical_chunks[1]);
 
-        // Draw mode tabs
-        let mode_titles = vec!["Login", "Register"];
-        let mode_spans: Vec<Line> = mode_titles
-            .iter()
-            .map(|t| {
-                Line::from(vec![
-                    Span::styled(
-                        *t,
-                        Style::default().add_modifier(
-                            if (self.mode == LoginMode::Login && *t == "Login")
-                                || (self.mode == LoginMode::Register && *t == "Register")
-                            {
-                                Modifier::REVERSED
-                            } else {
-                                Modifier::empty()
-                            },
-                        ),
-                    )
-                ])
-            })
-            .collect();
+        let form_area = horizontal_chunks[1];
 
-        let tabs = Tabs::new(mode_spans)
-            .block(Block::default())
-            .style(Style::default());
-        f.render_widget(tabs, chunks[0]);
+        // Draw a clear background
+        f.render_widget(Clear, form_area);
 
-        // Draw username field
+        // Create the main box with title
+        let main_title = match self.mode {
+            LoginMode::Login => "🔐 Lair Chat - Login",
+            LoginMode::Register => "📝 Lair Chat - Register",
+        };
+
+        let main_block = Block::default()
+            .title(main_title)
+            .borders(Borders::ALL)
+            .style(Style::default().fg(Color::Cyan));
+
+        f.render_widget(main_block, form_area);
+
+        // Split the form area into sections
+        let form_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .margin(1)
+            .constraints([
+                Constraint::Length(3),   // Mode selection and instructions
+                Constraint::Length(1),   // Spacer
+                Constraint::Length(3),   // Username input
+                Constraint::Length(3),   // Password input
+                Constraint::Length(1),   // Spacer
+                Constraint::Length(2),   // Instructions
+                Constraint::Length(2),   // Status/Error
+            ])
+            .split(form_area);
+
+        // Draw mode selection and instructions
+        let mode_instruction = match self.mode {
+            LoginMode::Login => "Login Mode - Press Ctrl+T to switch to Register",
+            LoginMode::Register => "Register Mode - Press Ctrl+T to switch to Login",
+        };
+
+        let mode_display = Paragraph::new(vec![
+            Line::from(vec![
+                Span::styled("Mode: ", Style::default().fg(Color::White)),
+                Span::styled(
+                    match self.mode {
+                        LoginMode::Login => "LOGIN",
+                        LoginMode::Register => "REGISTER",
+                    },
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
+                ),
+            ]),
+            Line::from(Span::styled(
+                mode_instruction,
+                Style::default().fg(Color::Gray)
+            )),
+        ])
+        .block(Block::default().borders(Borders::ALL).title("Mode"));
+        f.render_widget(mode_display, form_chunks[0]);
+
+        // Draw username field with better styling
+        let username_title = if self.focused_field == 0 {
+            "Username (FOCUSED - Type here)"
+        } else {
+            "Username"
+        };
+
         let username_style = if self.focused_field == 0 {
-            Style::default().fg(Color::Yellow)
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
         } else {
-            Style::default()
+            Style::default().fg(Color::White)
         };
-        
-        let username_input = Paragraph::new(self.username.value())
-            .style(username_style)
-            .block(Block::default().borders(Borders::ALL).title("Username"));
-        f.render_widget(username_input, chunks[1]);
 
-        // Draw password field (masked)
-        let password_style = if self.focused_field == 1 {
-            Style::default().fg(Color::Yellow)
+        let username_block = Block::default()
+            .borders(Borders::ALL)
+            .title(username_title)
+            .border_style(if self.focused_field == 0 {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(Color::Gray)
+            });
+
+        let username_display = if self.username.value().is_empty() && self.focused_field == 0 {
+            format!("{}_", self.username.value())
         } else {
-            Style::default()
+            self.username.value().to_string()
         };
-        
-        let masked_password = "*".repeat(self.password.value().len());
+
+        let username_input = Paragraph::new(username_display)
+            .style(username_style)
+            .block(username_block);
+        f.render_widget(username_input, form_chunks[2]);
+
+        // Draw password field with better styling
+        let password_title = if self.focused_field == 1 {
+            "Password (FOCUSED - Type here)"
+        } else {
+            "Password"
+        };
+
+        let password_style = if self.focused_field == 1 {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+
+        let password_block = Block::default()
+            .borders(Borders::ALL)
+            .title(password_title)
+            .border_style(if self.focused_field == 1 {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(Color::Gray)
+            });
+
+        let masked_password = if self.password.value().is_empty() && self.focused_field == 1 {
+            "_".to_string()
+        } else {
+            "•".repeat(self.password.value().len())
+        };
         let password_input = Paragraph::new(masked_password)
             .style(password_style)
-            .block(Block::default().borders(Borders::ALL).title("Password"));
-        f.render_widget(password_input, chunks[2]);
+            .block(password_block);
+        f.render_widget(password_input, form_chunks[3]);
+
+        // Draw navigation instructions
+        let instructions = Paragraph::new(vec![
+            Line::from("Navigation: Tab/Shift+Tab - Switch fields | Enter - Submit | Ctrl+C - Quit"),
+        ])
+        .style(Style::default().fg(Color::Cyan))
+        .block(Block::default().borders(Borders::ALL).title("Controls"));
+        f.render_widget(instructions, form_chunks[5]);
 
         // Draw status/error message
         if let Some(error) = &self.error_message {
-            let error_msg = Paragraph::new(error.as_str())
-                .style(Style::default().fg(Color::Red))
-                .block(Block::default());
-            f.render_widget(error_msg, chunks[3]);
+            let error_msg = Paragraph::new(vec![
+                Line::from(vec![
+                    Span::styled("❌ Error: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                    Span::styled(error.as_str(), Style::default().fg(Color::Red)),
+                ]),
+            ])
+            .block(Block::default().borders(Borders::ALL).title("Status"));
+            f.render_widget(error_msg, form_chunks[6]);
         } else if self.processing {
-            let status_msg = Paragraph::new("Processing...")
-                .style(Style::default().fg(Color::Yellow))
-                .block(Block::default());
-            f.render_widget(status_msg, chunks[3]);
+            let status_msg = Paragraph::new(vec![
+                Line::from(vec![
+                    Span::styled("⏳ ", Style::default().fg(Color::Yellow)),
+                    Span::styled("Processing...", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                ]),
+            ])
+            .block(Block::default().borders(Borders::ALL).title("Status"));
+            f.render_widget(status_msg, form_chunks[6]);
+        } else {
+            let ready_msg = Paragraph::new(vec![
+                Line::from(vec![
+                    Span::styled("✓ ", Style::default().fg(Color::Green)),
+                    Span::styled("Ready to authenticate", Style::default().fg(Color::Green)),
+                ]),
+            ])
+            .block(Block::default().borders(Borders::ALL).title("Status"));
+            f.render_widget(ready_msg, form_chunks[6]);
         }
 
         Ok(())
