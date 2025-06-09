@@ -8,6 +8,8 @@ use crate::client::auth::{AuthState, Credentials};
 use crate::client::components::{Component, Frame};
 use crate::client::components::auth::{AuthStatusBar, LoginScreen};
 use crate::client::components::chat::ChatView;
+use crate::client::components::status::StatusBar;
+use crate::client::transport::ConnectionStatus;
 use crossterm::event::KeyEvent;
 
 /// Main application state and UI component
@@ -20,6 +22,8 @@ pub struct App {
     auth_status: AuthStatusBar,
     /// Chat view component
     chat_view: ChatView,
+    /// Status bar component
+    status_bar: StatusBar,
     /// Whether the application should exit
     should_quit: bool,
 }
@@ -31,6 +35,7 @@ impl App {
             login_screen: LoginScreen::new(),
             auth_status: AuthStatusBar::new(),
             chat_view: ChatView::new(),
+            status_bar: StatusBar::new(),
             should_quit: false,
         }
     }
@@ -46,7 +51,8 @@ impl App {
     /// Update the authentication state
     pub fn update_auth_state(&mut self, state: AuthState) {
         self.auth_state = state.clone();
-        self.auth_status.update_state(state);
+        self.auth_status.update_state(state.clone());
+        self.status_bar.set_auth_state(state);
     }
 
     /// Handle successful authentication
@@ -95,13 +101,15 @@ impl Component for App {
             .constraints([
                 Constraint::Length(1),  // Status bar
                 Constraint::Min(0),     // Main content
+                Constraint::Length(1),  // Bottom status bar
             ])
             .split(area);
 
-        // Draw the status bar
+        // Draw the auth status
         self.auth_status.draw(f, chunks[0])?;
 
         // Draw the main content based on authentication state
+        // Draw main content
         match self.auth_state {
             AuthState::Unauthenticated | AuthState::Failed { .. } => {
                 self.login_screen.draw(f, chunks[1])?;
@@ -117,6 +125,9 @@ impl Component for App {
                 f.render_widget(loading, chunks[1]);
             }
         }
+
+        // Draw the status bar
+        self.status_bar.draw(f, chunks[2])?;
 
         Ok(())
     }

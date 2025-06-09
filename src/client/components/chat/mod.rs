@@ -25,6 +25,8 @@ pub struct ChatView {
     show_help: bool,
     /// Command history manager
     history: CommandHistory,
+    /// Reference to status bar
+    status_bar: Option<Arc<Mutex<StatusBar>>>,
 }
 
 impl ChatView {
@@ -39,7 +41,13 @@ impl ChatView {
                 position: None,
                 history_file: PathBuf::from("history.json"),
             }),
+            status_bar: None,
         }
+    }
+
+    /// Set the status bar reference
+    pub fn with_status_bar(&mut self, status_bar: Arc<Mutex<StatusBar>>) {
+        self.status_bar = Some(status_bar);
     }
 
     pub fn set_username(&mut self, username: String) {
@@ -47,7 +55,21 @@ impl ChatView {
     }
 
     pub fn add_message(&mut self, message: Message) {
-        self.messages.push(message);
+        self.messages.push(message.clone());
+        
+        // Update status bar
+        if let Some(status_bar) = &self.status_bar {
+            if let Ok(mut bar) = status_bar.try_lock() {
+                match message.message_type {
+                    MessageType::Sent => bar.record_sent_message(),
+                    MessageType::Received => bar.record_received_message(),
+                    MessageType::Error => {
+                        bar.show_error(message.content.clone(), Duration::from_secs(5));
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
 
     fn submit_message(&mut self) -> Option<Action> {

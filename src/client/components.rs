@@ -13,10 +13,12 @@ pub mod auth;
 pub mod chat;
 pub mod fps;
 pub mod home;
+pub mod status;
 
 pub use app::App;
 pub use auth::{AuthStatusBar, LoginScreen};
 pub use chat::ChatView;
+pub use status::StatusBar;
 
 /// `Component` is a trait that represents a visual and interactive element of the user interface.
 ///
