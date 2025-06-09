@@ -32,6 +32,7 @@ pub enum Action {
     RefreshSession,
     AuthenticationSuccess(AuthState),
     AuthenticationFailure(String),
+    RegistrationSuccess(String),
     // Message actions
     SendMessage(String),
     ReceiveMessage(String),

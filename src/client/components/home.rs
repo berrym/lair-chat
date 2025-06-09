@@ -185,6 +185,13 @@ impl Component for Home {
         Ok(())
     }
 
+    fn handle_key(&mut self, key: KeyEvent) -> Option<Action> {
+        match self.handle_key_event(key) {
+            Ok(action) => action,
+            Err(_) => None,
+        }
+    }
+
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
         self.last_events.push(key.clone());
         

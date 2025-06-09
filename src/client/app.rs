@@ -261,12 +261,13 @@ impl App {
                 self.auth_status.update_state(self.auth_state.clone());
                 
                 // TODO: Actually register with server
-                // For now, simulate successful registration and login
+                // For now, simulate successful registration with longer delay
                 tokio::spawn({
                     let tx = self.action_tx.clone();
                     let creds = credentials.clone();
                     async move {
-                        tokio::time::sleep(tokio::time::Duration::from_millis(800)).await;
+                        // Longer delay to simulate account creation
+                        tokio::time::sleep(tokio::time::Duration::from_millis(1200)).await;
                         
                         use crate::auth::{UserProfile, Session};
                         use uuid::Uuid;
@@ -279,7 +280,7 @@ impl App {
                         
                         let profile = UserProfile {
                             id: Uuid::new_v4(),
-                            username: creds.username,
+                            username: creds.username.clone(),
                             roles: vec!["user".to_string()],
                         };
                         
@@ -291,6 +292,10 @@ impl App {
                         };
                         
                         let auth_state = AuthState::Authenticated { profile, session };
+                        
+                        // Send success message first
+                        let _ = tx.send(Action::RegistrationSuccess(creds.username));
+                        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                         let _ = tx.send(Action::AuthenticationSuccess(auth_state));
                     }
                 });
@@ -302,6 +307,12 @@ impl App {
                 self.mode = Mode::Authentication;
             }
 
+            // New action for handling registration success
+            Action::RegistrationSuccess(username) => {
+                info!("User {} registered successfully", username);
+                // Keep in authenticating state, will transition when auth completes
+            }
+            
             // New action for handling auth success
             Action::AuthenticationSuccess(auth_state) => {
                 self.auth_state = auth_state.clone();
@@ -311,6 +322,31 @@ impl App {
                 if let AuthState::Authenticated { ref profile, .. } = auth_state {
                     info!("User {} authenticated successfully", profile.username);
                 }
+            }
+            
+            Action::EnterInsert => {
+                // Switch home component to insert mode
+                self.home_component.update(action.clone())?;
+            }
+            Action::EnterNormal => {
+                // Switch home component to normal mode
+                self.home_component.update(action.clone())?;
+            }
+            Action::ExitProcessing => {
+                // Exit processing mode
+                self.home_component.update(action.clone())?;
+            }
+            Action::EnterProcessing => {
+                // Enter processing mode
+                self.home_component.update(action.clone())?;
+            }
+            Action::ToggleFps => {
+                // Toggle FPS counter
+                self.fps_counter.update(action.clone())?;
+            }
+            Action::ToggleShowHelp => {
+                // Toggle help display
+                self.home_component.update(action.clone())?;
             }
             
             // Pass other actions to appropriate components
@@ -339,11 +375,15 @@ impl App {
                     }
                 }
                 AuthState::Authenticating => {
-                    // Show loading screen
+                    // Show loading screen with appropriate message
                     use ratatui::{widgets::{Block, Borders, Paragraph}, style::{Color, Style}};
-                    let loading = Paragraph::new("Authenticating...")
+                    let message = match self.login_screen.mode {
+                        crate::components::auth::LoginMode::Register => "Creating account...",
+                        crate::components::auth::LoginMode::Login => "Authenticating...",
+                    };
+                    let loading = Paragraph::new(message)
                         .style(Style::default().fg(Color::Yellow))
-                        .block(Block::default().borders(Borders::ALL));
+                        .block(Block::default().borders(Borders::ALL).title("Please Wait"));
                     frame.render_widget(loading, area);
                 }
                 AuthState::Authenticated { .. } => {

@@ -22,7 +22,7 @@ pub struct LoginScreen {
     username: Input,
     password: Input,
     error_message: Option<String>,
-    mode: LoginMode,
+    pub mode: LoginMode,
     focused_field: usize,
     processing: bool,
 }
@@ -197,29 +197,32 @@ impl Component for LoginScreen {
 
         // Draw mode selection and instructions
         let mode_instruction = match self.mode {
-            LoginMode::Login => "Login Mode - Press Ctrl+T to switch to Register",
-            LoginMode::Register => "Register Mode - Press Ctrl+T to switch to Login",
+            LoginMode::Login => "👤 Login Mode - Press Ctrl+T to switch to Register Mode",
+            LoginMode::Register => "🆕 Register Mode - Press Ctrl+T to switch to Login Mode",
         };
 
         let mode_display = Paragraph::new(vec![
             Line::from(vec![
-                Span::styled("Mode: ", Style::default().fg(Color::White)),
+                Span::styled("Current Mode: ", Style::default().fg(Color::White)),
                 Span::styled(
                     match self.mode {
                         LoginMode::Login => "LOGIN",
                         LoginMode::Register => "REGISTER",
                     },
                     Style::default()
-                        .fg(Color::Yellow)
+                        .fg(match self.mode {
+                            LoginMode::Login => Color::Cyan,
+                            LoginMode::Register => Color::Green,
+                        })
                         .add_modifier(Modifier::BOLD)
                 ),
             ]),
             Line::from(Span::styled(
                 mode_instruction,
-                Style::default().fg(Color::Gray)
+                Style::default().fg(Color::Yellow)
             )),
         ])
-        .block(Block::default().borders(Borders::ALL).title("Mode"));
+        .block(Block::default().borders(Borders::ALL).title("Authentication Mode"));
         f.render_widget(mode_display, form_chunks[0]);
 
         // Draw username field with better styling
@@ -289,7 +292,7 @@ impl Component for LoginScreen {
 
         // Draw navigation instructions
         let instructions = Paragraph::new(vec![
-            Line::from("Navigation: Tab/Shift+Tab - Switch fields | Enter - Submit | Ctrl+C - Quit"),
+            Line::from("⌨️  Tab/Shift+Tab - Switch fields | Enter - Submit | Ctrl+T - Switch mode | Ctrl+C - Quit"),
         ])
         .style(Style::default().fg(Color::Cyan))
         .block(Block::default().borders(Borders::ALL).title("Controls"));
