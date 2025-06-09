@@ -334,6 +334,9 @@ impl App {
                 use crate::transport::add_text_message;
                 add_text_message(message.to_string());
                 
+                // Also add to new chat system if available
+                self.home_component.add_message_to_room(message.to_string(), false);
+                
                 // Update status bar message count
                 self.status_bar.record_received_message();
             }

@@ -143,7 +143,7 @@ impl Home {
     }
 
     /// Add a message to current room
-    fn add_message_to_room(&mut self, content: String, is_system: bool) {
+    pub fn add_message_to_room(&mut self, content: String, is_system: bool) {
         if let (Some(room_id), Some(user_id)) = (self.current_room_id, self.current_user_id) {
             if let Some(room) = self.room_manager.get_room_mut(&room_id) {
                 let message = if is_system {
@@ -352,7 +352,7 @@ impl Component for Home {
                             SCROLL_OFFSET_STATE += 5;
                             
                             // If we reach the bottom, enable auto-follow again
-                            let messages_len = self.get_display_messages().len();
+                            let messages_len = MESSAGES.lock().unwrap().text.len();
                             if SCROLL_OFFSET_STATE >= messages_len {
                                 MANUAL_SCROLL_STATE = false;
                             }
@@ -365,9 +365,8 @@ impl Component for Home {
                             SCROLL_OFFSET_STATE += 1;
                             
                             // If we reach the bottom, enable auto-follow again
-                            let messages_len = self.get_display_messages().len();
-                            let available_height = 20; // Approximate, will be recalculated in draw
-                            if SCROLL_OFFSET_STATE >= messages_len.saturating_sub(available_height) {
+                            let messages_len = MESSAGES.lock().unwrap().text.len();
+                            if SCROLL_OFFSET_STATE >= messages_len {
                                 MANUAL_SCROLL_STATE = false;
                             }
                         }
@@ -376,8 +375,8 @@ impl Component for Home {
                     KeyCode::End => {
                         unsafe {
                             // Scroll to the end and re-enable auto-follow
-                            let messages_len = self.get_display_messages().len();
-                            SCROLL_OFFSET_STATE = messages_len.saturating_sub(1);
+                            let messages_len = MESSAGES.lock().unwrap().text.len();
+                            SCROLL_OFFSET_STATE = messages_len;
                             MANUAL_SCROLL_STATE = false;
                         }
                         return Ok(Some(Action::Render));
@@ -386,8 +385,8 @@ impl Component for Home {
                     KeyCode::Esc => {
                         if !self.show_help {
                             unsafe {
-                                let messages_len = self.get_display_messages().len();
-                                SCROLL_OFFSET_STATE = messages_len.saturating_sub(1);
+                                let messages_len = MESSAGES.lock().unwrap().text.len();
+                                SCROLL_OFFSET_STATE = messages_len;
                                 MANUAL_SCROLL_STATE = false;
                             }
                             return Ok(Some(Action::Render));
@@ -408,8 +407,8 @@ impl Component for Home {
                             if MANUAL_SCROLL_STATE {
                                 MANUAL_SCROLL_STATE = false;
                                 // When exiting manual scroll, set position to follow most recent messages
-                                let messages_len = self.get_display_messages().len();
-                                SCROLL_OFFSET_STATE = messages_len.saturating_sub(1);
+                                let messages_len = MESSAGES.lock().unwrap().text.len();
+                                SCROLL_OFFSET_STATE = messages_len;
                             }
                         }
                     }
@@ -423,8 +422,8 @@ impl Component for Home {
             unsafe {
                 MANUAL_SCROLL_STATE = false;
                 // Also reset scroll position to follow latest messages
-                let messages_len = self.get_display_messages().len();
-                SCROLL_OFFSET_STATE = messages_len.saturating_sub(1);
+                let messages_len = MESSAGES.lock().unwrap().text.len();
+                SCROLL_OFFSET_STATE = messages_len;
             }
             
             match key.code {
@@ -516,8 +515,8 @@ impl Component for Home {
                 // We're not handling a scroll key at this point, so exit manual scroll
                 MANUAL_SCROLL_STATE = false;
                 // Also reset scroll position to follow latest messages
-                let messages_len = self.get_display_messages().len();
-                SCROLL_OFFSET_STATE = messages_len.saturating_sub(1);
+                let messages_len = MESSAGES.lock().unwrap().text.len();
+                SCROLL_OFFSET_STATE = messages_len;
             }
         }
         
@@ -616,9 +615,9 @@ impl Component for Home {
                             }
                         });
                         
-                        // Add to new chat system
-                        self.add_message_to_room(message.clone(), false);
-                        
+                        // Add to new chat system for local display
+                        self.add_message_to_room(format!("You: {}", message.clone()), false);
+
                         let action = Action::SendMessage(message);
                         self.input.reset();
                         return Ok(Some(action));
@@ -702,8 +701,8 @@ impl Component for Home {
                 unsafe {
                     MANUAL_SCROLL_STATE = false;
                     // Also reset scroll position to follow latest messages
-                    let messages_len = self.get_display_messages().len();
-                    SCROLL_OFFSET_STATE = messages_len.saturating_sub(1);
+                    let messages_len = MESSAGES.lock().unwrap().text.len();
+                    SCROLL_OFFSET_STATE = messages_len;
                 }
             }
             Action::EnterProcessing => {
@@ -776,8 +775,11 @@ impl Component for Home {
         // Prepare text content
         let mut text: Vec<Line> = Vec::<Line>::new();
         text.push("".into());
-        let message_strings = self.get_display_messages();
-        let messages: Vec<Line> = message_strings
+        let messages: Vec<Line> = MESSAGES
+            .lock()
+            .unwrap()
+            .text
+            .clone()
             .iter()
             .map(|l| Line::from(l.clone()))
             .collect();
