@@ -34,7 +34,7 @@ impl Default for RateLimitConfig {
 }
 
 /// Tracks failed login attempts
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct RateLimit {
     attempts: u32,
     window_start: u64,
@@ -257,6 +257,7 @@ mod tests {
             username: username.clone(),
             password: password.to_string(),
             fingerprint: "test_device".to_string(),
+            is_registration: false,
         };
         
         let response = service.login(request).await.unwrap();
@@ -278,6 +279,7 @@ mod tests {
             username: username.clone(),
             password: "wrong_password".to_string(),
             fingerprint: "test_device".to_string(),
+            is_registration: false,
         };
         
         for _ in 0..5 {
@@ -304,6 +306,7 @@ mod tests {
             username,
             password: password.to_string(),
             fingerprint: "test_device".to_string(),
+            is_registration: false,
         };
         
         let response = service.login(request).await.unwrap();

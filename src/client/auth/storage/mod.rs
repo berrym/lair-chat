@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use directories::ProjectDirs;
 use tokio::fs;
 
-use crate::client::auth::{AuthError, AuthResult, Session, UserProfile};
+use super::types::{AuthError, AuthResult, Session, UserProfile};
 
 /// Stored authentication data
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,6 +33,7 @@ pub trait TokenStorage: Send + Sync {
 }
 
 /// File-based token storage implementation
+#[derive(Clone)]
 pub struct FileTokenStorage {
     auth_file: PathBuf,
 }
@@ -47,7 +48,7 @@ impl FileTokenStorage {
         
         // Ensure config directory exists
         std::fs::create_dir_all(config_dir)
-            .map_err(|e| AuthError::StorageError(format!("Failed to create config directory: {}", e)))?;
+            .map_err(|e| AuthError::InternalError(format!("Failed to create config directory: {}", e)))?;
             
         let auth_file = config_dir.join("auth.json");
         
@@ -65,12 +66,12 @@ impl TokenStorage for FileTokenStorage {
     async fn save_auth(&self, auth: StoredAuth) -> AuthResult<()> {
         // Serialize auth data
         let json = serde_json::to_string_pretty(&auth)
-            .map_err(|e| AuthError::StorageError(format!("Failed to serialize auth data: {}", e)))?;
+            .map_err(|e| AuthError::InternalError(format!("Failed to serialize auth data: {}", e)))?;
             
         // Write to file
         fs::write(&self.auth_file, json)
             .await
-            .map_err(|e| AuthError::StorageError(format!("Failed to write auth file: {}", e)))?;
+            .map_err(|e| AuthError::InternalError(format!("Failed to write auth file: {}", e)))?;
             
         Ok(())
     }
@@ -84,11 +85,11 @@ impl TokenStorage for FileTokenStorage {
         // Read file contents
         let json = fs::read_to_string(&self.auth_file)
             .await
-            .map_err(|e| AuthError::StorageError(format!("Failed to read auth file: {}", e)))?;
+            .map_err(|e| AuthError::InternalError(format!("Failed to read auth file: {}", e)))?;
             
         // Deserialize auth data
         let auth: StoredAuth = serde_json::from_str(&json)
-            .map_err(|e| AuthError::StorageError(format!("Failed to parse auth data: {}", e)))?;
+            .map_err(|e| AuthError::InternalError(format!("Failed to parse auth data: {}", e)))?;
             
         // Verify session hasn't expired
         if auth.session.is_expired() {
@@ -104,7 +105,7 @@ impl TokenStorage for FileTokenStorage {
         if self.auth_file.exists() {
             fs::remove_file(&self.auth_file)
                 .await
-                .map_err(|e| AuthError::StorageError(format!("Failed to remove auth file: {}", e)))?;
+                .map_err(|e| AuthError::InternalError(format!("Failed to remove auth file: {}", e)))?;
         }
         
         Ok(())

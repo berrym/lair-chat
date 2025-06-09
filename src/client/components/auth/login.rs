@@ -3,10 +3,13 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Tabs};
 use tui_input::Input;
+use crossterm::event::KeyEvent;
+use color_eyre::Result;
 
-use crate::client::auth::{AuthError, AuthState, Credentials};
-use crate::client::components::{Component, Frame};
-use crate::client::action::Action;
+use crate::auth::{AuthError, AuthState, Credentials};
+use crate::components::Component;
+use crate::action::Action;
+use ratatui::Frame;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LoginMode {
@@ -111,16 +114,26 @@ impl Component for LoginScreen {
             }
             crossterm::event::KeyCode::Char(c) => {
                 match self.focused_field {
-                    0 => self.username.handle_key_event(key),
-                    1 => self.password.handle_key_event(key),
+                    0 => { self.username = self.username.clone().with_value(format!("{}{}", self.username.value(), c)); },
+                    1 => { self.password = self.password.clone().with_value(format!("{}{}", self.password.value(), c)); },
                     _ => {}
                 }
                 None
             }
             crossterm::event::KeyCode::Backspace => {
                 match self.focused_field {
-                    0 => self.username.handle_key_event(key),
-                    1 => self.password.handle_key_event(key),
+                    0 => { 
+                        let value = self.username.value();
+                        if !value.is_empty() {
+                            self.username = self.username.clone().with_value(value[..value.len()-1].to_string());
+                        }
+                    },
+                    1 => { 
+                        let value = self.password.value();
+                        if !value.is_empty() {
+                            self.password = self.password.clone().with_value(value[..value.len()-1].to_string());
+                        }
+                    },
                     _ => {}
                 }
                 None
@@ -129,7 +142,7 @@ impl Component for LoginScreen {
         }
     }
 
-    fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> std::io::Result<()> {
+    fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
         // Create a centered box for the login form
         let area = Layout::default()
             .direction(Direction::Vertical)

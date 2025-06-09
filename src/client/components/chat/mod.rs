@@ -1,18 +1,19 @@
 //! Chat view component for Lair-Chat
 //! Provides message display and input functionality.
 
-use std::collections::VecDeque;
-use std::path::PathBuf;
+
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 use tui_input::Input;
 
-use crate::client::action::Action;
-use crate::client::components::{Component, Frame};
-use crate::client::transport::Message;
-use crate::client::history::CommandHistory;
+use crate::action::Action;
+use crate::components::{Component, Frame};
+use crate::transport::{Message, MessageType};
+use super::status::StatusBar;
 
 pub struct ChatView {
     /// Input buffer for new messages
@@ -23,8 +24,6 @@ pub struct ChatView {
     username: Option<String>,
     /// Whether to show the help popup
     show_help: bool,
-    /// Command history manager
-    history: CommandHistory,
     /// Reference to status bar
     status_bar: Option<Arc<Mutex<StatusBar>>>,
 }
@@ -36,11 +35,6 @@ impl ChatView {
             messages: Vec::new(),
             username: None,
             show_help: false,
-            history: CommandHistory::new().unwrap_or_else(|_| CommandHistory {
-                entries: VecDeque::new(),
-                position: None,
-                history_file: PathBuf::from("history.json"),
-            }),
             status_bar: None,
         }
     }
@@ -61,9 +55,9 @@ impl ChatView {
         if let Some(status_bar) = &self.status_bar {
             if let Ok(mut bar) = status_bar.try_lock() {
                 match message.message_type {
-                    MessageType::Sent => bar.record_sent_message(),
-                    MessageType::Received => bar.record_received_message(),
-                    MessageType::Error => {
+                    MessageType::UserMessage => bar.record_sent_message(),
+                    MessageType::ReceivedMessage => bar.record_received_message(),
+                    MessageType::ErrorMessage => {
                         bar.show_error(message.content.clone(), Duration::from_secs(5));
                     }
                     _ => {}
@@ -79,10 +73,7 @@ impl ChatView {
         }
 
         let message = content.to_string();
-        self.history.add(message.clone(), None);
-        let _ = self.history.save();
         self.input.reset();
-        self.history.reset_position();
         Some(Action::SendMessage(message))
     }
 
@@ -102,27 +93,30 @@ impl Component for ChatView {
                 None
             }
             crossterm::event::KeyCode::Up => {
-                if let Some(previous) = self.history.previous() {
-                    self.input = Input::new(previous.into());
-                }
+                // TODO: Implement history navigation
                 None
             }
             crossterm::event::KeyCode::Down => {
-                if let Some(next) = self.history.next() {
-                    self.input = Input::new(next.into());
-                } else {
-                    self.input.reset();
-                }
+                // TODO: Implement history navigation
                 None
             }
             _ => {
-                self.input.handle_key_event(key);
+                // Handle input character
+                if let crossterm::event::KeyCode::Char(c) = key.code {
+                    let current = self.input.value();
+                    self.input = self.input.clone().with_value(format!("{}{}", current, c));
+                } else if key.code == crossterm::event::KeyCode::Backspace {
+                    let current = self.input.value();
+                    if !current.is_empty() {
+                        self.input = self.input.clone().with_value(current[..current.len()-1].to_string());
+                    }
+                }
                 None
             }
         }
     }
 
-    fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> std::io::Result<()> {
+    fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> color_eyre::Result<()> {
         // Create main layout
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -138,8 +132,8 @@ impl Component for ChatView {
             .iter()
             .map(|m| {
                 let style = match m.message_type {
-                    crate::client::transport::MessageType::System => Style::default().fg(Color::Yellow),
-                    crate::client::transport::MessageType::Error => Style::default().fg(Color::Red),
+                    MessageType::SystemMessage => Style::default().fg(Color::Yellow),
+                    MessageType::ErrorMessage => Style::default().fg(Color::Red),
                     _ => Style::default(),
                 };
                 ListItem::new(Line::from(vec![Span::styled(m.content.clone(), style)]))
@@ -201,8 +195,8 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::client::transport::{Message, MessageType};
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use crate::transport::{Message, MessageType};
+    // use crossterm::event::KeyEvent;
 
     #[test]
     fn test_chat_view_creation() {
@@ -260,8 +254,8 @@ mod tests {
         assert_eq!(view.messages.len(), 3);
         
         // Verify message types
-        assert_eq!(view.messages[0].message_type, MessageType::System);
-        assert_eq!(view.messages[1].message_type, MessageType::User);
-        assert_eq!(view.messages[2].message_type, MessageType::Error);
+        assert_eq!(view.messages[0].message_type, MessageType::SystemMessage);
+        assert_eq!(view.messages[1].message_type, MessageType::UserMessage);
+        assert_eq!(view.messages[2].message_type, MessageType::ErrorMessage);
     }
 }

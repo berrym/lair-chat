@@ -8,17 +8,23 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{action::Action, config::Config, tui::Event};
 
+#[path = "components/app.rs"]
 pub mod app;
+#[path = "components/auth/mod.rs"]
 pub mod auth;
+#[path = "components/chat/mod.rs"]
 pub mod chat;
+#[path = "components/fps.rs"]
 pub mod fps;
+#[path = "components/home.rs"]
 pub mod home;
+#[path = "components/status/mod.rs"]
 pub mod status;
 
-pub use app::App;
-pub use auth::{AuthStatusBar, LoginScreen};
-pub use chat::ChatView;
-pub use status::StatusBar;
+
+pub use self::auth::{AuthStatusBar, LoginScreen};
+pub use self::chat::ChatView;
+pub use self::status::StatusBar;
 
 /// `Component` is a trait that represents a visual and interactive element of the user interface.
 ///
@@ -144,5 +150,4 @@ pub trait Component {
         let _ = key;
         None
     }
-}
 }

@@ -1,17 +1,22 @@
 //! Status bar component for Lair-Chat
 //! Provides comprehensive status information display.
 
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::Paragraph,
 };
+use ratatui::Frame;
 
-use crate::client::{
-    auth::AuthState,
-    components::{Component, Frame},
+use crate::auth::AuthState;
+#[cfg(test)]
+use crate::auth::{UserProfile, Session};
+#[cfg(test)]
+use uuid::Uuid;
+use crate::{
+    components::Component,
     transport::ConnectionStatus,
 };
 
@@ -72,7 +77,7 @@ pub struct StatusBar {
 impl StatusBar {
     pub fn new() -> Self {
         Self {
-            connection_status: ConnectionStatus::Disconnected,
+            connection_status: ConnectionStatus::DISCONNECTED,
             auth_state: AuthState::Unauthenticated,
             current_room: None,
             network_stats: NetworkStats::default(),
@@ -85,12 +90,12 @@ impl StatusBar {
     pub fn set_connection_status(&mut self, status: ConnectionStatus) {
         self.connection_status = status;
         match status {
-            ConnectionStatus::Connected => {
+            ConnectionStatus::CONNECTED => {
                 if self.network_stats.connected_since.is_none() {
                     self.network_stats.connected_since = Some(Instant::now());
                 }
             }
-            ConnectionStatus::Disconnected => {
+            ConnectionStatus::DISCONNECTED => {
                 self.network_stats.connected_since = None;
             }
         }
@@ -137,13 +142,13 @@ impl StatusBar {
     /// Get the connection status style and text
     fn connection_status_style(&self) -> (Style, &'static str) {
         match self.connection_status {
-            ConnectionStatus::Connected => (
+            ConnectionStatus::CONNECTED => (
                 Style::default()
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD),
                 "Connected",
             ),
-            ConnectionStatus::Disconnected => (
+            ConnectionStatus::DISCONNECTED => (
                 Style::default()
                     .fg(Color::Red)
                     .add_modifier(Modifier::BOLD),
@@ -176,7 +181,7 @@ impl StatusBar {
 }
 
 impl Component for StatusBar {
-    fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> std::io::Result<()> {
+    fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> color_eyre::Result<()> {
         self.check_error_timeout();
 
         // Create layout
@@ -257,8 +262,8 @@ mod tests {
         let mut status_bar = StatusBar::new();
         
         // Test connection status
-        status_bar.set_connection_status(ConnectionStatus::Connected);
-        assert_eq!(status_bar.connection_status, ConnectionStatus::Connected);
+        status_bar.set_connection_status(ConnectionStatus::CONNECTED);
+        assert_eq!(status_bar.connection_status, ConnectionStatus::CONNECTED);
         assert!(status_bar.network_stats.connected_since.is_some());
         
         // Test message recording
@@ -278,16 +283,16 @@ mod tests {
         let mut status_bar = StatusBar::new();
         
         // Test unauthenticated
-        let (style, text) = status_bar.auth_status_style();
+        let (_style, text) = status_bar.auth_status_style();
         assert_eq!(text, "Not logged in");
         
         // Test authenticated
-        let profile = crate::client::auth::UserProfile {
+        let profile = UserProfile {
             id: Uuid::new_v4(),
             username: "testuser".to_string(),
             roles: vec!["user".to_string()],
         };
-        let session = crate::client::auth::Session {
+        let session = Session {
             id: Uuid::new_v4(),
             token: "test_token".to_string(),
             created_at: 0,

@@ -4,6 +4,7 @@
 mod types;
 mod protocol;
 mod manager;
+pub mod storage;
 
 pub use types::{
     AuthError,

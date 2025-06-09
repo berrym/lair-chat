@@ -3,11 +3,12 @@ use std::time::Duration;
 
 use tokio::sync::mpsc;
 use tokio::time::timeout;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::client::aes_gcm_encryption::AesGcmEncryption;
-use crate::client::config::ConnectionConfig;
-use crate::client::connection_manager::{ConnectionManager, ConnectionStatus};
-use crate::client::tcp_transport::TcpTransport;
+use lair_chat::client::aes_gcm_encryption::AesGcmEncryption;
+use lair_chat::client::config::ConnectionConfig;
+use lair_chat::client::connection_manager::{ConnectionManager, ConnectionStatus};
+use lair_chat::client::tcp_transport::TcpTransport;
 
 // Helper function to create a test server
 async fn start_test_server(addr: SocketAddr) -> tokio::task::JoinHandle<()> {

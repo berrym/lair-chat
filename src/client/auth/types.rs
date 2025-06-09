@@ -32,7 +32,7 @@ pub enum AuthError {
 pub type AuthResult<T> = Result<T, AuthError>;
 
 /// User credentials for authentication
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Credentials {
     pub username: String,
     pub password: String,
@@ -122,7 +122,7 @@ impl AuthState {
 }
 
 /// Client device information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DeviceInfo {
     pub fingerprint: String,
     pub name: String,

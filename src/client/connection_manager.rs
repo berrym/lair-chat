@@ -4,7 +4,15 @@ use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 use std::any::Any;
 
-use super::transport::{
+use crate::auth::{
+    AuthManager,
+    AuthState,
+    Credentials,
+    AuthError,
+    AuthResult,
+};
+use crate::auth::storage::{TokenStorage, FileTokenStorage};
+use crate::transport::{
     ConnectionConfig,
     ConnectionObserver,
     ConnectionStatus,
@@ -13,13 +21,6 @@ use super::transport::{
     MessageStore,
     Transport,
     TransportError,
-};
-use super::auth::{
-    AuthManager,
-    AuthState,
-    Credentials,
-    AuthError,
-    AuthResult,
 };
 
 
@@ -71,7 +72,10 @@ impl ConnectionObserver for DefaultConnectionObserver {
 impl ConnectionManager {
     /// Get the current authentication state
     pub async fn get_auth_state(&self) -> Option<AuthState> {
-        self.auth_manager.as_ref().map(|mgr| mgr.get_state().await)
+        match &self.auth_manager {
+            Some(mgr) => Some(mgr.get_state().await),
+            None => None,
+        }
     }
     
     /// Check if currently authenticated
@@ -105,7 +109,7 @@ impl ConnectionManager {
     pub fn new(config: ConnectionConfig) -> Self {
         ConnectionManager {
             config,
-            status: Arc::new(RwLock::new(ConnectionStatus::Disconnected)),
+            status: Arc::new(RwLock::new(ConnectionStatus::DISCONNECTED)),
             transport: None,
             encryption: None,
             messages: Arc::new(Mutex::new(MessageStore::new())),
@@ -174,9 +178,13 @@ impl ConnectionManager {
         // Initialize authentication if transport is available
         if let Some(transport) = &self.transport {
             if self.auth_manager.is_none() {
-                let token_storage = Box::new(FileTokenStorage::new()?);
-                let auth_manager = AuthManager::new(
-                    Arc::clone(transport),
+                let token_storage = match FileTokenStorage::new() {
+                    Ok(storage) => Box::new(storage),
+                    Err(_) => return Err(crate::transport::TransportError::ConnectionError(
+                        std::io::Error::new(std::io::ErrorKind::Other, "Failed to create token storage")
+                    )),
+                };
+                let auth_manager = AuthManager::new_without_transport(
                     token_storage.clone(),
                 );
                 self.token_storage = Some(Arc::new(token_storage));
@@ -185,7 +193,7 @@ impl ConnectionManager {
                 // Try to restore previous session
                 if let Some(auth_manager) = &self.auth_manager {
                     if let Err(e) = auth_manager.initialize().await {
-                        self.notify_error(format!("Failed to restore session: {}", e));
+                        self.notify_error(&format!("Failed to restore session: {}", e));
                     }
                 }
             }
@@ -221,7 +229,7 @@ impl ConnectionManager {
         if let Some(auth_manager) = &self.auth_manager {
             if auth_manager.is_authenticated().await {
                 if let Err(e) = auth_manager.logout().await {
-                    self.notify_error(format!("Logout error: {}", e));
+                    self.notify_error(&format!("Logout error: {}", e));
                 }
             }
         }
@@ -502,12 +510,7 @@ mod tests {
             Ok(())
         }
 
-        fn clone_box(&self) -> Box<dyn Transport + Send + Sync> {
-            Box::new(Self {
-                send_data: Arc::clone(&self.send_data),
-                receive_queue: Arc::clone(&self.receive_queue),
-            })
-        }
+
 
         async fn send(&mut self, data: &str) -> Result<(), TransportError> {
             let mut send_data = self.send_data.lock().await;
@@ -724,7 +727,7 @@ mod tests {
             password: "password123".to_string(),
         };
         
-        if let Some(auth_manager) = &manager.auth_manager {
+        if let Some(auth_manager) = manager.auth_manager.clone() {
             assert!(auth_manager.login(credentials).await.is_ok());
             assert!(manager.is_authenticated().await);
             

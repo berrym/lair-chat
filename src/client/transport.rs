@@ -447,7 +447,7 @@ pub type BoxedStream<Item> = Pin<Box<dyn Stream<Item = Item> + Send>>;
 /// Shorthand for a lines framed BoxedStream type we will use
 pub type ClientTcpStream = BoxedStream<Result<String, std::io::Error>>;
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum ConnectionStatus {
     CONNECTED,
     DISCONNECTED,

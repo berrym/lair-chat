@@ -8,9 +8,11 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
+use ratatui::Frame;
+use color_eyre::Result;
 
-use crate::client::auth::AuthState;
-use crate::client::components::{Component, Frame};
+use crate::auth::AuthState;
+use crate::components::Component;
 
 /// Displays current authentication status in the UI
 pub struct AuthStatusBar {
@@ -30,7 +32,7 @@ impl AuthStatusBar {
 }
 
 impl Component for AuthStatusBar {
-    fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> std::io::Result<()> {
+    fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
         let (status_text, style) = match &self.state {
             AuthState::Unauthenticated => (
                 "Not logged in",
@@ -59,7 +61,7 @@ impl Component for AuthStatusBar {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::client::auth::{Session, UserProfile};
+    use crate::auth::{Session, UserProfile};
     use uuid::Uuid;
 
     #[test]

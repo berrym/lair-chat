@@ -314,7 +314,7 @@ async fn process(
                 Some(Err(e)) => {
                     tracing::error!(
                         "an error occurred while processing messages for {}; error = {:?}",
-                        nickname,
+                        user.username,
                         e
                     );
                 }

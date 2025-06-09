@@ -184,6 +184,16 @@ impl CommandHistory {
     }
 }
 
+impl Default for CommandHistory {
+    fn default() -> Self {
+        Self {
+            entries: VecDeque::with_capacity(MAX_HISTORY_SIZE),
+            position: None,
+            history_file: PathBuf::from("default_history.json"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,15 +1,13 @@
-use std::io;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Borders, Paragraph};
+use color_eyre::Result;
 
-use crate::client::action::Action;
-use crate::client::auth::{AuthState, Credentials};
-use crate::client::components::{Component, Frame};
-use crate::client::components::auth::{AuthStatusBar, LoginScreen};
-use crate::client::components::chat::ChatView;
-use crate::client::components::status::StatusBar;
-use crate::client::transport::ConnectionStatus;
+use crate::action::Action;
+use crate::auth::AuthState;
+use crate::components::Component;
+use crate::components::{AuthStatusBar, LoginScreen, ChatView, StatusBar};
+use ratatui::Frame;
 use crossterm::event::KeyEvent;
 
 /// Main application state and UI component
@@ -67,7 +65,7 @@ impl App {
 
     /// Handle authentication error
     pub fn handle_auth_error(&mut self, error: String) {
-        self.login_screen.handle_error(error.into());
+        self.login_screen.handle_error(crate::auth::AuthError::InternalError(error));
     }
 }
 
@@ -94,7 +92,7 @@ impl Component for App {
         }
     }
 
-    fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> io::Result<()> {
+    fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
         // Create the layout
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -106,16 +104,16 @@ impl Component for App {
             .split(area);
 
         // Draw the auth status
-        self.auth_status.draw(f, chunks[0])?;
+        self.auth_status.draw(f, chunks[0]).map_err(|e| color_eyre::eyre::eyre!("Draw error: {}", e))?;
 
         // Draw the main content based on authentication state
         // Draw main content
         match self.auth_state {
             AuthState::Unauthenticated | AuthState::Failed { .. } => {
-                self.login_screen.draw(f, chunks[1])?;
+                self.login_screen.draw(f, chunks[1]).map_err(|e| color_eyre::eyre::eyre!("Draw error: {}", e))?;
             }
             AuthState::Authenticated { .. } => {
-                self.chat_view.draw(f, chunks[1])?;
+                self.chat_view.draw(f, chunks[1]).map_err(|e| color_eyre::eyre::eyre!("Draw error: {}", e))?;
             }
             AuthState::Authenticating => {
                 // Show loading screen
@@ -127,7 +125,7 @@ impl Component for App {
         }
 
         // Draw the status bar
-        self.status_bar.draw(f, chunks[2])?;
+        self.status_bar.draw(f, chunks[2]).map_err(|e| color_eyre::eyre::eyre!("Draw error: {}", e))?;
 
         Ok(())
     }
@@ -159,13 +157,13 @@ mod tests {
     fn test_auth_state_update() {
         let mut app = App::new();
         
-        let profile = crate::client::auth::UserProfile {
+        let profile = crate::auth::UserProfile {
             id: Uuid::new_v4(),
             username: "testuser".to_string(),
             roles: vec!["user".to_string()],
         };
         
-        let session = crate::client::auth::Session {
+        let session = crate::auth::Session {
             id: Uuid::new_v4(),
             token: "test_token".to_string(),
             created_at: 0,
