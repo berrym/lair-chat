@@ -3,7 +3,7 @@ use crossterm::event::KeyEvent;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 use crate::{
     action::Action,
