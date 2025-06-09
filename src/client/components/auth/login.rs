@@ -318,7 +318,7 @@ impl Component for LoginScreen {
                 Constraint::Length(3),   // Server input
                 Constraint::Length(3),   // Port input
                 Constraint::Length(1),   // Spacer
-                Constraint::Length(1),   // Simple help label
+                Constraint::Length(2),   // Help label (taller for errors)
             ])
             .split(form_area);
 
@@ -489,8 +489,16 @@ impl Component for LoginScreen {
 
         // Draw simple help label with error if present
         let help_text = if let Some(error) = &self.error_message {
-            Paragraph::new(format!("Error: {} | Press ? for help", error))
-                .style(Style::default().fg(Color::Red))
+            Paragraph::new(vec![
+                Line::from(vec![
+                    Span::styled("Error: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                    Span::styled(error.as_str(), Style::default().fg(Color::Red)),
+                ]),
+                Line::from(vec![
+                    Span::styled("Press ? for help", Style::default().fg(Color::Blue)),
+                ]),
+            ])
+            .wrap(ratatui::widgets::Wrap { trim: false })
         } else if self.processing {
             Paragraph::new("Processing... | Press ? for help")
                 .style(Style::default().fg(Color::Yellow))
