@@ -10,6 +10,8 @@ build = "build.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 aes-gcm = "0.10.3"
+argon2 = "0.5.2"
+async-trait = "0.1.74"
 base64 = "0.22.1"
 better-panic = "0.3.0"
 clap = { version = "4.4.5", features = [
@@ -41,6 +43,7 @@ sha2 = "0.10.8"
 signal-hook = "0.3.17"
 strip-ansi-escapes = "0.2.0"
 strum = { version = "0.26.3", features = ["derive"] }
+thiserror = "1.0"
 tokio = { version = "1.40.0", features = ["full"] }
 tokio-stream = { version = "0.1.15", features = ["full"] }
 tokio-util = { version = "0.7.12", features = ["full"] }
@@ -48,12 +51,19 @@ tracing = "0.1.40"
 tracing-error = "0.2.0"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "serde"] }
 tui-input = "0.11.1"
+uuid = { version = "1.6", features = ["v4", "serde"] }
 x25519-dalek = { version = "2.0.1", features = ["getrandom"] }
-async-trait = "0.1.78"
+im = "15.1"
 
 [build-dependencies]
 anyhow = "1.0.95"
 vergen-gix = { version = "1.0.6", features = ["build", "cargo"] }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
+fake = "2.9"
+rand = "0.8"
+tempfile = "3.9"
 
 [[bin]]
 name = "lair-chat-client"
@@ -62,3 +72,15 @@ path = "src/client/main.rs"
 [[bin]]
 name = "lair-chat-server"
 path = "src/server/main.rs"
+
+[[bench]]
+name = "transport_benchmarks"
+harness = false
+
+[[bench]]
+name = "connection_benchmarks"
+harness = false
+
+[[bench]]
+name = "message_benchmarks"
+harness = false
