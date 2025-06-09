@@ -615,9 +615,6 @@ impl Component for Home {
                             }
                         });
                         
-                        // Add to new chat system for local display
-                        self.add_message_to_room(format!("You: {}", message.clone()), false);
-
                         let action = Action::SendMessage(message);
                         self.input.reset();
                         return Ok(Some(action));
@@ -831,8 +828,7 @@ impl Component for Home {
             // Always show the bottom-most content
             if !MANUAL_SCROLL_STATE {
                 if text_len > available_height {
-                    // Show the last `available_height` lines, which means starting from
-                    // line (text_len - available_height) to show the newest messages
+                    // Show the latest messages at the bottom by scrolling to show the last available_height lines
                     text_len.saturating_sub(available_height)
                 } else {
                     0
@@ -840,7 +836,7 @@ impl Component for Home {
             } else {
                 // In manual scroll mode, use stored scroll position
                 if text_len > available_height {
-                    // Ensure SCROLL_OFFSET_STATE represents the first visible line
+                    // Clamp SCROLL_OFFSET_STATE to valid range
                     SCROLL_OFFSET_STATE.min(text_len.saturating_sub(available_height))
                 } else {
                     0

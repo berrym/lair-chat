@@ -50,11 +50,14 @@ impl SharedState {
             if let Ok(user1) = User::new("lusus".to_string(), "c2nt3ach") {
                 let _ = user_storage.create_user(user1).await;
             }
-            if let Ok(user2) = User::new("alice".to_string(), "password123") {
+            if let Ok(user2) = User::new("mberry".to_string(), "c2nt3ach") {
                 let _ = user_storage.create_user(user2).await;
             }
-            if let Ok(user3) = User::new("bob".to_string(), "password456") {
+            if let Ok(user3) = User::new("alice".to_string(), "password123") {
                 let _ = user_storage.create_user(user3).await;
+            }
+            if let Ok(user4) = User::new("bob".to_string(), "password456") {
+                let _ = user_storage.create_user(user4).await;
             }
             tracing::info!("Default test users created");
         });
