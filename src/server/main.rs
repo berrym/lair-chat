@@ -18,7 +18,7 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 mod auth;
 use auth::{
     AuthError, AuthRequest, AuthService, MemorySessionStorage,
-    MemoryUserStorage, Session, User,
+    MemoryUserStorage, Session, User, UserStorage,
 };
 
 /// Shorthand for the transmit half of the message channel.
@@ -43,7 +43,21 @@ impl SharedState {
     fn new() -> Self {
         let user_storage = Arc::new(MemoryUserStorage::new());
         let session_storage = Arc::new(MemorySessionStorage::new());
-        let auth_service = Arc::new(AuthService::new(user_storage, session_storage, None));
+        let auth_service = Arc::new(AuthService::new(user_storage.clone(), session_storage, None));
+        
+        // Add default test users for easier testing
+        tokio::spawn(async move {
+            if let Ok(user1) = User::new("lusus".to_string(), "c2nt3ach") {
+                let _ = user_storage.create_user(user1).await;
+            }
+            if let Ok(user2) = User::new("alice".to_string(), "password123") {
+                let _ = user_storage.create_user(user2).await;
+            }
+            if let Ok(user3) = User::new("bob".to_string(), "password456") {
+                let _ = user_storage.create_user(user3).await;
+            }
+            tracing::info!("Default test users created");
+        });
         
         SharedState {
             peers: HashMap::new(),
