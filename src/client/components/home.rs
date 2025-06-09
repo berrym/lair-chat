@@ -920,7 +920,7 @@ impl Component for Home {
                 .wrap(Wrap { trim: false })
                 .block(
                     Block::default()
-                        .title_top(Line::from("v0.4.4".white()).left_aligned())
+                        .title_top(Line::from("v0.5.0".white()).left_aligned())
                         .title_top(Line::from(vec![
                             Span::styled("THE LAIR", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
                         ]).centered())
