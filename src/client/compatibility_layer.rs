@@ -7,13 +7,13 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use once_cell::sync::Lazy;
 use std::net::SocketAddr;
-use std::error::Error;
+
 
 use tui_input::Input;
 use crate::connection_manager::ConnectionManager;
 use crate::transport::{
     ConnectionConfig, ConnectionObserver, ConnectionStatus, TransportError,
-    TuiObserver, CLIENT_STATUS, CANCEL_TOKEN, MESSAGES, add_text_message
+    TuiObserver, CLIENT_STATUS, add_text_message
 };
 
 /// Global ConnectionManager instance for compatibility
@@ -87,138 +87,42 @@ async fn get_or_create_manager(address: SocketAddr) -> Result<(), TransportError
 
 /// Compatibility function that maintains the old connect_client API
 /// 
-/// This function internally uses ConnectionManager but maintains the same signature
-/// and behavior as the original connect_client function.
-pub async fn connect_client_compat(__input: Input, address: SocketAddr) -> Result<(), TransportError> {
-    add_text_message(format!("Initializing connection to {}...", address));
+/// This function uses the old transport system that properly handles encryption
+/// and authentication as expected by the server.
+pub async fn connect_client_compat(input: Input, address: SocketAddr) -> Result<(), TransportError> {
+    use crate::transport::connect_client;
     
-    // Initialize the manager
-    get_or_create_manager(address).await?;
+    add_text_message(format!("Connecting to {} using legacy transport...", address));
     
-    let manager_arc = COMPAT_CONNECTION_MANAGER.clone();
-    let mut manager_guard = manager_arc.lock().await;
+    // Use the old transport system that handles encryption properly
+    connect_client(input, address).await;
     
-    if let Some(ref mut manager) = &mut *manager_guard {
-        // Check if already connected
-        let current_status = manager.get_status().await;
-        if current_status == ConnectionStatus::CONNECTED {
-            add_text_message("Already connected to a server.".to_string());
-            return Ok(());
-        }
-        
-        // Add connecting message for compatibility
-        add_text_message(format!("Connecting to {}", address));
-        
-        // Verify transport is still configured before attempting connection
-        if !manager.has_transport() {
-            eprintln!("ERROR: Transport not configured before connection attempt");
-            return Err(TransportError::ConnectionError(
-                std::io::Error::new(std::io::ErrorKind::Other, "Transport not configured")
-            ));
-        }
-        
-        match manager.connect().await {
-            Ok(()) => {
-                // Connection successful - the observers will handle status updates
-                add_text_message("Connection established successfully!".to_owned());
-                
-                // Spawn background task to handle the connection lifecycle
-                let manager_arc_clone = manager_arc.clone();
-                tokio::spawn(async move {
-                    // Keep the connection alive and handle any cleanup when cancelled
-                    loop {
-                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                        
-                        // Check if we should disconnect
-                        if let Ok(cancel_guard) = CANCEL_TOKEN.try_lock() {
-                            if cancel_guard.token.is_cancelled() {
-                                break;
-                            }
-                        }
-                    }
-                    
-                    // Cleanup: disconnect the manager
-                    if let Ok(mut guard) = manager_arc_clone.try_lock() {
-                        if let Some(ref mut mgr) = &mut *guard {
-                            let _ = mgr.disconnect().await;
-                        }
-                    }
-                });
-                
-                Ok(())
-            }
-            Err(e) => {
-                add_text_message(format!("Connection failed: {} (address: {})", e, address));
-                // Try to print more detailed debug info
-                if let Some(inner) = e.source() {
-                    add_text_message(format!("Caused by: {}", inner));
-                }
-                Err(e)
-            }
-        }
-    } else {
-        eprintln!("ERROR: No connection manager found in global state");
-        Err(TransportError::ConnectionError(
-            std::io::Error::new(std::io::ErrorKind::Other, "Failed to initialize connection manager")
-        ))
-    }
+    Ok(())
+}
+
+/// Send authentication request using legacy transport system
+pub async fn authenticate_compat(username: String, password: String) -> Result<(), TransportError> {
+    use crate::transport::add_outgoing_message;
+    
+    // Create authentication request in the format expected by server
+    let auth_request = serde_json::json!({
+        "username": username,
+        "password": password,
+        "is_registration": false
+    });
+    
+    add_text_message("Sending authentication request...".to_string());
+    add_outgoing_message(auth_request.to_string());
+    
+    Ok(())
 }
 
 /// Compatibility function that maintains the old disconnect_client API
 pub async fn disconnect_client_compat() -> Result<(), TransportError> {
-    // Check current status using the old global state for compatibility
-    let current_status = {
-        if let Ok(status_guard) = CLIENT_STATUS.try_lock() {
-            status_guard.status.clone()
-        } else {
-            ConnectionStatus::DISCONNECTED
-        }
-    };
+    use crate::transport::disconnect_client;
     
-    if current_status == ConnectionStatus::CONNECTED {
-        // Cancel the token for compatibility with old cancellation mechanism
-        if let Ok(cancel_guard) = CANCEL_TOKEN.try_lock() {
-            cancel_guard.token.cancel();
-        }
-        
-        // Use the ConnectionManager to disconnect
-        let manager_arc = COMPAT_CONNECTION_MANAGER.clone();
-        let mut manager_guard = manager_arc.lock().await;
-        
-        if let Some(ref mut manager) = &mut *manager_guard {
-            match manager.disconnect().await {
-                Ok(()) => {
-                    // Clear messages for compatibility
-                    if let Ok(mut messages) = MESSAGES.try_lock() {
-                        messages.text.clear();
-                    }
-                    
-                    // The observer will handle the status update and disconnection message
-                    
-                    // Sleep for compatibility with old behavior
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                    
-                    // Clear messages again
-                    if let Ok(mut messages) = MESSAGES.try_lock() {
-                        messages.text.clear();
-                    }
-                    
-                    Ok(())
-                }
-                Err(e) => {
-                    add_text_message(format!("Disconnect failed: {}", e));
-                    Err(e)
-                }
-            }
-        } else {
-            // Fallback to old behavior if no manager exists
-            add_text_message("Disconnected from server.".to_string());
-            Ok(())
-        }
-    } else {
-        add_text_message("Not connected to a server.".to_string());
-        Ok(())
-    }
+    disconnect_client().await;
+    Ok(())
 }
 
 /// Get the current connection status using the new architecture if available,
@@ -238,16 +142,17 @@ pub async fn get_connection_status_compat() -> ConnectionStatus {
     }
 }
 
-/// Send a message using the new architecture if available
+/// Send a message using the legacy transport system
 pub async fn send_message_compat(message: String) -> Result<(), TransportError> {
-    let manager_arc = COMPAT_CONNECTION_MANAGER.clone();
-    let mut manager_guard = manager_arc.lock().await;
+    use crate::transport::{add_outgoing_message, CLIENT_STATUS, ConnectionStatus};
     
-    if let Some(ref mut manager) = &mut *manager_guard {
-        manager.send_message(message).await
+    let client_status = CLIENT_STATUS.lock().unwrap();
+    if client_status.status == ConnectionStatus::CONNECTED {
+        add_outgoing_message(message);
+        Ok(())
     } else {
         Err(TransportError::ConnectionError(
-            std::io::Error::new(std::io::ErrorKind::NotConnected, "No active connection")
+            std::io::Error::new(std::io::ErrorKind::NotConnected, "Not connected to server")
         ))
     }
 }
