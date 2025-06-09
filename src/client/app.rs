@@ -215,90 +215,21 @@ impl App {
             
             // Authentication actions
             Action::Login(credentials) => {
-                self.auth_state = AuthState::Authenticating;
-                self.auth_status.update_state(self.auth_state.clone());
-                
-                // TODO: Actually authenticate with server
-                // For now, simulate successful login
-                tokio::spawn({
-                    let tx = self.action_tx.clone();
-                    let creds = credentials.clone();
-                    async move {
-                        // Simulate async authentication
-                        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-                        
-                        // Mock successful authentication
-                        use crate::auth::{UserProfile, Session};
-                        use uuid::Uuid;
-                        use std::time::{SystemTime, UNIX_EPOCH};
-                        
-                        let now = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap()
-                            .as_secs();
-                        
-                        let profile = UserProfile {
-                            id: Uuid::new_v4(),
-                            username: creds.username,
-                            roles: vec!["user".to_string()],
-                        };
-                        
-                        let session = Session {
-                            id: Uuid::new_v4(),
-                            token: "mock_session_token".to_string(),
-                            created_at: now,
-                            expires_at: now + 3600, // 1 hour
-                        };
-                        
-                        let auth_state = AuthState::Authenticated { profile, session };
-                        let _ = tx.send(Action::AuthenticationSuccess(auth_state));
-                    }
-                });
+                // Keep old login for backward compatibility
+                self.handle_login_with_server(credentials.clone(), "127.0.0.1:8080".to_string());
             }
             
             Action::Register(credentials) => {
-                self.auth_state = AuthState::Authenticating;
-                self.auth_status.update_state(self.auth_state.clone());
-                
-                // TODO: Actually register with server
-                // For now, simulate successful registration with longer delay
-                tokio::spawn({
-                    let tx = self.action_tx.clone();
-                    let creds = credentials.clone();
-                    async move {
-                        // Longer delay to simulate account creation
-                        tokio::time::sleep(tokio::time::Duration::from_millis(1200)).await;
-                        
-                        use crate::auth::{UserProfile, Session};
-                        use uuid::Uuid;
-                        use std::time::{SystemTime, UNIX_EPOCH};
-                        
-                        let now = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap()
-                            .as_secs();
-                        
-                        let profile = UserProfile {
-                            id: Uuid::new_v4(),
-                            username: creds.username.clone(),
-                            roles: vec!["user".to_string()],
-                        };
-                        
-                        let session = Session {
-                            id: Uuid::new_v4(),
-                            token: "mock_session_token".to_string(),
-                            created_at: now,
-                            expires_at: now + 3600,
-                        };
-                        
-                        let auth_state = AuthState::Authenticated { profile, session };
-                        
-                        // Send success message first
-                        let _ = tx.send(Action::RegistrationSuccess(creds.username));
-                        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-                        let _ = tx.send(Action::AuthenticationSuccess(auth_state));
-                    }
-                });
+                // Keep old register for backward compatibility  
+                self.handle_register_with_server(credentials.clone(), "127.0.0.1:8080".to_string());
+            }
+            
+            Action::LoginWithServer(credentials, server_address) => {
+                self.handle_login_with_server(credentials.clone(), server_address.clone());
+            }
+            
+            Action::RegisterWithServer(credentials, server_address) => {
+                self.handle_register_with_server(credentials.clone(), server_address.clone());
             }
             
             Action::Logout => {
@@ -313,6 +244,15 @@ impl App {
                 // Keep in authenticating state, will transition when auth completes
             }
             
+            // New action for handling auth failure
+            Action::AuthenticationFailure(error) => {
+                self.auth_state = AuthState::Failed { reason: error.clone() };
+                self.auth_status.update_state(self.auth_state.clone());
+                self.login_screen.handle_error(crate::auth::AuthError::InternalError(error.clone()));
+                self.mode = Mode::Authentication;
+                info!("Authentication failed");
+            }
+            
             // New action for handling auth success
             Action::AuthenticationSuccess(auth_state) => {
                 self.auth_state = auth_state.clone();
@@ -322,12 +262,8 @@ impl App {
                 if let AuthState::Authenticated { ref profile, .. } = auth_state {
                     info!("User {} authenticated successfully", profile.username);
                     
-                    // Auto-connect to server after successful authentication
-                    use crate::transport::{CLIENT_STATUS, ConnectionStatus, add_text_message};
-                    
-                    // For now, simulate connection since server may not be running
-                    CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
-                    info!("Simulated connection to chat server (local mode)");
+                    // Connection is already established during authentication
+                    use crate::transport::add_text_message;
                     
                     // Add welcome message to chat
                     add_text_message(" ".to_string());
@@ -420,8 +356,8 @@ impl App {
                     // Show loading screen with appropriate message
                     use ratatui::{widgets::{Block, Borders, Paragraph}, style::{Color, Style}};
                     let message = match self.login_screen.mode {
-                        crate::components::auth::LoginMode::Register => "Creating account...",
-                        crate::components::auth::LoginMode::Login => "Authenticating...",
+                        crate::components::auth::LoginMode::Register => "Creating account and connecting...",
+                        crate::components::auth::LoginMode::Login => "Authenticating and connecting...",
                     };
                     let loading = Paragraph::new(message)
                         .style(Style::default().fg(Color::Yellow))
@@ -459,5 +395,138 @@ impl App {
             }
         })?;
         Ok(())
+    }
+
+    fn handle_login_with_server(&mut self, credentials: crate::auth::Credentials, server_address: String) {
+        self.auth_state = AuthState::Authenticating;
+        self.auth_status.update_state(self.auth_state.clone());
+        
+        tokio::spawn({
+            let tx = self.action_tx.clone();
+            let creds = credentials.clone();
+            let server_addr = server_address.clone();
+            async move {
+                use crate::transport::{CLIENT_STATUS, ConnectionStatus, add_text_message};
+                use crate::compatibility_layer::connect_client_compat;
+                
+                // Try to connect to the server first
+                let address: Result<std::net::SocketAddr, _> = server_addr.parse();
+                match address {
+                    Ok(addr) => {
+                        let input = tui_input::Input::default();
+                        match connect_client_compat(input, addr).await {
+                            Ok(()) => {
+                                CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
+                                add_text_message(format!("Connected to server at {}", server_addr));
+                                
+                                // Mock successful authentication after connection
+                                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                                
+                                use crate::auth::{UserProfile, Session};
+                                use uuid::Uuid;
+                                use std::time::{SystemTime, UNIX_EPOCH};
+                                
+                                let now = SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs();
+                                
+                                let profile = UserProfile {
+                                    id: Uuid::new_v4(),
+                                    username: creds.username,
+                                    roles: vec!["user".to_string()],
+                                };
+                                
+                                let session = Session {
+                                    id: Uuid::new_v4(),
+                                    token: "mock_session_token".to_string(),
+                                    created_at: now,
+                                    expires_at: now + 3600,
+                                };
+                                
+                                let auth_state = AuthState::Authenticated { profile, session };
+                                let _ = tx.send(Action::AuthenticationSuccess(auth_state));
+                            }
+                            Err(e) => {
+                                add_text_message(format!("Failed to connect to {}: {}", server_addr, e));
+                                add_text_message("Authentication failed - could not connect to server".to_string());
+                                let _ = tx.send(Action::AuthenticationFailure("Connection failed".to_string()));
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        add_text_message(format!("Invalid server address: {}", server_addr));
+                        let _ = tx.send(Action::AuthenticationFailure("Invalid server address".to_string()));
+                    }
+                }
+            }
+        });
+    }
+
+    fn handle_register_with_server(&mut self, credentials: crate::auth::Credentials, server_address: String) {
+        self.auth_state = AuthState::Authenticating;
+        self.auth_status.update_state(self.auth_state.clone());
+        
+        tokio::spawn({
+            let tx = self.action_tx.clone();
+            let creds = credentials.clone();
+            let server_addr = server_address.clone();
+            async move {
+                use crate::transport::{CLIENT_STATUS, ConnectionStatus, add_text_message};
+                use crate::compatibility_layer::connect_client_compat;
+                
+                // Try to connect to the server first
+                let address: Result<std::net::SocketAddr, _> = server_addr.parse();
+                match address {
+                    Ok(addr) => {
+                        let input = tui_input::Input::default();
+                        match connect_client_compat(input, addr).await {
+                            Ok(()) => {
+                                CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
+                                add_text_message(format!("Connected to server at {}", server_addr));
+                                
+                                // Mock successful registration after connection (longer delay)
+                                let _ = tx.send(Action::RegistrationSuccess(creds.username.clone()));
+                                tokio::time::sleep(tokio::time::Duration::from_millis(1200)).await;
+                                
+                                use crate::auth::{UserProfile, Session};
+                                use uuid::Uuid;
+                                use std::time::{SystemTime, UNIX_EPOCH};
+                                
+                                let now = SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs();
+                                
+                                let profile = UserProfile {
+                                    id: Uuid::new_v4(),
+                                    username: creds.username,
+                                    roles: vec!["user".to_string()],
+                                };
+                                
+                                let session = Session {
+                                    id: Uuid::new_v4(),
+                                    token: "mock_session_token".to_string(),
+                                    created_at: now,
+                                    expires_at: now + 3600,
+                                };
+                                
+                                let auth_state = AuthState::Authenticated { profile, session };
+                                let _ = tx.send(Action::AuthenticationSuccess(auth_state));
+                            }
+                            Err(e) => {
+                                add_text_message(format!("Failed to connect to {}: {}", server_addr, e));
+                                add_text_message("Registration failed - could not connect to server".to_string());
+                                let _ = tx.send(Action::AuthenticationFailure("Connection failed".to_string()));
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        add_text_message(format!("Invalid server address: {}", server_addr));
+                        let _ = tx.send(Action::AuthenticationFailure("Invalid server address".to_string()));
+                    }
+                }
+            }
+        });
     }
 }

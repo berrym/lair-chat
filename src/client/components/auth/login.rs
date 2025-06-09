@@ -21,6 +21,8 @@ pub enum LoginMode {
 pub struct LoginScreen {
     username: Input,
     password: Input,
+    server: Input,
+    port: Input,
     error_message: Option<String>,
     pub mode: LoginMode,
     focused_field: usize,
@@ -32,6 +34,8 @@ impl LoginScreen {
         Self {
             username: Input::default(),
             password: Input::default(),
+            server: Input::new("127.0.0.1".into()),
+            port: Input::new("8080".into()),
             error_message: None,
             mode: LoginMode::Login,
             focused_field: 0,
@@ -53,15 +57,28 @@ impl LoginScreen {
             return None;
         }
 
+        if self.server.value().is_empty() || self.port.value().is_empty() {
+            self.error_message = Some("Server and port are required".to_string());
+            return None;
+        }
+
+        // Validate port is a number
+        if self.port.value().parse::<u16>().is_err() {
+            self.error_message = Some("Port must be a valid number".to_string());
+            return None;
+        }
+
         let credentials = Credentials {
             username: self.username.value().to_string(),
             password: self.password.value().to_string(),
         };
 
+        let server_address = format!("{}:{}", self.server.value(), self.port.value());
+
         self.processing = true;
         match self.mode {
-            LoginMode::Login => Some(Action::Login(credentials)),
-            LoginMode::Register => Some(Action::Register(credentials)),
+            LoginMode::Login => Some(Action::LoginWithServer(credentials, server_address)),
+            LoginMode::Register => Some(Action::RegisterWithServer(credentials, server_address)),
         }
     }
 
@@ -93,18 +110,18 @@ impl Component for LoginScreen {
 
         match key.code {
             crossterm::event::KeyCode::Tab => {
-                self.focused_field = (self.focused_field + 1) % 2;
+                self.focused_field = (self.focused_field + 1) % 4;
                 None
             }
             crossterm::event::KeyCode::BackTab => {
-                self.focused_field = if self.focused_field == 0 { 1 } else { 0 };
+                self.focused_field = if self.focused_field == 0 { 3 } else { self.focused_field - 1 };
                 None
             }
             crossterm::event::KeyCode::Enter => {
-                if self.focused_field == 1 {
+                if self.focused_field == 3 {
                     self.submit()
                 } else {
-                    self.focused_field += 1;
+                    self.focused_field = (self.focused_field + 1) % 4;
                     None
                 }
             }
@@ -116,6 +133,8 @@ impl Component for LoginScreen {
                 match self.focused_field {
                     0 => { self.username = self.username.clone().with_value(format!("{}{}", self.username.value(), c)); },
                     1 => { self.password = self.password.clone().with_value(format!("{}{}", self.password.value(), c)); },
+                    2 => { self.server = self.server.clone().with_value(format!("{}{}", self.server.value(), c)); },
+                    3 => { self.port = self.port.clone().with_value(format!("{}{}", self.port.value(), c)); },
                     _ => {}
                 }
                 None
@@ -134,6 +153,18 @@ impl Component for LoginScreen {
                             self.password = self.password.clone().with_value(value[..value.len()-1].to_string());
                         }
                     },
+                    2 => { 
+                        let value = self.server.value();
+                        if !value.is_empty() {
+                            self.server = self.server.clone().with_value(value[..value.len()-1].to_string());
+                        }
+                    },
+                    3 => { 
+                        let value = self.port.value();
+                        if !value.is_empty() {
+                            self.port = self.port.clone().with_value(value[..value.len()-1].to_string());
+                        }
+                    },
                     _ => {}
                 }
                 None
@@ -147,9 +178,9 @@ impl Component for LoginScreen {
         let vertical_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Percentage(15),  // Top padding
-                Constraint::Length(22),      // Login form (increased height)
-                Constraint::Percentage(15),  // Bottom padding
+                Constraint::Percentage(10),  // Top padding
+                Constraint::Length(28),      // Login form (increased height)
+                Constraint::Percentage(10),  // Bottom padding
             ])
             .split(area);
 
@@ -187,10 +218,12 @@ impl Component for LoginScreen {
             .constraints([
                 Constraint::Length(4),   // Mode selection and instructions (taller)
                 Constraint::Length(1),   // Spacer
-                Constraint::Length(4),   // Username input (taller)
-                Constraint::Length(4),   // Password input (taller)
+                Constraint::Length(3),   // Username input
+                Constraint::Length(3),   // Password input
+                Constraint::Length(3),   // Server input
+                Constraint::Length(3),   // Port input
                 Constraint::Length(1),   // Spacer
-                Constraint::Length(6),   // Instructions (much taller)
+                Constraint::Length(9),   // Instructions (much taller)
                 Constraint::Length(3),   // Status/Error (taller)
             ])
             .split(form_area);
@@ -292,6 +325,74 @@ impl Component for LoginScreen {
             .wrap(ratatui::widgets::Wrap { trim: false });
         f.render_widget(password_input, form_chunks[3]);
 
+        // Draw server field with better styling
+        let server_title = if self.focused_field == 2 {
+            "Server (FOCUSED - Type here)"
+        } else {
+            "Server"
+        };
+
+        let server_style = if self.focused_field == 2 {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+
+        let server_block = Block::default()
+            .borders(Borders::ALL)
+            .title(server_title)
+            .border_style(if self.focused_field == 2 {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(Color::Gray)
+            });
+
+        let server_display = if self.focused_field == 2 {
+            format!("{}|", self.server.value())
+        } else {
+            self.server.value().to_string()
+        };
+
+        let server_input = Paragraph::new(server_display)
+            .style(server_style)
+            .block(server_block)
+            .wrap(ratatui::widgets::Wrap { trim: false });
+        f.render_widget(server_input, form_chunks[4]);
+
+        // Draw port field with better styling
+        let port_title = if self.focused_field == 3 {
+            "Port (FOCUSED - Type here)"
+        } else {
+            "Port"
+        };
+
+        let port_style = if self.focused_field == 3 {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+
+        let port_block = Block::default()
+            .borders(Borders::ALL)
+            .title(port_title)
+            .border_style(if self.focused_field == 3 {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(Color::Gray)
+            });
+
+        let port_display = if self.focused_field == 3 {
+            format!("{}|", self.port.value())
+        } else {
+            self.port.value().to_string()
+        };
+
+        let port_input = Paragraph::new(port_display)
+            .style(port_style)
+            .block(port_block)
+            .wrap(ratatui::widgets::Wrap { trim: false });
+        f.render_widget(port_input, form_chunks[5]);
+
         // Draw comprehensive navigation instructions
         let instructions = Paragraph::new(vec![
             Line::from(vec![
@@ -300,7 +401,7 @@ impl Component for LoginScreen {
             Line::from(""),
             Line::from(vec![
                 Span::styled("Tab/Shift+Tab", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                Span::styled(" - Switch between username/password fields", Style::default().fg(Color::White)),
+                Span::styled(" - Move between username/password/server/port", Style::default().fg(Color::White)),
             ]),
             Line::from(vec![
                 Span::styled("Enter", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
@@ -308,21 +409,25 @@ impl Component for LoginScreen {
             ]),
             Line::from(vec![
                 Span::styled("Ctrl+T", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-                Span::styled(" - Toggle between Login and Register modes", Style::default().fg(Color::White)),
+                Span::styled(" - Toggle Login/Register modes", Style::default().fg(Color::White)),
             ]),
             Line::from(vec![
                 Span::styled("Ctrl+C", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
                 Span::styled(" - Quit application", Style::default().fg(Color::White)),
             ]),
             Line::from(vec![
-                Span::styled("Type normally", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled("Type text", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
                 Span::styled(" - Enter text in focused field", Style::default().fg(Color::White)),
+            ]),
+            Line::from(vec![
+                Span::styled("Backspace", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::styled(" - Delete characters", Style::default().fg(Color::White)),
             ]),
         ])
         .style(Style::default().fg(Color::Cyan))
         .block(Block::default().borders(Borders::ALL).title("How to Use"))
         .wrap(ratatui::widgets::Wrap { trim: false });
-        f.render_widget(instructions, form_chunks[5]);
+        f.render_widget(instructions, form_chunks[6]);
 
         // Draw status/error message
         if let Some(error) = &self.error_message {
@@ -334,7 +439,7 @@ impl Component for LoginScreen {
             ])
             .block(Block::default().borders(Borders::ALL).title("Status"))
             .wrap(ratatui::widgets::Wrap { trim: false });
-            f.render_widget(error_msg, form_chunks[6]);
+            f.render_widget(error_msg, form_chunks[7]);
         } else if self.processing {
             let status_msg = Paragraph::new(vec![
                 Line::from(vec![
@@ -343,7 +448,7 @@ impl Component for LoginScreen {
             ])
             .block(Block::default().borders(Borders::ALL).title("Status"))
             .wrap(ratatui::widgets::Wrap { trim: false });
-            f.render_widget(status_msg, form_chunks[6]);
+            f.render_widget(status_msg, form_chunks[7]);
         } else {
             let ready_msg = Paragraph::new(vec![
                 Line::from(vec![
@@ -352,7 +457,7 @@ impl Component for LoginScreen {
             ])
             .block(Block::default().borders(Borders::ALL).title("Status"))
             .wrap(ratatui::widgets::Wrap { trim: false });
-            f.render_widget(ready_msg, form_chunks[6]);
+            f.render_widget(ready_msg, form_chunks[7]);
         }
 
         Ok(())

@@ -28,6 +28,8 @@ pub enum Action {
     // Authentication actions
     Login(Credentials),
     Register(Credentials),
+    LoginWithServer(Credentials, String),
+    RegisterWithServer(Credentials, String),
     Logout,
     RefreshSession,
     AuthenticationSuccess(AuthState),
