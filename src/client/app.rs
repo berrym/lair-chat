@@ -269,6 +269,11 @@ impl App {
                     self.status_bar.set_auth_state(auth_state.clone());
                     self.status_bar.set_connection_status(crate::transport::CLIENT_STATUS.lock().unwrap().status.clone());
                     
+                    // Initialize chat system for authenticated user
+                    if let Err(e) = self.home_component.initialize_chat(profile.username.clone()) {
+                        error!("Failed to initialize chat system: {}", e);
+                    }
+                    
                     // Connection is already established during authentication
                     use crate::transport::add_text_message;
                     

@@ -22,6 +22,9 @@ pub mod cli;
 #[path = "client/compatibility_layer.rs"]
 pub mod compatibility_layer;
 
+#[path = "client/chat/mod.rs"]
+pub mod chat;
+
 #[path = "client/components.rs"]
 pub mod components;
 
@@ -64,6 +67,7 @@ pub mod client {
         aes_gcm_encryption::*,
         app::*,
         auth::*,
+        chat::*,
         cli::*,
         compatibility_layer::*,
         components::*,

@@ -112,8 +112,8 @@ impl RoomEvent {
             | RoomEvent::MessageEdited { user_id, .. }
             | RoomEvent::UserStartedTyping { user_id, .. }
             | RoomEvent::UserStoppedTyping { user_id, .. } => Some(*user_id),
-            RoomEvent::SettingsChanged { changed_by, .. }
-            | RoomEvent::MessageDeleted { deleted_by, .. } => Some(*changed_by),
+            RoomEvent::SettingsChanged { changed_by, .. } => Some(*changed_by),
+            RoomEvent::MessageDeleted { deleted_by, .. } => Some(*deleted_by),
         }
     }
 

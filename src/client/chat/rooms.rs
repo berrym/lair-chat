@@ -395,7 +395,7 @@ impl Room {
     }
 
     /// Get room statistics
-    pub fn get_stats(&self) -> RoomStats {
+    pub fn get_stats(&mut self) -> RoomStats {
         RoomStats {
             user_count: self.user_count(),
             message_count: self.messages.len(),

@@ -14,6 +14,7 @@ use crate::{
     migration_facade,
     transport::*,
     errors::display::{show_validation_error, show_disconnection, show_info, show_warning},
+    chat::{RoomManager, Room, ChatMessage, MessageType, RoomUser, UserRole, RoomSettings, RoomType},
 };
 
 /// Get any text in the input box
@@ -46,6 +47,11 @@ pub struct Home {
 
     // Command history
     command_history: CommandHistory,
+    
+    // New chat system
+    room_manager: RoomManager,
+    current_room_id: Option<uuid::Uuid>,
+    current_user_id: Option<uuid::Uuid>,
 }
 
 // Static state variables for scrolling
@@ -83,6 +89,9 @@ impl Default for Home {
             dialog_port_input: Input::default(),
 
             command_history: history,
+            room_manager: RoomManager::new(),
+            current_room_id: None,
+            current_user_id: None,
         }
     }
 }
@@ -90,6 +99,68 @@ impl Default for Home {
 impl Home {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Initialize default room and user for chat
+    pub fn initialize_chat(&mut self, username: String) -> Result<(), Box<dyn std::error::Error>> {
+        // Create a default public room
+        let room_settings = RoomSettings::public("General".to_string());
+        let room_id = self.room_manager.create_room(room_settings, uuid::Uuid::nil())?;
+        
+        // Create user
+        let user_id = uuid::Uuid::new_v4();
+        let user = RoomUser::new(user_id, username, UserRole::User);
+        
+        // Add user to room
+        self.room_manager.join_room(&room_id, user)?;
+        
+        // Set current context
+        self.current_room_id = Some(room_id);
+        self.current_user_id = Some(user_id);
+        
+        Ok(())
+    }
+
+    /// Get current room messages for display
+    fn get_display_messages(&self) -> Vec<String> {
+        if let Some(room_id) = self.current_room_id {
+            if let Some(room) = self.room_manager.get_room(&room_id) {
+                return room.get_messages(Some(50))
+                    .iter()
+                    .map(|msg| {
+                        if msg.message_type == MessageType::System {
+                            msg.content.clone()
+                        } else {
+                            format!("{}: {}", msg.sender_username, msg.content)
+                        }
+                    })
+                    .collect();
+            }
+        }
+        
+        // Fallback to legacy system if no room is available
+        MESSAGES.lock().unwrap().text.clone()
+    }
+
+    /// Add a message to current room
+    fn add_message_to_room(&mut self, content: String, is_system: bool) {
+        if let (Some(room_id), Some(user_id)) = (self.current_room_id, self.current_user_id) {
+            if let Some(room) = self.room_manager.get_room_mut(&room_id) {
+                let message = if is_system {
+                    ChatMessage::new_system(room_id, content)
+                } else {
+                    let username = room.get_user(&user_id)
+                        .map(|u| u.username.clone())
+                        .unwrap_or_else(|| "Unknown".to_string());
+                    ChatMessage::new_text(room_id, user_id, username, content)
+                };
+                
+                let _ = room.add_message(message);
+            }
+        } else {
+            // Fallback to legacy system
+            add_text_message(content);
+        }
     }
 
     // Connection dialog methods
@@ -281,7 +352,7 @@ impl Component for Home {
                             SCROLL_OFFSET_STATE += 5;
                             
                             // If we reach the bottom, enable auto-follow again
-                            let messages_len = MESSAGES.lock().unwrap().text.len();
+                            let messages_len = self.get_display_messages().len();
                             if SCROLL_OFFSET_STATE >= messages_len {
                                 MANUAL_SCROLL_STATE = false;
                             }
@@ -294,8 +365,9 @@ impl Component for Home {
                             SCROLL_OFFSET_STATE += 1;
                             
                             // If we reach the bottom, enable auto-follow again
-                            let messages_len = MESSAGES.lock().unwrap().text.len();
-                            if SCROLL_OFFSET_STATE >= messages_len {
+                            let messages_len = self.get_display_messages().len();
+                            let available_height = 20; // Approximate, will be recalculated in draw
+                            if SCROLL_OFFSET_STATE >= messages_len.saturating_sub(available_height) {
                                 MANUAL_SCROLL_STATE = false;
                             }
                         }
@@ -304,8 +376,8 @@ impl Component for Home {
                     KeyCode::End => {
                         unsafe {
                             // Scroll to the end and re-enable auto-follow
-                            let messages_len = MESSAGES.lock().unwrap().text.len();
-                            SCROLL_OFFSET_STATE = messages_len;
+                            let messages_len = self.get_display_messages().len();
+                            SCROLL_OFFSET_STATE = messages_len.saturating_sub(1);
                             MANUAL_SCROLL_STATE = false;
                         }
                         return Ok(Some(Action::Render));
@@ -314,8 +386,8 @@ impl Component for Home {
                     KeyCode::Esc => {
                         if !self.show_help {
                             unsafe {
-                                let messages_len = MESSAGES.lock().unwrap().text.len();
-                                SCROLL_OFFSET_STATE = messages_len;
+                                let messages_len = self.get_display_messages().len();
+                                SCROLL_OFFSET_STATE = messages_len.saturating_sub(1);
                                 MANUAL_SCROLL_STATE = false;
                             }
                             return Ok(Some(Action::Render));
@@ -336,8 +408,8 @@ impl Component for Home {
                             if MANUAL_SCROLL_STATE {
                                 MANUAL_SCROLL_STATE = false;
                                 // When exiting manual scroll, set position to follow most recent messages
-                                let messages_len = MESSAGES.lock().unwrap().text.len();
-                                SCROLL_OFFSET_STATE = messages_len;
+                                let messages_len = self.get_display_messages().len();
+                                SCROLL_OFFSET_STATE = messages_len.saturating_sub(1);
                             }
                         }
                     }
@@ -351,8 +423,8 @@ impl Component for Home {
             unsafe {
                 MANUAL_SCROLL_STATE = false;
                 // Also reset scroll position to follow latest messages
-                let messages_len = MESSAGES.lock().unwrap().text.len();
-                SCROLL_OFFSET_STATE = messages_len;
+                let messages_len = self.get_display_messages().len();
+                SCROLL_OFFSET_STATE = messages_len.saturating_sub(1);
             }
             
             match key.code {
@@ -444,8 +516,8 @@ impl Component for Home {
                 // We're not handling a scroll key at this point, so exit manual scroll
                 MANUAL_SCROLL_STATE = false;
                 // Also reset scroll position to follow latest messages
-                let messages_len = MESSAGES.lock().unwrap().text.len();
-                SCROLL_OFFSET_STATE = messages_len;
+                let messages_len = self.get_display_messages().len();
+                SCROLL_OFFSET_STATE = messages_len.saturating_sub(1);
             }
         }
         
@@ -531,10 +603,10 @@ impl Component for Home {
                         show_warning("Not connected - please restart the application to reconnect and authenticate");
                         return Ok(Some(Action::Update));
                     }
-                    let message = self.input.value();
+                    let message = self.input.value().to_string();
                     if !message.is_empty() && client_status.status == ConnectionStatus::CONNECTED {
                         // Add message to command history
-                        self.command_history.add(message.to_string(), None);
+                        self.command_history.add(message.clone(), None);
                         
                         // Save history asynchronously
                         let history_clone = self.command_history.clone();
@@ -544,7 +616,10 @@ impl Component for Home {
                             }
                         });
                         
-                        let action = Action::SendMessage(message.to_string());
+                        // Add to new chat system
+                        self.add_message_to_room(message.clone(), false);
+                        
+                        let action = Action::SendMessage(message);
                         self.input.reset();
                         return Ok(Some(action));
                     } else {
@@ -627,8 +702,8 @@ impl Component for Home {
                 unsafe {
                     MANUAL_SCROLL_STATE = false;
                     // Also reset scroll position to follow latest messages
-                    let messages_len = MESSAGES.lock().unwrap().text.len();
-                    SCROLL_OFFSET_STATE = messages_len;
+                    let messages_len = self.get_display_messages().len();
+                    SCROLL_OFFSET_STATE = messages_len.saturating_sub(1);
                 }
             }
             Action::EnterProcessing => {
@@ -701,11 +776,8 @@ impl Component for Home {
         // Prepare text content
         let mut text: Vec<Line> = Vec::<Line>::new();
         text.push("".into());
-        let messages: Vec<Line> = MESSAGES
-            .lock()
-            .unwrap()
-            .text
-            .clone()
+        let message_strings = self.get_display_messages();
+        let messages: Vec<Line> = message_strings
             .iter()
             .map(|l| Line::from(l.clone()))
             .collect();
@@ -757,6 +829,8 @@ impl Component for Home {
             // Always show the bottom-most content
             if !MANUAL_SCROLL_STATE {
                 if text_len > available_height {
+                    // Show the last `available_height` lines, which means starting from
+                    // line (text_len - available_height) to show the newest messages
                     text_len.saturating_sub(available_height)
                 } else {
                     0
@@ -764,7 +838,8 @@ impl Component for Home {
             } else {
                 // In manual scroll mode, use stored scroll position
                 if text_len > available_height {
-                    (SCROLL_OFFSET_STATE.saturating_sub(available_height)).min(text_len.saturating_sub(available_height))
+                    // Ensure SCROLL_OFFSET_STATE represents the first visible line
+                    SCROLL_OFFSET_STATE.min(text_len.saturating_sub(available_height))
                 } else {
                     0
                 }
