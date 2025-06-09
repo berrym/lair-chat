@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use strum::Display;
-use crate::auth::Credentials;
+use crate::auth::{Credentials, AuthState};
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
 pub enum Action {
@@ -30,6 +30,8 @@ pub enum Action {
     Register(Credentials),
     Logout,
     RefreshSession,
+    AuthenticationSuccess(AuthState),
+    AuthenticationFailure(String),
     // Message actions
     SendMessage(String),
     ReceiveMessage(String),

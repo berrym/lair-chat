@@ -11,7 +11,8 @@ use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 use tui_input::Input;
 
 use crate::action::Action;
-use crate::components::{Component, Frame};
+use crate::components::Component;
+use ratatui::Frame;
 use crate::transport::{Message, MessageType};
 use super::status::StatusBar;
 

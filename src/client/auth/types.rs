@@ -39,7 +39,7 @@ pub struct Credentials {
 }
 
 /// User session information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Session {
     pub id: Uuid,
     pub token: String,
@@ -70,7 +70,7 @@ impl Session {
 }
 
 /// User profile information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserProfile {
     pub id: Uuid,
     pub username: String,
@@ -78,7 +78,7 @@ pub struct UserProfile {
 }
 
 /// Authentication state
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AuthState {
     /// Not authenticated
     Unauthenticated,
