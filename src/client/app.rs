@@ -415,36 +415,24 @@ impl App {
                                 // Send authentication request to server
                                 use crate::compatibility_layer::authenticate_compat;
                                 
+                                // Send authentication request
                                 match authenticate_compat(creds.username.clone(), creds.password.clone()).await {
                                     Ok(()) => {
-                                        // Wait for authentication response from server
-                                        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
-                                        
-                                        // Create authenticated state (server should have sent welcome message)
-                                        use crate::auth::{UserProfile, Session};
-                                        use uuid::Uuid;
-                                        use std::time::{SystemTime, UNIX_EPOCH};
-                                        
-                                        let now = SystemTime::now()
-                                            .duration_since(UNIX_EPOCH)
-                                            .unwrap()
-                                            .as_secs();
-                                        
-                                        let profile = UserProfile {
-                                            id: Uuid::new_v4(),
-                                            username: creds.username,
-                                            roles: vec!["user".to_string()],
-                                        };
-                                        
-                                        let session = Session {
-                                            id: Uuid::new_v4(),
-                                            token: "authenticated_session".to_string(),
-                                            created_at: now,
-                                            expires_at: now + 3600,
-                                        };
-                                        
-                                        let auth_state = AuthState::Authenticated { profile, session };
-                                        let _ = tx.send(Action::AuthenticationSuccess(auth_state));
+                                        // Start authentication response monitoring
+                                        let tx_clone = tx.clone();
+                                        let username = creds.username.clone();
+                                
+                                        tokio::spawn(async move {
+                                            // Wait for and handle server authentication response
+                                            match wait_for_auth_response(username.clone()).await {
+                                                Ok(auth_state) => {
+                                                    let _ = tx_clone.send(Action::AuthenticationSuccess(auth_state));
+                                                }
+                                                Err(error_msg) => {
+                                                    let _ = tx_clone.send(Action::AuthenticationFailure(error_msg));
+                                                }
+                                            }
+                                        });
                                     }
                                     Err(e) => {
                                         add_text_message(format!("Authentication failed: {}", e));
@@ -492,34 +480,29 @@ impl App {
                                 CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
                                 add_text_message(format!("Connected to server at {}", server_addr));
                                 
-                                // Mock successful registration after connection (longer delay)
-                                let _ = tx.send(Action::RegistrationSuccess(creds.username.clone()));
-                                tokio::time::sleep(tokio::time::Duration::from_millis(1200)).await;
-                                
-                                use crate::auth::{UserProfile, Session};
-                                use uuid::Uuid;
-                                use std::time::{SystemTime, UNIX_EPOCH};
-                                
-                                let now = SystemTime::now()
-                                    .duration_since(UNIX_EPOCH)
-                                    .unwrap()
-                                    .as_secs();
-                                
-                                let profile = UserProfile {
-                                    id: Uuid::new_v4(),
-                                    username: creds.username,
-                                    roles: vec!["user".to_string()],
-                                };
-                                
-                                let session = Session {
-                                    id: Uuid::new_v4(),
-                                    token: "mock_session_token".to_string(),
-                                    created_at: now,
-                                    expires_at: now + 3600,
-                                };
-                                
-                                let auth_state = AuthState::Authenticated { profile, session };
-                                let _ = tx.send(Action::AuthenticationSuccess(auth_state));
+                                // Send registration request
+                                match register_compat(creds.username.clone(), creds.password.clone()).await {
+                                    Ok(()) => {
+                                        // Start registration response monitoring
+                                        let tx_clone = tx.clone();
+                                        let username = creds.username.clone();
+                                        
+                                        tokio::spawn(async move {
+                                            match wait_for_auth_response(username.clone()).await {
+                                                Ok(auth_state) => {
+                                                    let _ = tx_clone.send(Action::AuthenticationSuccess(auth_state));
+                                                }
+                                                Err(error_msg) => {
+                                                    let _ = tx_clone.send(Action::AuthenticationFailure(error_msg));
+                                                }
+                                            }
+                                        });
+                                    }
+                                    Err(e) => {
+                                        add_text_message(format!("Registration failed: {}", e));
+                                        let _ = tx.send(Action::AuthenticationFailure("Failed to send registration request".to_string()));
+                                    }
+                                }
                             }
                             Err(e) => {
                                 add_text_message(format!("Failed to connect to {}: {}", server_addr, e));
@@ -538,4 +521,72 @@ impl App {
             }
         });
     }
+}
+
+/// Wait for and parse authentication response from server
+async fn wait_for_auth_response(username: String) -> Result<crate::auth::AuthState, String> {
+    use crate::transport::{MESSAGES, add_text_message};
+    use crate::auth::{UserProfile, Session};
+    use uuid::Uuid;
+    use std::time::{SystemTime, UNIX_EPOCH};
+    
+    // Monitor incoming messages for authentication response
+    for _attempt in 0..50 { // Wait up to 5 seconds (50 * 100ms)
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        
+        let messages = MESSAGES.lock().unwrap();
+        let recent_messages: Vec<String> = messages.text.iter().rev().take(5).cloned().collect();
+        drop(messages);
+        
+        for message in recent_messages {
+            // Check for authentication success indicators
+            if message.contains("Welcome back") || message.contains(&format!("{} has joined", username)) {
+                add_text_message("Authentication successful!".to_string());
+                
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                
+                let profile = UserProfile {
+                    id: Uuid::new_v4(),
+                    username: username.clone(),
+                    roles: vec!["user".to_string()],
+                };
+                
+                let session = Session {
+                    id: Uuid::new_v4(),
+                    token: format!("session_{}", username),
+                    created_at: now,
+                    expires_at: now + 3600,
+                };
+                
+                return Ok(crate::auth::AuthState::Authenticated { profile, session });
+            }
+            
+            // Check for authentication failure indicators
+            if message.contains("Authentication failed") || message.contains("Login failed") {
+                return Err("Server rejected authentication credentials".to_string());
+            }
+        }
+    }
+    
+    Err("Authentication timeout - no response from server".to_string())
+}
+
+/// Send registration request to server
+async fn register_compat(username: String, password: String) -> Result<(), crate::transport::TransportError> {
+    use crate::transport::{add_silent_outgoing_message, add_text_message};
+    
+    let auth_request = serde_json::json!({
+        "username": username,
+        "password": password,
+        "fingerprint": "client_device_fingerprint",
+        "is_registration": true
+    });
+    
+    add_text_message("Sending registration request...".to_string());
+    add_silent_outgoing_message(auth_request.to_string());
+    
+    Ok(())
 }
