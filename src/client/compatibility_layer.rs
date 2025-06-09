@@ -103,27 +103,17 @@ pub async fn connect_client_compat(input: Input, address: SocketAddr) -> Result<
 /// Send authentication request using legacy transport system
 pub async fn authenticate_compat(username: String, password: String) -> Result<(), TransportError> {
     use crate::transport::add_silent_outgoing_message;
-    use crate::auth::{AuthRequest, AuthProtocol, Credentials};
     
-    // Create proper authentication request using client's AuthRequest format
-    let credentials = Credentials {
-        username,
-        password,
-    };
-    
-    let auth_request = AuthRequest::login(credentials);
-    let encoded_request = match AuthProtocol::encode_request(&auth_request) {
-        Ok(encoded) => encoded,
-        Err(e) => {
-            add_text_message(format!("Failed to encode auth request: {}", e));
-            return Err(TransportError::ConnectionError(
-                std::io::Error::new(std::io::ErrorKind::Other, "Auth encoding failed")
-            ));
-        }
-    };
+    // Create authentication request in exact format expected by server
+    let auth_request = serde_json::json!({
+        "username": username,
+        "password": password,
+        "fingerprint": "client_device_fingerprint",
+        "is_registration": false
+    });
     
     add_text_message("Sending authentication request...".to_string());
-    add_silent_outgoing_message(encoded_request);
+    add_silent_outgoing_message(auth_request.to_string());
     
     Ok(())
 }
