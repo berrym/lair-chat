@@ -27,6 +27,7 @@ pub struct LoginScreen {
     pub mode: LoginMode,
     focused_field: usize,
     processing: bool,
+    show_help: bool,
 }
 
 impl LoginScreen {
@@ -40,6 +41,7 @@ impl LoginScreen {
             mode: LoginMode::Login,
             focused_field: 0,
             processing: false,
+            show_help: false,
         }
     }
 
@@ -52,30 +54,68 @@ impl LoginScreen {
     }
 
     fn submit(&mut self) -> Option<Action> {
-        if self.username.value().is_empty() || self.password.value().is_empty() {
-            self.error_message = Some("Username and password are required".to_string());
+        // Clear any previous error
+        self.error_message = None;
+        
+        // Validate username and password
+        if self.username.value().trim().is_empty() {
+            self.error_message = Some("Username cannot be empty".to_string());
+            return None;
+        }
+        
+        if self.password.value().trim().is_empty() {
+            self.error_message = Some("Password cannot be empty".to_string());
             return None;
         }
 
-        if self.server.value().is_empty() || self.port.value().is_empty() {
-            self.error_message = Some("Server and port are required".to_string());
+        // Validate server and port
+        if self.server.value().trim().is_empty() {
+            self.error_message = Some("Server address cannot be empty".to_string());
+            return None;
+        }
+        
+        if self.port.value().trim().is_empty() {
+            self.error_message = Some("Port cannot be empty".to_string());
             return None;
         }
 
-        // Validate port is a number
-        if self.port.value().parse::<u16>().is_err() {
-            self.error_message = Some("Port must be a valid number".to_string());
-            return None;
+        // Validate port is a number in valid range
+        match self.port.value().trim().parse::<u16>() {
+            Ok(port) => {
+                if port == 0 {
+                    self.error_message = Some("Port must be greater than 0".to_string());
+                    return None;
+                }
+            }
+            Err(_) => {
+                self.error_message = Some("Port must be a valid number (1-65535)".to_string());
+                return None;
+            }
         }
 
         let credentials = Credentials {
-            username: self.username.value().to_string(),
-            password: self.password.value().to_string(),
+            username: self.username.value().trim().to_string(),
+            password: self.password.value().trim().to_string(),
         };
 
-        let server_address = format!("{}:{}", self.server.value(), self.port.value());
+        let server_address = format!("{}:{}", self.server.value().trim(), self.port.value().trim());
+        
+        // Validate server address format
+        if server_address.parse::<std::net::SocketAddr>().is_err() {
+            self.error_message = Some("Invalid server address format".to_string());
+            return None;
+        }
 
         self.processing = true;
+        self.error_message = None;
+        
+        println!("Submitting {} with server: {}", 
+                match self.mode {
+                    LoginMode::Login => "login",
+                    LoginMode::Register => "registration"
+                }, 
+                server_address);
+        
         match self.mode {
             LoginMode::Login => Some(Action::LoginWithServer(credentials, server_address)),
             LoginMode::Register => Some(Action::RegisterWithServer(credentials, server_address)),
@@ -118,16 +158,23 @@ impl Component for LoginScreen {
                 None
             }
             crossterm::event::KeyCode::Enter => {
-                if self.focused_field == 3 {
-                    self.submit()
-                } else {
-                    self.focused_field = (self.focused_field + 1) % 4;
-                    None
-                }
+                self.submit()
             }
             crossterm::event::KeyCode::Char('t') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
                 self.toggle_mode();
                 None
+            }
+            crossterm::event::KeyCode::Char('?') => {
+                self.show_help = !self.show_help;
+                None
+            }
+            crossterm::event::KeyCode::Esc => {
+                if self.show_help {
+                    self.show_help = false;
+                    None
+                } else {
+                    None
+                }
             }
             crossterm::event::KeyCode::Char(c) => {
                 match self.focused_field {
@@ -178,9 +225,9 @@ impl Component for LoginScreen {
         let vertical_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Percentage(10),  // Top padding
-                Constraint::Length(28),      // Login form (increased height)
-                Constraint::Percentage(10),  // Bottom padding
+                Constraint::Percentage(5),   // Top padding
+                Constraint::Length(35),      // Login form (much taller)
+                Constraint::Percentage(5),   // Bottom padding
             ])
             .split(area);
 
@@ -216,15 +263,15 @@ impl Component for LoginScreen {
             .direction(Direction::Vertical)
             .margin(1)
             .constraints([
-                Constraint::Length(4),   // Mode selection and instructions (taller)
+                Constraint::Length(4),   // Mode selection and instructions
                 Constraint::Length(1),   // Spacer
                 Constraint::Length(3),   // Username input
                 Constraint::Length(3),   // Password input
                 Constraint::Length(3),   // Server input
                 Constraint::Length(3),   // Port input
                 Constraint::Length(1),   // Spacer
-                Constraint::Length(9),   // Instructions (much taller)
-                Constraint::Length(3),   // Status/Error (taller)
+                Constraint::Length(12),  // Instructions (much taller for 8 lines)
+                Constraint::Length(4),   // Status/Error (taller)
             ])
             .split(form_area);
 
@@ -401,7 +448,7 @@ impl Component for LoginScreen {
             Line::from(""),
             Line::from(vec![
                 Span::styled("Tab/Shift+Tab", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                Span::styled(" - Move between username/password/server/port", Style::default().fg(Color::White)),
+                Span::styled(" - Move between fields", Style::default().fg(Color::White)),
             ]),
             Line::from(vec![
                 Span::styled("Enter", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
@@ -409,19 +456,23 @@ impl Component for LoginScreen {
             ]),
             Line::from(vec![
                 Span::styled("Ctrl+T", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-                Span::styled(" - Toggle Login/Register modes", Style::default().fg(Color::White)),
+                Span::styled(" - Toggle Login/Register", Style::default().fg(Color::White)),
+            ]),
+            Line::from(vec![
+                Span::styled("?", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
+                Span::styled(" - Show detailed help", Style::default().fg(Color::White)),
             ]),
             Line::from(vec![
                 Span::styled("Ctrl+C", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
                 Span::styled(" - Quit application", Style::default().fg(Color::White)),
             ]),
             Line::from(vec![
-                Span::styled("Type text", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                Span::styled(" - Enter text in focused field", Style::default().fg(Color::White)),
+                Span::styled("Type/Backspace", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(" - Edit focused field", Style::default().fg(Color::White)),
             ]),
+            Line::from(""),
             Line::from(vec![
-                Span::styled("Backspace", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                Span::styled(" - Delete characters", Style::default().fg(Color::White)),
+                Span::styled("Need help? Press ? for detailed instructions", Style::default().fg(Color::Yellow)),
             ]),
         ])
         .style(Style::default().fg(Color::Cyan))
@@ -460,6 +511,85 @@ impl Component for LoginScreen {
             f.render_widget(ready_msg, form_chunks[7]);
         }
 
+        // Draw help popup if visible
+        if self.show_help {
+            self.draw_help_popup(f, area)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl LoginScreen {
+    fn draw_help_popup(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
+        // Create centered popup
+        let popup_area = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Percentage(15),
+                Constraint::Percentage(70),
+                Constraint::Percentage(15),
+            ])
+            .split(area)[1];
+
+        let popup_area = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(10),
+                Constraint::Percentage(80),
+                Constraint::Percentage(10),
+            ])
+            .split(popup_area)[1];
+
+        // Clear background
+        f.render_widget(Clear, popup_area);
+
+        let help_text = vec![
+            Line::from(vec![
+                Span::styled("Lair Chat - Login Help", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Getting Started:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            ]),
+            Line::from("1. Enter your username and password"),
+            Line::from("2. Specify server address (e.g., 127.0.0.1)"),
+            Line::from("3. Enter port number (e.g., 8080)"),
+            Line::from("4. Press Enter to connect and authenticate"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Navigation:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            ]),
+            Line::from("Tab/Shift+Tab - Move between fields"),
+            Line::from("Enter - Submit login/registration"),
+            Line::from("Ctrl+T - Toggle Login/Register mode"),
+            Line::from("? - Show/hide this help"),
+            Line::from("Esc - Close help popup"),
+            Line::from("Ctrl+C - Quit application"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Modes:", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+            ]),
+            Line::from("Login - Sign in with existing account"),
+            Line::from("Register - Create new account"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Server Setup:", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            ]),
+            Line::from("Make sure lair-chat-server is running:"),
+            Line::from("cargo run --bin lair-chat-server"),
+            Line::from(""),
+            Line::from("Press Esc or ? to close this help"),
+        ];
+
+        let help_popup = Paragraph::new(help_text)
+            .block(Block::default()
+                .borders(Borders::ALL)
+                .title("Help - Press Esc to close")
+                .border_style(Style::default().fg(Color::Yellow)))
+            .wrap(ratatui::widgets::Wrap { trim: false });
+
+        f.render_widget(help_popup, popup_area);
         Ok(())
     }
 }
