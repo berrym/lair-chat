@@ -14,6 +14,13 @@ use super::transport::{
     Transport,
     TransportError,
 };
+use super::auth::{
+    AuthManager,
+    AuthState,
+    Credentials,
+    AuthError,
+    AuthResult,
+};
 
 
 
@@ -27,6 +34,7 @@ pub struct ConnectionManager {
     messages: Arc<Mutex<MessageStore>>,
     observers: Vec<Arc<dyn ConnectionObserver + Send + Sync + 'static>>,
     cancel_token: CancellationToken,
+    auth_manager: Option<Arc<AuthManager>>,
 }
 
 // Extension trait for downcasting Arc<dyn ConnectionObserver>
@@ -60,17 +68,58 @@ impl ConnectionObserver for DefaultConnectionObserver {
 // We don't need to implement Clone for Arc as it's already implemented
 
 impl ConnectionManager {
+    /// Get the current authentication state
+    pub async fn get_auth_state(&self) -> Option<AuthState> {
+        self.auth_manager.as_ref().map(|mgr| mgr.get_state().await)
+    }
+    
+    /// Check if currently authenticated
+    pub async fn is_authenticated(&self) -> bool {
+        match &self.auth_manager {
+            Some(mgr) => mgr.is_authenticated().await,
+            None => false,
+        }
+    }
+    
+    /// Register a new user account
+    pub async fn register(&self, credentials: Credentials) -> AuthResult<()> {
+        match &self.auth_manager {
+            Some(mgr) => mgr.register(credentials).await,
+            None => Err(AuthError::InternalError("Authentication not configured".into())),
+        }
+    }
+    
+    /// Refresh the current session if needed
+    pub async fn refresh_session(&self) -> AuthResult<()> {
+        match &self.auth_manager {
+            Some(mgr) => mgr.refresh_session().await,
+            None => Err(AuthError::InternalError("Authentication not configured".into())),
+        }
+    }
+    
     /// Creates a new ConnectionManager with the given configuration
+    /// 
+    /// The manager will be created without authentication support.
+    /// Call `with_auth()` to enable authentication.
     pub fn new(config: ConnectionConfig) -> Self {
-        Self {
+        ConnectionManager {
             config,
-            status: Arc::new(RwLock::new(ConnectionStatus::DISCONNECTED)),
+            status: Arc::new(RwLock::new(ConnectionStatus::Disconnected)),
             transport: None,
             encryption: None,
             messages: Arc::new(Mutex::new(MessageStore::new())),
-            observers: Vec::new(),
+            observers: vec![Arc::new(DefaultConnectionObserver)],
             cancel_token: CancellationToken::new(),
+            auth_manager: None,
         }
+    }
+
+    /// Enable authentication for this connection manager
+    pub fn with_auth(&mut self) -> &mut Self {
+        if let Some(transport) = &self.transport {
+            self.auth_manager = Some(Arc::new(AuthManager::new(Arc::clone(transport))));
+        }
+        self
     }
 
     /// Creates a ConnectionManager for testing purposes
@@ -112,6 +161,11 @@ impl ConnectionManager {
             transport_guard.connect().await?;
         }
 
+        // Initialize authentication if configured
+        if self.transport.is_some() && self.auth_manager.is_none() {
+            self.with_auth();
+        }
+
         // Perform key exchange handshake if encryption is configured
         if let (Some(transport), Some(encryption)) = (&self.transport, &self.encryption) {
             let mut encryption_guard = encryption.lock().await;
@@ -138,6 +192,15 @@ impl ConnectionManager {
         // Cancel any ongoing operations
         self.cancel_token.cancel();
         
+        // Perform logout if authenticated
+        if let Some(auth_manager) = &self.auth_manager {
+            if auth_manager.is_authenticated().await {
+                if let Err(e) = auth_manager.logout().await {
+                    self.notify_error(format!("Logout error: {}", e));
+                }
+            }
+        }
+        
         // Close the transport if it exists
         if let Some(transport) = &self.transport {
             let mut transport_guard = transport.lock().await;
@@ -153,6 +216,15 @@ impl ConnectionManager {
 
     /// Send a message to the remote endpoint
     pub async fn send_message(&mut self, content: String) -> Result<(), TransportError> {
+        // Check authentication if enabled
+        if let Some(auth_manager) = &self.auth_manager {
+            if !auth_manager.is_authenticated().await {
+                return Err(TransportError::ConnectionError(
+                    std::io::Error::new(std::io::ErrorKind::PermissionDenied, "Not authenticated")
+                ));
+            }
+        }
+
         if self.transport.is_none() {
             return Err(TransportError::ConnectionError(
                 std::io::Error::new(std::io::ErrorKind::NotConnected, "Not connected")
@@ -204,6 +276,7 @@ impl ConnectionManager {
         let messages_clone = self.messages.clone();
         let status_clone = self.status.clone();
         let cancel_token_clone = self.cancel_token.clone();
+        let auth_manager_clone = self.auth_manager.clone();
         
         // Clone the observers
         let observers = self.observers.clone();
@@ -216,7 +289,8 @@ impl ConnectionManager {
                 messages_clone,
                 status_clone,
                 cancel_token_clone,
-                observers
+                observers,
+                auth_manager_clone
             ).await;
         });
         
@@ -231,6 +305,7 @@ impl ConnectionManager {
         status: Arc<RwLock<ConnectionStatus>>,
         cancel_token: CancellationToken,
         observers: Vec<Arc<dyn ConnectionObserver + Send + Sync + 'static>>,
+        auth_manager: Option<Arc<AuthManager>>,
     ) {
         loop {
             // Check if we should stop
@@ -279,6 +354,17 @@ impl ConnectionManager {
                     
                     // Received a message
                     Ok(Some(data)) => {
+                        // If we have an auth manager, validate auth state
+                        if let Some(auth_mgr) = &auth_manager {
+                            if !auth_mgr.is_authenticated().await {
+                                let error_msg = "Received message while not authenticated".to_string();
+                                for observer in &observers {
+                                    observer.on_error(error_msg.clone());
+                                }
+                                continue;
+                            }
+                        }
+                        
                         // Decrypt if encryption is available
                         let content = if let Some(encryption_service) = &encryption {
                             let encryption_guard = encryption_service.lock().await;
@@ -364,6 +450,15 @@ mod tests {
                 receive_queue: Arc::new(Mutex::new(VecDeque::new())),
             }
         }
+
+        fn with_auth_success(mut self, username: &str) -> Self {
+            let success_response = format!(
+                r#"{{"type":"success","user_id":"123e4567-e89b-12d3-a456-426614174000","username":"{}","roles":["user"],"token":"test_token","expires_at":9999999999}}"#,
+                username
+            );
+            self.receive_queue.try_lock().unwrap().push_back(Ok(Some(success_response)));
+            self
+        }
         
         async fn add_receive_data(&self, data: String) {
             let mut queue = self.receive_queue.lock().await;
@@ -379,8 +474,14 @@ mod tests {
     #[async_trait::async_trait]
     impl Transport for MockTransport {
         async fn connect(&mut self) -> Result<(), TransportError> {
-            // Mock implementation - always succeeds
             Ok(())
+        }
+
+        fn clone_box(&self) -> Box<dyn Transport + Send + Sync> {
+            Box::new(Self {
+                send_data: Arc::clone(&self.send_data),
+                receive_queue: Arc::clone(&self.receive_queue),
+            })
         }
 
         async fn send(&mut self, data: &str) -> Result<(), TransportError> {
@@ -581,6 +682,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_authentication_flow() {
+        let config = ConnectionConfig::new("127.0.0.1:8080".parse().unwrap());
+        let mut manager = ConnectionManager::new(config.clone());
+        
+        let mock_transport = Box::new(MockTransport::new().with_auth_success("testuser"));
+        manager.with_transport(mock_transport);
+        manager.with_auth();
+        
+        // Initially not authenticated
+        assert!(!manager.is_authenticated().await);
+        
+        // Attempt login
+        let credentials = Credentials {
+            username: "testuser".to_string(),
+            password: "password123".to_string(),
+        };
+        
+        if let Some(auth_manager) = &manager.auth_manager {
+            assert!(auth_manager.login(credentials).await.is_ok());
+            assert!(manager.is_authenticated().await);
+            
+            // Verify auth state
+            match manager.get_auth_state().await.unwrap() {
+                AuthState::Authenticated { profile, session } => {
+                    assert_eq!(profile.username, "testuser");
+                    assert_eq!(session.token, "test_token");
+                }
+                _ => panic!("Expected authenticated state"),
+            }
+            
+            // Test message sending while authenticated
+            assert!(manager.send_message("test message".to_string()).await.is_ok());
+            
+            // Test logout
+            assert!(auth_manager.logout().await.is_ok());
+            assert!(!manager.is_authenticated().await);
+        } else {
+            panic!("Auth manager not configured");
+        }
+    }
+
     async fn test_connection_manager_with_aes_gcm_encryption() {
         let config = ConnectionConfig::new("127.0.0.1:8080".parse().unwrap());
         let mut manager = ConnectionManager::new_for_test(config);
