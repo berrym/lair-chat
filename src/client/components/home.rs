@@ -10,6 +10,7 @@ use crate::{
     action::Action,
     app::Mode,
     config::Config,
+    history::CommandHistory,
     migration_facade,
     transport::*,
 };
@@ -41,6 +42,9 @@ pub struct Home {
     dialog_cursor_position: usize,
     dialog_host_input: Input,
     dialog_port_input: Input,
+
+    // Command history
+    command_history: CommandHistory,
 }
 
 // Static state variables for scrolling
@@ -50,6 +54,17 @@ static mut MANUAL_SCROLL_STATE: bool = false;
 
 impl Default for Home {
     fn default() -> Self {
+        let mut history = CommandHistory::new().unwrap_or_else(|e| {
+            eprintln!("Failed to create command history: {}", e);
+            // Create a minimal fallback history that won't crash
+            CommandHistory::new().unwrap()
+        });
+
+        // Load existing history synchronously
+        if let Err(e) = history.load_sync() {
+            eprintln!("Failed to load command history: {}", e);
+        }
+
         Self {
             command_tx: None,
             config: Config::default(),
@@ -61,11 +76,12 @@ impl Default for Home {
             prev_mode: Mode::Normal,
             input: Input::default(),
 
-            // Dialog defaults
             dialog_visible: false,
             dialog_cursor_position: 0,
             dialog_host_input: Input::default(),
             dialog_port_input: Input::default(),
+
+            command_history: history,
         }
     }
 }
@@ -524,6 +540,17 @@ impl Component for Home {
                     }
                     let message = self.input.value();
                     if !message.is_empty() && client_status.status == ConnectionStatus::CONNECTED {
+                        // Add message to command history
+                        self.command_history.add(message.to_string(), None);
+                        
+                        // Save history asynchronously
+                        let history_clone = self.command_history.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = history_clone.save().await {
+                                eprintln!("Failed to save command history: {}", e);
+                            }
+                        });
+                        
                         let action = Action::SendMessage(message.to_string());
                         self.input.reset();
                         return Ok(Some(action));
@@ -537,7 +564,43 @@ impl Component for Home {
                     }
                     Action::Update
                 }
+                KeyCode::Up => {
+                    // Navigate to previous command in history
+                    if let Some(prev_command) = self.command_history.previous() {
+                        self.input = Input::new(prev_command);
+                        // Move cursor to end of input
+                        let len = self.input.value().len();
+                        for _ in 0..len {
+                            self.input.handle_event(&crossterm::event::Event::Key(
+                                KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)
+                            ));
+                        }
+                    }
+                    Action::Render
+                }
+                KeyCode::Down => {
+                    // Navigate to next command in history
+                    if let Some(next_command) = self.command_history.next() {
+                        self.input = Input::new(next_command);
+                        // Move cursor to end of input
+                        let len = self.input.value().len();
+                        for _ in 0..len {
+                            self.input.handle_event(&crossterm::event::Event::Key(
+                                KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)
+                            ));
+                        }
+                    } else {
+                        // If no next command, clear input
+                        self.input.reset();
+                        self.command_history.reset_position();
+                    }
+                    Action::Render
+                }
                 _ => {
+                    // Reset history position when typing new characters
+                    if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace | KeyCode::Delete) {
+                        self.command_history.reset_position();
+                    }
                     self.input.handle_event(&crossterm::event::Event::Key(key));
                     Action::Tick
                 }
@@ -1062,6 +1125,7 @@ impl Component for Home {
             let rows = vec![
                 Row::new(vec!["/", "Enter Message Input Mode"]),
                 Row::new(vec!["enter", "Send Message"]),
+                Row::new(vec!["↑/↓", "Navigate Command History"]),
                 Row::new(vec!["esc", "Exit Message Input Mode"]),
                 Row::new(vec!["Ctrl+C", "Quit Application"]),
                 Row::new(vec!["q", "Quit"]),

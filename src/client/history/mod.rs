@@ -45,6 +45,7 @@ pub struct HistoryEntry {
 }
 
 /// Command history manager
+#[derive(Clone)]
 pub struct CommandHistory {
     /// The command history entries
     entries: VecDeque<HistoryEntry>,
@@ -81,6 +82,22 @@ impl CommandHistory {
 
         let content = fs::read_to_string(&self.history_file)
             .await
+            .map_err(HistoryError::FileRead)?;
+
+        let entries: Vec<HistoryEntry> = serde_json::from_str(&content)?;
+        self.entries = VecDeque::from(entries);
+        self.position = None;
+
+        Ok(())
+    }
+
+    /// Load history from disk synchronously
+    pub fn load_sync(&mut self) -> HistoryResult<()> {
+        if !self.history_file.exists() {
+            return Ok(());
+        }
+
+        let content = std::fs::read_to_string(&self.history_file)
             .map_err(HistoryError::FileRead)?;
 
         let entries: Vec<HistoryEntry> = serde_json::from_str(&content)?;
