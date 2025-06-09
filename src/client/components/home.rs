@@ -9,7 +9,7 @@ use super::Component;
 use crate::{
     action::Action,
     app::Mode,
-    config::{key_event_to_string, Config},
+    config::Config,
     migration_facade,
     transport::*,
 };
@@ -35,7 +35,7 @@ pub struct Home {
     mode: Mode,
     prev_mode: Mode,
     input: Input,
-    last_events: Vec<KeyEvent>,
+
     // Connection dialog fields
     dialog_visible: bool,
     dialog_cursor_position: usize,
@@ -60,7 +60,7 @@ impl Default for Home {
             mode: Mode::Normal,
             prev_mode: Mode::Normal,
             input: Input::default(),
-            last_events: Vec::new(),
+
             // Dialog defaults
             dialog_visible: false,
             dialog_cursor_position: 0,
@@ -165,7 +165,7 @@ impl Home {
     pub fn tick(&mut self) {
         //log::info!("Tick");
         self.app_ticker = self.app_ticker.saturating_add(1);
-        self.last_events.drain(..);
+
     }
 
     pub fn render_tick(&mut self) {
@@ -193,7 +193,7 @@ impl Component for Home {
     }
 
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
-        self.last_events.push(key.clone());
+
         
         // Handle scrolling with PageUp and PageDown
         if self.mode == Mode::Normal || self.mode == Mode::Processing {
@@ -1172,32 +1172,7 @@ impl Component for Home {
             }
         };
 
-        frame.render_widget(
-            Block::default()
-                .title(
-                    Line::from(format!(
-                        "{:?}",
-                        &self
-                            .last_events
-                            .iter()
-                            .map(|k| key_event_to_string(k))
-                            .collect::<Vec<_>>()
-                    ))
-                    .right_aligned(),
-                )
-                .title_style(
-                    Style::default()
-                        .add_modifier(Modifier::BOLD)
-                        .bg(Color::Black)
-                        .fg(Color::White),
-                ),
-            Rect {
-                x: area.x + 1,
-                y: area.height.saturating_sub(1),
-                width: area.width.saturating_sub(2),
-                height: 1,
-            },
-        );
+
 
         Ok(())
     }
