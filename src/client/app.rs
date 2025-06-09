@@ -12,6 +12,7 @@ use crate::{
         auth::{AuthStatusBar, LoginScreen},
         home::Home,
         fps::FpsCounter,
+        StatusBar,
         Component
     },
     config::Config,
@@ -37,6 +38,7 @@ pub struct App {
     
     // Main application components
     home_component: Home,
+    status_bar: StatusBar,
     fps_counter: FpsCounter,
 }
 
@@ -81,6 +83,7 @@ impl App {
             
             // Main components
             home_component: Home::new(),
+            status_bar: StatusBar::new(),
             fps_counter: FpsCounter::default(),
         })
     }
@@ -262,6 +265,10 @@ impl App {
                 if let AuthState::Authenticated { ref profile, .. } = auth_state {
                     info!("User {} authenticated successfully", profile.username);
                     
+                    // Update status bar with authentication info
+                    self.status_bar.set_auth_state(auth_state.clone());
+                    self.status_bar.set_connection_status(crate::transport::CLIENT_STATUS.lock().unwrap().status.clone());
+                    
                     // Connection is already established during authentication
                     use crate::transport::add_text_message;
                     
@@ -308,6 +315,9 @@ impl App {
                     // Add message to outgoing queue for server transmission
                     add_outgoing_message(message.clone());
                     
+                    // Update status bar message count
+                    self.status_bar.record_sent_message();
+                    
                     info!("Message sent: {}", message);
                 } else {
                     add_text_message("Cannot send message: Not connected to server".to_string());
@@ -318,6 +328,9 @@ impl App {
                 // Handle received messages
                 use crate::transport::add_text_message;
                 add_text_message(message.to_string());
+                
+                // Update status bar message count
+                self.status_bar.record_received_message();
             }
             
             // Pass other actions to appropriate components
@@ -364,15 +377,19 @@ impl App {
                     let chunks = Layout::default()
                         .direction(Direction::Vertical)
                         .constraints([
-                            Constraint::Length(1),  // Auth status bar
+                            Constraint::Length(1),  // Status bar
                             Constraint::Min(0),     // Main content
                             Constraint::Length(1),  // FPS counter
                         ])
                         .split(area);
 
-                    // Draw auth status
-                    if let Err(e) = self.auth_status.draw(frame, chunks[0]) {
-                        debug!("Error drawing auth status: {}", e);
+                    // Update status bar with current state
+                    self.status_bar.set_auth_state(self.auth_state.clone());
+                    self.status_bar.set_connection_status(crate::transport::CLIENT_STATUS.lock().unwrap().status.clone());
+                    
+                    // Draw status bar
+                    if let Err(e) = self.status_bar.draw(frame, chunks[0]) {
+                        debug!("Error drawing status bar: {}", e);
                     }
                     
                     // Draw main content

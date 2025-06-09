@@ -19,7 +19,7 @@ Now that we have finished the transport refactor, here are the specific tasks to
    - ✅ Implement stress tests for connection handling
 
 2. **Begin User Experience Improvements**
-   - Implement command history with persistence
+   - ✅ Implement command history with persistence
    - Add better connection status visibility in UI
    - Improve error messages to be more user-friendly
    - Add a status bar with connection details
@@ -166,10 +166,14 @@ Keeping the codebase healthy:
    - ✅ Integration tests completed
    - ✅ Performance baselines established
    - ✅ Stress testing implemented
-2. User Experience Improvements (🔄 Starting)
-3. Initial Security Enhancements (🔄 In Progress)
+2. User Experience Improvements (🔄 In Progress)
+   - ✅ Command history with persistent storage implemented
+   - 🔄 Connection status visibility improvements
+   - 🔄 User-friendly error messages
+   - 🔄 Enhanced status bar with connection details
+3. Initial Security Enhancements (✅ Completed)
    - ✅ Authentication system implemented
-   - 🔄 Rate limiting in progress
+   - ✅ Rate limiting implemented
 
 ### Phase 2 (2-3 months)
 1. Chat Protocol Enhancements
