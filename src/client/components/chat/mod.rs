@@ -1,6 +1,8 @@
 //! Chat view component for Lair-Chat
 //! Provides message display and input functionality.
 
+use std::collections::VecDeque;
+use std::path::PathBuf;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
@@ -10,6 +12,7 @@ use tui_input::Input;
 use crate::client::action::Action;
 use crate::client::components::{Component, Frame};
 use crate::client::transport::Message;
+use crate::client::history::CommandHistory;
 
 pub struct ChatView {
     /// Input buffer for new messages
@@ -20,6 +23,8 @@ pub struct ChatView {
     username: Option<String>,
     /// Whether to show the help popup
     show_help: bool,
+    /// Command history manager
+    history: CommandHistory,
 }
 
 impl ChatView {
@@ -29,6 +34,11 @@ impl ChatView {
             messages: Vec::new(),
             username: None,
             show_help: false,
+            history: CommandHistory::new().unwrap_or_else(|_| CommandHistory {
+                entries: VecDeque::new(),
+                position: None,
+                history_file: PathBuf::from("history.json"),
+            }),
         }
     }
 
@@ -47,7 +57,10 @@ impl ChatView {
         }
 
         let message = content.to_string();
+        self.history.add(message.clone(), None);
+        let _ = self.history.save();
         self.input.reset();
+        self.history.reset_position();
         Some(Action::SendMessage(message))
     }
 
@@ -64,6 +77,20 @@ impl Component for ChatView {
                 if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) =>
             {
                 self.toggle_help();
+                None
+            }
+            crossterm::event::KeyCode::Up => {
+                if let Some(previous) = self.history.previous() {
+                    self.input = Input::new(previous.into());
+                }
+                None
+            }
+            crossterm::event::KeyCode::Down => {
+                if let Some(next) = self.history.next() {
+                    self.input = Input::new(next.into());
+                } else {
+                    self.input.reset();
+                }
                 None
             }
             _ => {
