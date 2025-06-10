@@ -355,7 +355,7 @@ impl Component for Home {
                         self.scroll_offset += 5;
                         
                         // If we reach the bottom, enable auto-follow again
-                        let messages_len = MESSAGES.lock().unwrap().text.len();
+                        let messages_len = self.get_display_messages().len();
                         if self.scroll_offset >= messages_len {
                             self.manual_scroll = false;
                         }
@@ -366,7 +366,7 @@ impl Component for Home {
                         self.scroll_offset += 1;
                         
                         // If we reach the bottom, enable auto-follow again
-                        let messages_len = MESSAGES.lock().unwrap().text.len();
+                        let messages_len = self.get_display_messages().len();
                         if self.scroll_offset >= messages_len {
                             self.manual_scroll = false;
                         }
@@ -374,7 +374,7 @@ impl Component for Home {
                     },
                     KeyCode::End => {
                         // Scroll to the end and re-enable auto-follow
-                        let messages_len = MESSAGES.lock().unwrap().text.len();
+                        let messages_len = self.get_display_messages().len();
                         self.scroll_offset = messages_len;
                         self.manual_scroll = false;
                         return Ok(Some(Action::Render));
@@ -382,7 +382,7 @@ impl Component for Home {
                     // Cancel scroll mode and return to auto-follow on Escape
                     KeyCode::Esc => {
                         if !self.show_help {
-                            let messages_len = MESSAGES.lock().unwrap().text.len();
+                            let messages_len = self.get_display_messages().len();
                             self.scroll_offset = messages_len;
                             self.manual_scroll = false;
                             return Ok(Some(Action::Render));
@@ -400,7 +400,7 @@ impl Component for Home {
                         if self.manual_scroll {
                             self.manual_scroll = false;
                             // When exiting manual scroll, set position to follow most recent messages
-                            let messages_len = MESSAGES.lock().unwrap().text.len();
+                            let messages_len = self.get_display_messages().len();
                             self.scroll_offset = messages_len;
                         }
                     }
@@ -413,7 +413,7 @@ impl Component for Home {
             // Exit manual scroll mode when dialog is opened
             self.manual_scroll = false;
             // Also reset scroll position to follow latest messages
-            let messages_len = MESSAGES.lock().unwrap().text.len();
+            let messages_len = self.get_display_messages().len();
             self.scroll_offset = messages_len;
             
             match key.code {
@@ -504,7 +504,7 @@ impl Component for Home {
             // We're not handling a scroll key at this point, so exit manual scroll
             self.manual_scroll = false;
             // Also reset scroll position to follow latest messages
-            let messages_len = MESSAGES.lock().unwrap().text.len();
+            let messages_len = self.get_display_messages().len();
             self.scroll_offset = messages_len;
         }
         
@@ -685,7 +685,7 @@ impl Component for Home {
                 // Automatically exit manual scrolling when entering input mode
                 self.manual_scroll = false;
                 // Also reset scroll position to follow latest messages
-                let messages_len = MESSAGES.lock().unwrap().text.len();
+                let messages_len = self.get_display_messages().len();
                 self.scroll_offset = messages_len;
             }
             Action::EnterProcessing => {
@@ -758,11 +758,7 @@ impl Component for Home {
         // Prepare text content
         let mut text: Vec<Line> = Vec::<Line>::new();
         text.push("".into());
-        let messages: Vec<Line> = MESSAGES
-            .lock()
-            .unwrap()
-            .text
-            .clone()
+        let messages: Vec<Line> = self.get_display_messages()
             .iter()
             .map(|l| Line::from(l.clone()))
             .collect();
