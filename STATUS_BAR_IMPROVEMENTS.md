@@ -80,9 +80,10 @@ format!("Sent: {} | Recv: {} | Up: {}", sent, received, uptime)
 
 ### 4. Network Statistics
 - **Display**: "Sent: X | Recv: Y | Up: H:MM:SS"
-- **Counters**: Message send/receive counts
+- **Counters**: Message send/receive counts (both now working correctly)
 - **Uptime**: Connection duration in hours:minutes:seconds
 - **Updates**: Real-time increment with activity
+- **Fixed**: Received message count now properly increments
 
 ### 5. Error Display
 - **Display**: Error messages in red text
@@ -125,6 +126,7 @@ format!("Sent: {} | Recv: {} | Up: {}", sent, received, uptime)
 - Real-time updates continue to work
 - Color coding and styling maintained
 - Layout responsiveness preserved
+- Received message counting now functional (fixed in v0.5.0)
 
 ### Performance Impact
 - No performance degradation
@@ -146,5 +148,6 @@ To verify the improvements:
 3. **Send/receive messages** to watch counters increment
 4. **Check different terminals** to verify consistent appearance
 5. **Test in SSH sessions** to confirm remote compatibility
+6. **Verify message counts** by sending/receiving messages between clients
 
-The status bar should now display clearly and professionally in any terminal environment while providing comprehensive system status information.
+The status bar should now display clearly and professionally in any terminal environment while providing comprehensive and accurate system status information including proper received message tracking.
