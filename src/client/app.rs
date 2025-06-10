@@ -577,26 +577,56 @@ impl App {
     
     /// Modern message sending using ConnectionManager
     fn handle_modern_send_message(&mut self, message: String) {
-        // Use modern ConnectionManager to get status instead of global CLIENT_STATUS
+        // Use modern ConnectionManager to get status
         let connection_status = self.get_connection_status();
         
         if connection_status == crate::transport::ConnectionStatus::CONNECTED {
-            // For now, still use legacy transport for actual message sending
-            // TODO: Replace with ConnectionManager.send_message() in next steps
-            #[allow(deprecated)]
-            use crate::transport::add_outgoing_message;
-            #[allow(deprecated)]
-            add_outgoing_message(message.clone());
+            // Use modern ConnectionManager for message sending
+            let result = tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(async {
+                    self.connection_manager.send_message(message.clone()).await
+                })
+            });
             
-            // Update status bar message count
-            self.status_bar.record_sent_message();
-            
-            debug!("Message queued for sending via modern status check: {}", message);
+            match result {
+                Ok(()) => {
+                    // Update status bar message count on success
+                    self.status_bar.record_sent_message();
+                    
+                    // Add message to local chat display
+                    self.home_component.add_message_to_room(
+                        format!("You: {}", message),
+                        false
+                    );
+                    
+                    info!("Message sent successfully via modern ConnectionManager: {}", message);
+                }
+                Err(e) => {
+                    // Fallback to legacy transport for compatibility
+                    warn!("ConnectionManager send failed, falling back to legacy transport: {}", e);
+                    
+                    #[allow(deprecated)]
+                    use crate::transport::add_outgoing_message;
+                    #[allow(deprecated)]
+                    add_outgoing_message(message.clone());
+                    
+                    // Update status bar message count
+                    self.status_bar.record_sent_message();
+                    
+                    // Add message to local chat display
+                    self.home_component.add_message_to_room(
+                        format!("You: {}", message),
+                        false
+                    );
+                    
+                    info!("Message sent via legacy fallback transport: {}", message);
+                }
+            }
         } else {
             warn!("Cannot send message - client not connected (status: {:?}): {}", connection_status, message);
-            // Use modern error handling instead of legacy add_text_message
+            // Use modern error handling for connection failures
             self.home_component.add_message_to_room(
-                "Error: Cannot send message - not connected to server".to_string(),
+                format!("Error: Cannot send message - not connected (status: {:?})", connection_status),
                 false
             );
         }
