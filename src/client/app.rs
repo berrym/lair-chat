@@ -254,19 +254,29 @@ impl App {
 
     fn update(&mut self, action: &Action) -> Result<Option<Action>> {
         match action {
+            Action::RecordReceivedMessage => {
+                // Update the status bar message count for received messages
+                self.status_bar.record_received_message();
+                tracing::info!("DEBUG: App processed RecordReceivedMessage action");
+                Ok(None)
+            }
             Action::Quit => {
                 self.should_quit = true;
+                Ok(None)
             }
             Action::Suspend => {
                 self.should_suspend = true;
+                Ok(None)
             }
             Action::Resume => {
                 self.should_suspend = false;
+                Ok(None)
             }
             Action::Resize(w, h) => {
                 // Handle resize
                 let size = ratatui::prelude::Size::new(*w, *h);
                 self.init_components(size)?;
+                Ok(None)
             }
             Action::Tick => {
                 // Update components that need tick events
@@ -274,6 +284,8 @@ impl App {
                 
                 // Update FPS counter
                 self.fps_counter.update(action.clone())?;
+                
+                Ok(None)
             }
             
             // Authentication actions - TEMPORARY: Use legacy transport for actual server connection
@@ -284,23 +296,27 @@ impl App {
             Action::Login(credentials) => {
                 // Use legacy method that actually connects to server and enables message flow
                 self.handle_login_with_server(credentials.clone(), "127.0.0.1:8080".to_string());
+                Ok(None)
             }
             
             Action::Register(credentials) => {
                 // Use legacy method that actually connects to server and enables message flow
                 self.handle_register_with_server(credentials.clone(), "127.0.0.1:8080".to_string());
+                Ok(None)
             }
             
             Action::LoginWithServer(credentials, server_address) => {
                 // For backward compatibility, still support legacy method for now
                 #[allow(deprecated)]
                 self.handle_login_with_server(credentials.clone(), server_address.clone());
+                Ok(None)
             }
             
             Action::RegisterWithServer(credentials, server_address) => {
                 // For backward compatibility, still support legacy method for now
                 #[allow(deprecated)]
                 self.handle_register_with_server(credentials.clone(), server_address.clone());
+                Ok(None)
             }
             
             Action::Logout => {
@@ -317,6 +333,8 @@ impl App {
                     false
                 );
                 
+                Ok(None)
+                
                 // Future: Add ConnectionManager.disconnect() call here
                 // when full ConnectionManager integration is complete
             }
@@ -330,6 +348,7 @@ impl App {
                     false
                 );
                 // Keep in authenticating state, will transition when auth completes
+                Ok(None)
             }
             
             // New action for handling auth failure
@@ -345,6 +364,8 @@ impl App {
                     format!("Authentication failed: {}", error),
                     false
                 );
+                
+                Ok(None)
             }
             
             // New action for handling auth success
@@ -375,36 +396,45 @@ impl App {
                     
                     info!("User {} authenticated and ready for chat", profile.username);
                 }
+                
+                Ok(None)
             }
             
             Action::EnterInsert => {
                 // Switch home component to insert mode
                 self.home_component.update(action.clone())?;
+                Ok(None)
             }
             Action::EnterNormal => {
                 // Switch home component to normal mode
                 self.home_component.update(action.clone())?;
+                Ok(None)
             }
             Action::ExitProcessing => {
                 // Exit processing mode
                 self.home_component.update(action.clone())?;
+                Ok(None)
             }
             Action::EnterProcessing => {
                 // Enter processing mode
                 self.home_component.update(action.clone())?;
+                Ok(None)
             }
             Action::ToggleFps => {
                 // Toggle FPS counter
                 self.fps_counter.update(action.clone())?;
+                Ok(None)
             }
             Action::ToggleShowHelp => {
                 // Toggle help display
                 self.home_component.update(action.clone())?;
+                Ok(None)
             }
             
             Action::SendMessage(message) => {
                 info!("DEBUG: SendMessage action received: '{}'", message);
                 self.handle_modern_send_message(message.clone());
+                Ok(None)
             }
             
             Action::ReceiveMessage(message) => {
@@ -499,9 +529,15 @@ impl App {
                 info!("DEBUG: Adding message to room: '{}'", message);
                 self.home_component.add_message_to_room(message.to_string(), true);
                 
-                // Update status bar message count
-                self.status_bar.record_received_message();
-                info!("Message added to room and status updated: {}", message);
+                // Only automatically count messages from server/system
+                // User-initiated messages should use explicit RecordReceivedMessage action
+                if message.starts_with("You:") || self.is_system_message(&message) {
+                    info!("Message added to room: {}", message);
+                } else {
+                    self.status_bar.record_received_message();
+                    info!("Message added to room and status updated: {}", message);
+                }
+                Ok(None)
             }
             
             Action::MessageSent(message) => {
@@ -511,6 +547,7 @@ impl App {
                 // Add sent message to the room display
                 self.home_component.add_message_to_room(message.to_string(), false);
                 info!("Sent message added to room: {}", message);
+                Ok(None)
             }
             
             Action::Error(error) => {
@@ -520,6 +557,7 @@ impl App {
                     false
                 );
                 warn!("Error received via action system: {}", error);
+                Ok(None)
             }
             
             // Pass other actions to appropriate components
@@ -530,10 +568,21 @@ impl App {
                     }
                     _ => {}
                 }
+                Ok(None)
             }
         }
-        
-        Ok(None)
+    }
+
+    /// Helper function to detect system messages
+    fn is_system_message(&self, message: &str) -> bool {
+        message.contains("has joined") || 
+        message.contains("has left") || 
+        message.contains("Welcome back") || 
+        message.contains("Authentication") || 
+        message.contains("Connected to") || 
+        message.contains("Disconnected from") ||
+        message.contains("ERROR:") ||
+        message.contains("Error:")
     }
 
     /// Modern authentication flow using ConnectionManager
@@ -702,6 +751,17 @@ impl App {
             })
         });
         
+        // Format message with username to avoid confusion
+        let formatted_message = if self.auth_state.is_authenticated() {
+            if let Some(username) = self.auth_state.profile().map(|p| p.username.clone()) {
+                format!("{}: {}", username, message.clone())
+            } else {
+                message.clone()
+            }
+        } else {
+            message.clone()
+        };
+        
         // Use combined status check to determine if we can send
         let connection_status = self.get_connection_status();
         
@@ -719,15 +779,15 @@ impl App {
                 let sent_message = format!("You: {}", message);
                 add_text_message(sent_message.clone());
                 
-                // Queue for sending to others
-                add_outgoing_message(message.clone());
-                info!("DEBUG: Message queued in legacy transport outgoing queue: {}", message);
+                // Queue for sending to others with username prefix to avoid confusion
+                add_outgoing_message(formatted_message.clone());
+                info!("DEBUG: Message queued in legacy transport outgoing queue: {}", formatted_message);
             }
             
             // Also try modern ConnectionManager (as backup)
             // We'll use a thread-safe approach to ensure proper 'Send' implementation
             let cm = self.connection_manager.clone();
-            let msg = message.clone();
+            let msg = formatted_message.clone();
             
             // Use a separate thread-safe function to handle the async send
             tokio::task::spawn_blocking(move || {

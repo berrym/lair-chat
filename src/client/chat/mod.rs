@@ -334,7 +334,7 @@ mod tests {
 
         indicators.start_typing(user_id);
         // Sleep to ensure timeout
-        std::thread::sleep(Duration::from_millis(10));
+        std::thread::sleep(std::time::Duration::from_millis(10));
         
         // Should be cleared due to timeout
         assert!(indicators.get_typing_users().is_empty());

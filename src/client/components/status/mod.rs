@@ -121,6 +121,7 @@ impl StatusBar {
     pub fn record_received_message(&mut self) {
         self.network_stats.messages_received += 1;
         self.network_stats.last_message_time = Some(Instant::now());
+        tracing::info!("DEBUG: Status bar received message count updated to: {}", self.network_stats.messages_received);
     }
 
     /// Show an error message for a duration
@@ -225,7 +226,8 @@ impl Component for StatusBar {
             self.network_stats.messages_received,
             self.network_stats.format_uptime(),
         );
-        let stats = Paragraph::new(stats_text);
+        let stats = Paragraph::new(stats_text)
+            .style(Style::default().fg(Color::Yellow));
         f.render_widget(stats, chunks[3]);
 
         // Draw error message if any

@@ -38,5 +38,6 @@ pub enum Action {
     // Message actions
     SendMessage(String),
     ReceiveMessage(String),
+    RecordReceivedMessage,
     MessageSent(String),
 }

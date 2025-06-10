@@ -41,7 +41,10 @@ impl AesGcmEncryption {
     fn derive_key(password: &str) -> [u8; 32] {
         let mut hasher = Sha256::new();
         hasher.update(password.as_bytes());
-        hasher.finalize().into()
+        let result = hasher.finalize();
+        let mut key = [0u8; 32];
+        key.copy_from_slice(result.as_slice());
+        key
     }
     
     /// Get the raw key bytes (for key exchange purposes)
@@ -150,7 +153,9 @@ impl EncryptionService for AesGcmEncryption {
         let mut hasher = Sha256::new();
         hasher.update(shared_secret.as_bytes());
         hasher.update(b"LAIR_CHAT_AES_KEY"); // Domain separation
-        let derived_key: [u8; 32] = hasher.finalize().into();
+        let result = hasher.finalize();
+        let mut derived_key = [0u8; 32];
+        derived_key.copy_from_slice(result.as_slice());
         
         // Update our encryption key
         self.set_key(derived_key);
@@ -473,7 +478,9 @@ mod tests {
         let mut hasher1 = sha2::Sha256::new();
         hasher1.update(&shared_secret);
         hasher1.update(b"LAIR_CHAT_AES_KEY");
-        let derived_key: [u8; 32] = hasher1.finalize().into();
+        let result = hasher1.finalize();
+        let mut derived_key = [0u8; 32];
+        derived_key.copy_from_slice(result.as_slice());
         
         encryption1.set_key(derived_key);
         encryption2.set_key(derived_key);

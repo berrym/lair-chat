@@ -113,9 +113,10 @@ impl Home {
         let room_settings = RoomSettings::public("General".to_string());
         let room_id = self.room_manager.create_room(room_settings, uuid::Uuid::nil())?;
         
-        // Create user
+        // Create user - ensure username doesn't have a '!' character
+        let clean_username = username.replace("!", "");
         let user_id = uuid::Uuid::new_v4();
-        let user = RoomUser::new(user_id, username, UserRole::User);
+        let user = RoomUser::new(user_id, clean_username, UserRole::User);
         
         // Add user to room
         self.room_manager.join_room(&room_id, user)?;
@@ -137,7 +138,18 @@ impl Home {
                         if msg.message_type == MessageType::System {
                             msg.content.clone()
                         } else {
-                            format!("{}: {}", msg.sender_username, msg.content)
+                            // Check if the content already has a username prefix
+                            if msg.content.starts_with("You: ") {
+                                                // Don't add another prefix for outgoing messages
+                                                msg.content.clone()
+                                            } else if msg.content.contains(": ") && !msg.content.starts_with(&format!("{}: ", msg.sender_username)) {
+                                                // Message already has some prefix, but not the correct one
+                                                msg.content.clone()
+                                            } else {
+                                                // Add username prefix for normal messages - remove any '!' characters
+                                                let clean_username = msg.sender_username.replace("!", "");
+                                                format!("{}: {}", clean_username, msg.content)
+                                            }
                         }
                     })
                     .collect::<Vec<String>>();
@@ -164,28 +176,89 @@ impl Home {
         tracing::info!("DEBUG: add_message_to_room called with: '{}', is_system: {}", content, is_system);
         tracing::info!("DEBUG: current_room_id: {:?}, current_user_id: {:?}", self.current_room_id, self.current_user_id);
         
+        // Clean up content if it has multiple prefixes or username has '!' character
+        let clean_content = if !is_system && content.contains(": ") {
+            // Extract the actual message part if it has username prefixes
+            let parts: Vec<&str> = content.splitn(2, ": ").collect();
+            if parts.len() == 2 && parts[1].contains(": ") {
+                // Double prefixed - extract just the original message
+                let subparts: Vec<&str> = parts[1].splitn(2, ": ").collect();
+                if subparts.len() == 2 {
+                    if content.starts_with("You: ") {
+                        format!("You: {}", subparts[1])
+                    } else {
+                        subparts[1].to_string()
+                    }
+                } else {
+                    content.clone()
+                }
+            } else if parts.len() == 2 && parts[0].contains("!") {
+                // Username has '!' - clean it up
+                let clean_username = parts[0].replace("!", "");
+                format!("{}: {}", clean_username, parts[1])
+            } else {
+                content.clone()
+            }
+        } else {
+            content.clone()
+        };
+        
+        // Avoid adding duplicate messages
+        // We need to normalize the message format to detect duplicates
+        let normalized_content = self.normalize_message_content(&clean_content);
+        
+        // Check if this message is already in the room
+        if self.is_duplicate_message(&normalized_content) {
+            tracing::info!("DEBUG: Skipping duplicate message: '{}'", clean_content);
+                    
+            // Even for duplicates, still count received messages for status bar
+            // if this appears to be a message from another user
+            if !is_system && !clean_content.starts_with("You: ") {
+                if let Some(tx) = &self.command_tx {
+                    let _ = tx.send(Action::RecordReceivedMessage);
+                }
+            }
+                    
+            return;
+        }
+        
         if let (Some(room_id), Some(user_id)) = (self.current_room_id, self.current_user_id) {
             if let Some(room) = self.room_manager.get_room_mut(&room_id) {
                 let message = if is_system {
-                    ChatMessage::new_system(room_id, content.clone())
+                    ChatMessage::new_system(room_id, clean_content.clone())
                 } else {
                     let username = room.get_user(&user_id)
-                        .map(|u| u.username.clone())
+                        .map(|u| u.username.clone().replace("!", ""))
                         .unwrap_or_else(|| "Unknown".to_string());
-                    ChatMessage::new_text(room_id, user_id, username, content.clone())
+                    ChatMessage::new_text(room_id, user_id, username, clean_content.clone())
                 };
                 
                 tracing::info!("DEBUG: Adding message to room system: {:?}", message);
                 let _ = room.add_message(message);
+                
+                // Increment received message count in status bar if this is an incoming message
+                // that's not from the current user and not a system message
+                if !is_system && !clean_content.starts_with("You: ") {
+                    // Send an action to increment the received message count
+                    if let Some(tx) = &self.command_tx {
+                        match tx.send(Action::RecordReceivedMessage) {
+                            Ok(_) => tracing::info!("DEBUG: Successfully sent RecordReceivedMessage action for message: '{}'", clean_content),
+                            Err(e) => tracing::error!("DEBUG: Failed to send RecordReceivedMessage action: {}", e),
+                        }
+                    } else {
+                        tracing::warn!("DEBUG: Cannot send RecordReceivedMessage - command_tx is None");
+                    }
+                }
+                
                 tracing::info!("DEBUG: Message added to room successfully");
             } else {
                 tracing::warn!("DEBUG: Room not found for room_id: {:?}", room_id);
-                add_text_message(content);
+                add_text_message(clean_content);
             }
         } else {
             tracing::warn!("DEBUG: Fallback to legacy system - room_id or user_id missing");
             // Fallback to legacy system
-            add_text_message(content);
+            add_text_message(clean_content);
         }
     }
     
@@ -201,6 +274,51 @@ impl Home {
         content.contains("Disconnected from server") ||
         content.contains("Authentication") ||
         content.contains("Registration")
+    }
+    
+    /// Normalize message content to detect duplicates
+    fn normalize_message_content(&self, content: &str) -> String {
+        // Remove any username prefixes for comparison
+        if content.contains(": ") {
+            let parts: Vec<&str> = content.splitn(2, ": ").collect();
+            if parts.len() == 2 {
+                // Check if the second part still has a username prefix (double prefix case)
+                if parts[1].contains(": ") {
+                    let subparts: Vec<&str> = parts[1].splitn(2, ": ").collect();
+                    if subparts.len() == 2 {
+                        return subparts[1].to_string();
+                    }
+                }
+                return parts[1].to_string();
+            }
+        }
+        
+        // Remove common system message prefixes for better duplicate detection
+        let system_prefixes = ["Connected to", "Disconnected from", "Welcome", "joined", "left", "Error:", "ERROR:"];
+        for prefix in system_prefixes.iter() {
+            if content.contains(prefix) {
+                return content.replace("!", "").trim().to_string();
+            }
+        }
+        
+        content.to_string()
+    }
+    
+    /// Check if this message is already in the current room
+    fn is_duplicate_message(&self, content: &str) -> bool {
+        if let (Some(room_id), _) = (self.current_room_id, self.current_user_id) {
+            if let Some(room) = self.room_manager.get_room(&room_id) {
+                // Get the last few messages and check if any match
+                let messages = room.get_messages(Some(10)); // Specify how many messages to retrieve
+                for msg in messages.iter().rev().take(5) {
+                    let normalized = self.normalize_message_content(&msg.content);
+                    if normalized == content {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 
     /// Add a pre-formatted message from server (already contains sender: content format)
@@ -957,7 +1075,7 @@ impl Component for Home {
                 .wrap(Wrap { trim: false })
                 .block(
                     Block::default()
-                        .title_top(Line::from("v0.5.0".white()).left_aligned())
+                        .title_top(Line::from("v0.5.1".white()).left_aligned())
                         .title_top(Line::from(vec![
                             Span::styled("THE LAIR", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
                         ]).centered())

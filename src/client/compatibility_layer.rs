@@ -13,7 +13,7 @@ use tui_input::Input;
 use crate::connection_manager::ConnectionManager;
 use crate::transport::{
     ConnectionConfig, ConnectionObserver, ConnectionStatus, TransportError,
-    TuiObserver, CLIENT_STATUS, add_text_message
+    TuiObserver, CLIENT_STATUS, add_text_message, MESSAGES
 };
 
 /// Global ConnectionManager instance for compatibility

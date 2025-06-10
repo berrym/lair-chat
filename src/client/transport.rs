@@ -453,13 +453,13 @@ fn handle_incoming_message(message: String, shared_key: &str) {
                 format!("Server: {}", decrypted_message)
             };
             
-            // Just display the message directly in the UI
+            // Just display the message directly in the UI once
             // Avoid potential recursion with multiple action dispatches
             add_text_message(formatted_message.clone());
             
-            // Skip ConnectionManager bridge for now - simplify to ensure messages display
-            // Let the action system handle the message display instead
-            add_text_message(format!("{}", decrypted_message.clone()));
+            // Also update status bar for received message and forward to app
+            send_action(crate::action::Action::ReceiveMessage(formatted_message.clone()));
+            send_action(crate::action::Action::RecordReceivedMessage);
         }
         Err(e) => {
             tracing::error!("DEBUG: Failed to decrypt message: {}", e);
@@ -633,17 +633,8 @@ pub fn add_text_message(s: String) {
     // Add message to global text buffer
     MESSAGES.lock().unwrap().text.push(s.clone());
     
-    // Only send non-empty messages that aren't from the current user
-    if !s.is_empty() && !s.contains("You:") && !s.contains("STATUS:") && !s.contains("DEBUG:") {
-        // Send message through action system with a delay to ensure no recursion
-        let message = s.clone();
-        std::thread::spawn(move || {
-            // Small delay to avoid recursion issues
-            std::thread::sleep(std::time::Duration::from_millis(10));
-            tracing::info!("DEBUG: Sending received message through action system: '{}'", message);
-            send_action(crate::action::Action::ReceiveMessage(message));
-        });
-    }
+    // We don't need to send additional actions from here anymore
+    // The message is already in the UI, and we explicitly send actions when needed
 }
 
 /// Add a message to the outgoing buffer
