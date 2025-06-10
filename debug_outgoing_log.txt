@@ -1,0 +1,16 @@
+warning: use of deprecated function `transport::add_silent_outgoing_message`: Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+940 |     add_silent_outgoing_message(au...
+warning: use of deprecated function `transport::add_silent_outgoing_message`: Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+930 | ...t::add_silent_outgoing_message;
+warning: use of deprecated function `transport::add_silent_outgoing_message`: Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+117 |     add_silent_outgoing_message(au...
+warning: use of deprecated function `transport::add_silent_outgoing_message`: Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+106 | ...t::add_silent_outgoing_message;
+warning: use of deprecated function `transport::add_outgoing_message`: Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+156 | ...   add_outgoing_message(me...
+warning: use of deprecated function `transport::add_outgoing_message`: Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+152 | ...::{add_outgoing_message, C...
+warning: use of deprecated function `transport::add_outgoing_message`: Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+168 | ...   add_outgoing_message(me...
+warning: use of deprecated function `transport::add_outgoing_message`: Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+166 | ...::{add_outgoing_message};

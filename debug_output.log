@@ -1,0 +1,1021 @@
+=== LAIR CHAT DEBUG SESSION STARTED: Tue Jun 10 08:46:38 EDT 2025 ===
+Environment: RUST_LOG=trace
+Build: cargo 1.87.0 (99624be96 2025-05-06)
+======================================================
+
+warning: unused imports: `CLIENT_STATUS` and `ConnectionStatus`
+   --> src/client/app.rs:814:40
+    |
+814 | ...::{CLIENT_STATUS, ConnectionStatus};
+    |       ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `MESSAGES`
+  --> src/client/compatibility_layer.rs:15:77
+   |
+15 | ...rror, MESSAGES,
+   |          ^^^^^^^^
+
+warning: unused import: `Duration`
+ --> src/client/chat/mod.rs:5:17
+  |
+5 | ...time::{Duration, Syste...
+  |           ^^^^^^^^
+
+warning: unused import: `RoomId`
+ --> src/client/chat/users.rs:7:21
+  |
+7 | use super::{UserId, RoomId};
+  |                     ^^^^^^
+
+warning: unused imports: `RoomType` and `Room`
+  --> src/client/components/home.rs:17:25
+   |
+17 | ...r, Room, ChatMessage, MessageType, RoomUser, UserRole, RoomSettings, RoomType},
+   |       ^^^^                                                              ^^^^^^^^
+
+warning: unused import: `AsyncReadExt`
+ --> src/client/tcp_transport.rs:3:60
+  |
+3 | ...der, AsyncReadExt};
+  |         ^^^^^^^^^^^^
+
+warning: ambiguous glob re-exports
+  --> src/lib.rs:65:13
+   |
+65 |       pub use super::{
+   |  _____________^
+66 | |         action::*,
+67 | |         aes_gcm_encryp...
+68 | |         app::*,
+...  |
+79 | |         logging::*,
+   | |         ---------- but the name `init` in the value namespace is also re-exported here
+...  |
+85 | |     };
+   | |_____^ the name `init` in the value namespace is first re-exported here
+   |
+   = note: `#[warn(ambiguous_glob_reexports)]` on by default
+
+warning: ambiguous glob re-exports
+  --> src/lib.rs:65:13
+   |
+65 |       pub use super::{
+   |  _____________^
+66 | |         action::*,
+67 | |         aes_gcm_encrypt...
+68 | |         app::*,
+...  |
+82 | |         transport::*,
+   | |         ------------ but the name `connect_client` in the value namespace is also re-exported here
+...  |
+85 | |     };
+   | |_____^ the name `connect_client` in the value namespace is first re-exported here
+
+warning: ambiguous glob re-exports
+  --> src/lib.rs:65:13
+   |
+65 |       pub use super::{
+   |  _____________^
+66 | |         action::*,
+67 | |         aes_gcm_encrypt...
+68 | |         app::*,
+...  |
+82 | |         transport::*,
+   | |         ------------ but the name `disconnect_client` in the value namespace is also re-exported here
+...  |
+85 | |     };
+   | |_____^ the name `disconnect_client` in the value namespace is first re-exported here
+
+warning: ambiguous glob re-exports
+  --> src/lib.rs:65:13
+   |
+65 |       pub use super::{
+   |  _____________^
+66 | |         action::*,
+67 | |         aes_gcm_encryp...
+68 | |         app::*,
+69 | |         auth::*,
+70 | |         chat::*,
+   | |         ------- but the name `MessageType` in the type namespace is also re-exported here
+...  |
+85 | |     };
+   | |_____^ the name `MessageType` in the type namespace is first re-exported here
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/app.rs:879:40
+    |
+879 | ...::{CLIENT_STATUS, Co...
+    |       ^^^^^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated function `compatibility_layer::connect_client_compat`: Use ConnectionManager.connect() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/app.rs:880:49
+    |
+880 | ...r::connect_client_compat;
+    |       ^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_silent_outgoing_message`: Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/app.rs:940:5
+    |
+940 |     add_silent_outgoing_message(au...
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_silent_outgoing_message`: Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/app.rs:930:27
+    |
+930 | ...t::add_silent_outgoing_message;
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::connect_client_compat`: Use ConnectionManager.connect() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/app.rs:887:31
+    |
+887 | ...ch connect_client_compat(in...
+    |       ^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/app.rs:889:33
+    |
+889 | ...   CLIENT_STATUS.loc...
+    |       ^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::MESSAGES`: Use ConnectionManager with proper observers instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/compatibility_layer.rs:15:77
+   |
+15 | ...rror, MESSAGES,
+   |          ^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/compatibility_layer.rs:16:18
+   |
+16 | ...er, CLIENT_STATUS, ad...
+   |        ^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/compatibility_layer.rs:16:33
+   |
+16 | ...S, add_text_message
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/compatibility_layer.rs:95:5
+   |
+95 |     add_text_message(for...
+   |     ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::connect_client`: Use ConnectionManager.connect() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/compatibility_layer.rs:98:5
+   |
+98 |     connect_client(input...
+   |     ^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::connect_client`: Use ConnectionManager.connect() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/compatibility_layer.rs:93:27
+   |
+93 | ...t::connect_client;
+   |       ^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:116:5
+    |
+116 |     add_text_message("S...
+    |     ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_silent_outgoing_message`: Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:117:5
+    |
+117 |     add_silent_outgoing_message(au...
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_silent_outgoing_message`: Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:106:27
+    |
+106 | ...t::add_silent_outgoing_message;
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::disconnect_client`: Use ConnectionManager.disconnect() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:127:5
+    |
+127 |     disconnect_client()....
+    |     ^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::disconnect_client`: Use ConnectionManager.disconnect() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:125:27
+    |
+125 | ...t::disconnect_client;
+    |       ^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:141:35
+    |
+141 | ... = CLIENT_STATUS.try...
+    |       ^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:154:25
+    |
+154 | ... = CLIENT_STATUS.loc...
+    |       ^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_outgoing_message`: Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:156:9
+    |
+156 | ...   add_outgoing_message(me...
+    |       ^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_outgoing_message`: Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:152:28
+    |
+152 | ...::{add_outgoing_message, C...
+    |       ^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:152:50
+    |
+152 | ...e, CLIENT_STATUS, Co...
+    |       ^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/compatibility_layer.rs:33:9
+   |
+33 | ...   add_text_message(fo...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/compatibility_layer.rs:38:33
+   |
+38 | ...) = CLIENT_STATUS.try...
+   |        ^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/compatibility_layer.rs:48:13
+   |
+48 | ...   add_text_message("S...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/compatibility_layer.rs:50:13
+   |
+50 | ...   add_text_message("S...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/components/home.rs:183:17
+    |
+183 | ...   add_text_message(co...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/components/home.rs:188:13
+    |
+188 | ...   add_text_message(co...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/components/home.rs:202:13
+    |
+202 | ...   add_text_message(fo...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/components/home.rs:565:24
+    |
+565 | ...if CLIENT_STATUS.loc...
+    |       ^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/components/home.rs:572:24
+    |
+572 | ...if CLIENT_STATUS.loc...
+    |       ^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/components/home.rs:580:24
+    |
+580 | ...if CLIENT_STATUS.loc...
+    |       ^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/components/home.rs:602:24
+    |
+602 | ...if CLIENT_STATUS.loc...
+    |       ^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/components/home.rs:622:41
+    |
+622 | ... = CLIENT_STATUS.loc...
+    |       ^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+ --> src/client/errors/display.rs:4:23
+  |
+4 | ...t::add_text_message;
+  |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:45:9
+   |
+45 | ...   add_text_message(" ...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:46:9
+   |
+46 | ...   add_text_message(fo...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:47:9
+   |
+47 | ...   add_text_message(fo...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:49:13
+   |
+49 | ...   add_text_message(fo...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:51:9
+   |
+51 | ...   add_text_message(" ...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:56:9
+   |
+56 | ...   add_text_message(" ...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:57:9
+   |
+57 | ...   add_text_message(fo...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:58:9
+   |
+58 | ...   add_text_message("💡 ...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:59:9
+   |
+59 | ...   add_text_message(" ...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:64:9
+   |
+64 | ...   add_text_message(" ...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:65:9
+   |
+65 | ...   add_text_message(fo...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:66:9
+   |
+66 | ...   add_text_message(" ...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:71:9
+   |
+71 | ...   add_text_message(" ...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:72:9
+   |
+72 | ...   add_text_message(fo...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:73:9
+   |
+73 | ...   add_text_message(" ...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:78:9
+   |
+78 | ...   add_text_message(" ...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:79:9
+   |
+79 | ...   add_text_message(fo...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:80:9
+   |
+80 | ...   add_text_message(" ...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:85:9
+   |
+85 | ...   add_text_message(" ...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:86:9
+   |
+86 | ...   add_text_message("🔌 ...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:87:9
+   |
+87 | ...   add_text_message("💡 ...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:88:9
+   |
+88 | ...   add_text_message(" ...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:93:9
+   |
+93 | ...   add_text_message(" ...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:94:9
+   |
+94 | ...   add_text_message("... 
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:95:9
+   |
+95 | ...   add_text_message(" ...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:96:9
+   |
+96 | ...   add_text_message(" ...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:97:9
+   |
+97 | ...   add_text_message(" ...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:98:9
+   |
+98 | ...   add_text_message(" ...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:99:9
+   |
+99 | ...   add_text_message(" ...
+   |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/errors/display.rs:104:9
+    |
+104 | ...   add_text_message(" ...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/errors/display.rs:105:9
+    |
+105 | ...   add_text_message("💬 ...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/errors/display.rs:106:9
+    |
+106 | ...   add_text_message(" ...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/errors/display.rs:107:9
+    |
+107 | ...   add_text_message(" ...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/errors/display.rs:108:9
+    |
+108 | ...   add_text_message(" ...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/errors/display.rs:109:9
+    |
+109 | ...   add_text_message(" ...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/errors/display.rs:110:9
+    |
+110 | ...   add_text_message(" ...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/errors/display.rs:111:9
+    |
+111 | ...   add_text_message(" ...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::connect_client`: Use ConnectionManager.connect() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/migration_facade.rs:13:39
+   |
+13 | ...r, connect_client as ...
+   |       ^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::disconnect_client`: Use ConnectionManager.disconnect() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/migration_facade.rs:14:5
+   |
+14 |     disconnect_client as...
+   |     ^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/migration_facade.rs:14:52
+   |
+14 | ...nt, CLIENT_STATUS,
+   |        ^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::connect_client_compat`: Use ConnectionManager.connect() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/migration_facade.rs:17:5
+   |
+17 |     connect_client_compat, d...
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::disconnect_client_compat`: Use ConnectionManager.disconnect() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/migration_facade.rs:17:28
+   |
+17 | ...t, disconnect_client_compat, g...
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::get_connection_status_compat`: Use ConnectionManager.get_status() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/migration_facade.rs:17:54
+   |
+17 | ...t, get_connection_status_compat,
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::send_message_compat`: Use ConnectionManager.send_message() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/migration_facade.rs:18:5
+   |
+18 |     send_message_compat, i...
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::is_using_new_architecture`: This function will be removed when compatibility layer is eliminated in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/migration_facade.rs:18:26
+   |
+18 | ...t, is_using_new_architecture, m...
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::migrate_to_new_architecture`: This function will be removed when compatibility layer is eliminated in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/migration_facade.rs:18:53
+   |
+18 | ...e, migrate_to_new_architecture,
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::cleanup_compatibility_layer`: This cleanup function will no longer be needed when compatibility layer is removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/migration_facade.rs:19:5
+   |
+19 |     cleanup_compatibility_layer,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::connect_client_compat`: Use ConnectionManager.connect() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:100:9
+    |
+100 | ...   connect_client_compat(in...
+    |       ^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::connect_client`: Use ConnectionManager.connect() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:103:9
+    |
+103 | ...   legacy_connect_client(in...
+    |       ^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::disconnect_client_compat`: Use ConnectionManager.disconnect() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:112:9
+    |
+112 | ...   disconnect_client_compat()....
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::disconnect_client`: Use ConnectionManager.disconnect() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:115:9
+    |
+115 | ...   legacy_disconnect_client()....
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::get_connection_status_compat`: Use ConnectionManager.get_status() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:123:9
+    |
+123 | ...   get_connection_status_compat()....
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:126:35
+    |
+126 | ... = CLIENT_STATUS.try...
+    |       ^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::send_message_compat`: Use ConnectionManager.send_message() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:150:22
+    |
+150 | ... = send_message_compat(me...
+    |       ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_outgoing_message`: Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:168:9
+    |
+168 | ...   add_outgoing_message(me...
+    |       ^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_outgoing_message`: Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:166:32
+    |
+166 | ...::{add_outgoing_message};
+    |       ^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:185:35
+    |
+185 | ... = CLIENT_STATUS.try...
+    |       ^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::disconnect_client`: Use ConnectionManager.disconnect() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:194:9
+    |
+194 | ...   legacy_disconnect_client()....
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::migrate_to_new_architecture`: This function will be removed when compatibility layer is eliminated in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:201:5
+    |
+201 |     migrate_to_new_architecture(_a...
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::get_connection_status_compat`: Use ConnectionManager.get_status() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:221:25
+    |
+221 | ... = get_connection_status_compat()....
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::disconnect_client_compat`: Use ConnectionManager.disconnect() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:225:9
+    |
+225 | ...   disconnect_client_compat()....
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::cleanup_compatibility_layer`: This cleanup function will no longer be needed when compatibility layer is removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:229:5
+    |
+229 |     cleanup_compatibility_layer()....
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::is_using_new_architecture`: This function will be removed when compatibility layer is eliminated in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:245:9
+    |
+245 | ...   is_using_new_architecture()....
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::MESSAGES`: Use ConnectionManager with proper observers instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:369:23
+    |
+369 | ...pty = MESSAGES.lock(...
+    |          ^^^^^^^^
+
+warning: use of deprecated static `transport::MESSAGES`: Use ConnectionManager with proper observers instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:370:26
+    |
+370 | ...nts = MESSAGES.lock(...
+    |          ^^^^^^^^
+
+warning: use of deprecated static `transport::MESSAGES`: Use ConnectionManager with proper observers instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:375:46
+    |
+375 | ...ng> = MESSAGES
+    |          ^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:414:25
+    |
+414 | ...   add_text_message(fo...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:419:21
+    |
+419 | ...   add_text_message(fo...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::MESSAGES`: Use ConnectionManager with proper observers instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:426:32
+    |
+426 | ...ges = MESSAGES.lock(...
+    |          ^^^^^^^^
+
+warning: use of deprecated function `transport::send_action`: Use ConnectionManager observer pattern instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:445:13
+    |
+445 | ...   send_action(crate...
+    |       ^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:450:13
+    |
+450 | ...   add_text_message(er...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:464:13
+    |
+464 | ...   add_text_message(fo...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:467:13
+    |
+467 | ...   add_text_message(fo...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:476:5
+    |
+476 |     CLIENT_STATUS.lock(...
+    |     ^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::MESSAGES`: Use ConnectionManager with proper observers instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:616:5
+    |
+616 |     MESSAGES.lock().unw...
+    |     ^^^^^^^^
+
+warning: use of deprecated static `transport::MESSAGES`: Use ConnectionManager with proper observers instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:629:28
+    |
+629 | ...ges = MESSAGES.lock(...
+    |          ^^^^^^^^
+
+warning: use of deprecated static `transport::ACTION_SENDER`: Use ConnectionManager with proper observer pattern instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:641:6
+    |
+641 |     *ACTION_SENDER.lock...
+    |      ^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::ACTION_SENDER`: Use ConnectionManager with proper observer pattern instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:648:27
+    |
+648 | ... = ACTION_SENDER.loc...
+    |       ^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::MESSAGES`: Use ConnectionManager with proper observers instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:665:24
+    |
+665 | ...ges = MESSAGES.lock(...
+    |          ^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:678:5
+    |
+678 |     add_text_message(fo...
+    |     ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:682:9
+    |
+682 | ...   add_text_message("C...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:683:9
+    |
+683 | ...   add_text_message(""...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:686:13
+    |
+686 | ...   CLIENT_STATUS.loc...
+    |       ^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:694:9
+    |
+694 | ...   add_text_message("F...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:695:9
+    |
+695 | ...   add_text_message(""...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:735:13
+    |
+735 | ...   add_text_message(fo...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:771:21
+    |
+771 | ...   add_text_message("T...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:778:21
+    |
+778 | ...   add_text_message(fo...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:797:8
+    |
+797 |     if CLIENT_STATUS.lo...
+    |        ^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::MESSAGES`: Use ConnectionManager with proper observers instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:799:9
+    |
+799 | ...   MESSAGES.lock().u...
+    |       ^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:800:9
+    |
+800 | ...   add_text_message("D...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:801:9
+    |
+801 | ...   CLIENT_STATUS.loc...
+    |       ^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::MESSAGES`: Use ConnectionManager with proper observers instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:803:9
+    |
+803 | ...   MESSAGES.lock().u...
+    |       ^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:805:9
+    |
+805 | ...   add_text_message("N...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:102:9
+    |
+102 | ...   add_text_message(fo...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:107:13
+    |
+107 | ...   add_text_message("C...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:109:13
+    |
+109 | ...   add_text_message("D...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:123:9
+    |
+123 | ...   add_text_message(fo...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:128:13
+    |
+128 | ...   add_text_message("S...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:130:13
+    |
+130 | ...   add_text_message("S...
+    |       ^^^^^^^^^^^^^^^^
+
+warning: unused variable: `transport`
+   --> src/client/connection_manager.rs:184:21
+    |
+184 | ...Some(transport) = &s...
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_transport`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `status`
+  --> src/client/app.rs:75:13
+   |
+75 | ... let status = if conn...
+   |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_status`
+
+warning: unused variable: `auth_manager`
+   --> src/client/app.rs:532:13
+    |
+532 | ...et auth_manager = if...
+    |       ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_auth_manager`
+
+warning: unused variable: `auth_state`
+   --> src/client/app.rs:532:40
+    |
+532 | ...me(auth_state) = tok...
+    |       ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_auth_state`
+
+warning: unused variable: `cancel_token`
+   --> src/client/transport.rs:706:9
+    |
+706 | ...et cancel_token = CA...
+    |       ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_cancel_token`
+
+warning: variable does not need to be mutable
+   --> src/client/transport.rs:704:9
+    |
+704 | ...et mut stream = reader;
+    |       ----^^^^^^
+    |       |
+    |       help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` on by default
+
+warning: variable does not need to be mutable
+   --> src/client/transport.rs:705:9
+    |
+705 |     let mut sink = writer;
+    |         ----^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: methods `handle_modern_login` and `handle_modern_register` are never used
+   --> src/client/app.rs:525:8
+    |
+96  | impl App {
+    | -------- methods in this implementation
+...
+525 |     fn handle_modern_login(&mut ...
+    |        ^^^^^^^^^^^^^^^^^^^
+...
+599 |     fn handle_modern_register(&m...
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` on by default
+
+warning: method `show_dialog` is never used
+   --> src/client/components/home.rs:207:8
+    |
+105 | impl Home {
+    | --------- method in this implementation
+...
+207 |     fn show_dialog(&mut...
+    |        ^^^^^^^^^^^
+
+warning: field `config` is never read
+  --> src/client/connection_manager.rs:31:5
+   |
+30 | pub struct ConnectionManager {
+   |            ----------------- field in this struct
+31 |     config: ConnectionConfig,
+   |     ^^^^^^
+
+warning: creating a shared reference to mutable static is discouraged
+   --> src/client/errors/display.rs:128:9
+    |
+128 | ...   GLOBAL_ERROR_DISPLAY.as_ref().un...
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ shared reference to mutable static
+    |
+    = note: for more information, see <https://doc.rust-lang.org/nightly/edition-guide/rust-2024/static-mut-references.html>
+    = note: shared references to mutable statics are dangerous; it's undefined behavior if the static is mutated or if a mutable reference is created for it while the shared reference lives
+    = note: `#[warn(static_mut_refs)]` on by default
+
+warning: creating a shared reference to mutable static is discouraged
+   --> src/client/errors/display.rs:131:13
+    |
+131 | ...   GLOBAL_ERROR_DISPLAY.as_ref().un...
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ shared reference to mutable static
+    |
+    = note: for more information, see <https://doc.rust-lang.org/nightly/edition-guide/rust-2024/static-mut-references.html>
+    = note: shared references to mutable statics are dangerous; it's undefined behavior if the static is mutated or if a mutable reference is created for it while the shared reference lives
+
+warning: `lair-chat` (lib) generated 157 warnings (run `cargo fix --lib -p lair-chat` to apply 8 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.27s
+     Running `target/debug/lair-chat-client`
+[?1049h[?25l[1;12H[38;5;6;49m┌Lair Chat - Login──────────────────────────────┐[2;12H│┌Authentication Mode──────────────────────────┐│[3;12H│└─────────────────────────────────────────────┘│[4;12H│                                               │[5;12H│[1m[38;5;3;49m┌Username (FOCUSED - Type here)───────────────┐[22m[38;5;6;49m│[6;12H│[1m[38;5;3;49m│|                                            │[22m[38;5;6;49m│[7;12H│[1m[38;5;3;49m└─────────────────────────────────────────────┘[22m[38;5;6;49m│[8;12H│[38;5;7;49m┌Password─────────────────────────────────────┐[38;5;6;49m│[9;12H│[38;5;7;49m│[38;5;15;49m                                             [38;5;7;49m│[38;5;6;49m│[10;12H│[38;5;7;49m└─────────────────────────────────────────────┘[38;5;6;49m│[11;12H│[38;5;7;49m┌Server───────────────────────────────────────┐[38;5;6;49m│[12;12H│[38;5;7;49m│[38;5;15;49m127.0.0.1                                    [38;5;7;49m│[38;5;6;49m│[13;12H│[38;5;7;49m└─────────────────────────────────────────────┘[38;5;6;49m│[14;12H│[38;5;7;49m┌Port─────────────────────────────────────────┐[38;5;6;49m│[15;12H│[38;5;7;49m│[38;5;15;49m8080                                         [38;5;7;49m│[38;5;6;49m│[16;12H│[38;5;7;49m└─────────────────────────────────────────────┘[38;5;6;49m│[17;12H│[38;5;4;49mPress ? for help                               [38;5;6;49m│[18;12H│                                               │[19;12H│                                               │[20;12H└───────────────────────────────────────────────┘[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[6;14H[1m[38;5;3;49ml|[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[6;15H[1m[38;5;3;49mu|[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[6;16H[1m[38;5;3;49ms|[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[6;17H[1m[38;5;3;49mu|[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[6;18H[1m[38;5;3;49ms|[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[5;13H[38;5;7;49m┌Username─────────────────────────────────────┐[6;13H│[38;5;15;49mlusus                                        [38;5;7;49m│[7;13H└─────────────────────────────────────────────┘[8;13H[1m[38;5;3;49m┌Password (FOCUSED - Type here)───────────────┐[9;13H│|                                            │[10;13H└─────────────────────────────────────────────┘[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[9;14H[1m[38;5;3;49m•|[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[9;15H[1m[38;5;3;49m•|[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[9;16H[1m[38;5;3;49m•|[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[9;17H[1m[38;5;3;49m•|[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[9;18H[1m[38;5;3;49m•|[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[9;18H[1m[38;5;3;49m| [39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[9;17H[1m[38;5;3;49m| [39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[9;16H[1m[38;5;3;49m| [39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[9;15H[1m[38;5;3;49m| [39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[9;14H[1m[38;5;3;49m| [39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[9;14H[1m[38;5;3;49m•|[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[9;15H[1m[38;5;3;49m•|[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[9;16H[1m[38;5;3;49m•|[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[9;17H[1m[38;5;3;49m•|[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[9;18H[1m[38;5;3;49m•|[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[9;19H[1m[38;5;3;49m•|[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[9;20H[1m[38;5;3;49m•|[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[9;21H[1m[38;5;3;49m•|[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[1;1H[38;5;3;49m┌Please Wait──────────────────────────────────────────────────────────┐[2;1H│Authenticating and connecting...                                     │[3;1H│                                                                     │[4;1H│                                                                     │[5;1H│                                                                     │[6;1H│                                                                     │[7;1H│                                                                     │[8;1H│                                                                     │[9;1H│                                                                     │[10;1H│                                                                     │[11;1H│                                                                     │[12;1H│                                                                     │[13;1H│                                                                     │[14;1H│                                                                     │[15;1H│                                                                     │[16;1H│                                                                     │[17;1H│                                                                     │[18;1H│                                                                     │[19;1H│                                                                     │[20;1H└─────────────────────────────────────────────────────────────────────┘[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[1;1H                                                                       [2;1H                                                                       [3;1H                                                                       [4;1H                                                                       [5;1H                                                                       [6;1H                                                                       [7;1H                                                                       [8;1H                                                                       [9;1H                                                                       [10;1H                                                                       [11;1H                                                                       [12;1H                                                                       [13;1H                                                                       [14;1H                                                                       [15;1H                                                                       [16;1H                                                                       [17;1H                                                                       [18;1H                                                                       [19;1H                                                                       [20;1H                                                                       [39m[49m[59m[0m[?1049l[?25h[?25h

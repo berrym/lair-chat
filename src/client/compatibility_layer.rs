@@ -91,13 +91,40 @@ async fn get_or_create_manager(address: SocketAddr) -> Result<(), TransportError
 #[deprecated(since = "0.5.1", note = "Use ConnectionManager.connect() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
 pub async fn connect_client_compat(input: Input, address: SocketAddr) -> Result<(), TransportError> {
     use crate::transport::connect_client;
+    use tokio::net::TcpStream;
+    use tokio::time::{timeout, Duration};
     
     add_text_message(format!("Connecting to {} using legacy transport...", address));
     
-    // Use the old transport system that handles encryption properly
-    connect_client(input, address).await;
-    
-    Ok(())
+    // First verify we can actually connect to the server
+    match timeout(Duration::from_secs(5), TcpStream::connect(address)).await {
+        Ok(Ok(_stream)) => {
+            tracing::info!("DEBUG: TCP connection test successful to {}", address);
+            // Connection works, now use the legacy transport system
+            connect_client(input, address).await;
+            
+            // Give the transport loop time to start
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            
+            // Verify transport loop is actually running by checking if connection is active
+            let status = crate::transport::CLIENT_STATUS.lock().unwrap().status.clone();
+            if status == crate::transport::ConnectionStatus::CONNECTED {
+                tracing::info!("DEBUG: Legacy transport connection established successfully");
+                Ok(())
+            } else {
+                tracing::error!("DEBUG: Legacy transport failed to establish connection");
+                Err(TransportError::ConnectionError(std::io::Error::new(std::io::ErrorKind::ConnectionRefused, format!("Transport failed to connect to {}", address))))
+            }
+        }
+        Ok(Err(e)) => {
+            tracing::error!("DEBUG: TCP connection failed to {}: {}", address, e);
+            Err(TransportError::ConnectionError(e))
+        }
+        Err(_) => {
+            tracing::error!("DEBUG: TCP connection timed out to {}", address);
+            Err(TransportError::ConnectionError(std::io::Error::new(std::io::ErrorKind::TimedOut, format!("Connection timeout to {}", address))))
+        }
+    }
 }
 
 /// Send authentication request using legacy transport system

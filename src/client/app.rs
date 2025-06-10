@@ -144,6 +144,7 @@ impl App {
         self.init_components(size.into())?;
 
         // Set up action sender for transport layer to update status bar (legacy compatibility)
+        // This is needed because authentication still uses legacy transport
         #[allow(deprecated)]
         crate::transport::set_action_sender(self.action_tx.clone());
 
@@ -395,6 +396,7 @@ impl App {
             }
             
             Action::SendMessage(message) => {
+                info!("DEBUG: SendMessage action received: '{}'", message);
                 self.handle_modern_send_message(message.clone());
             }
             
@@ -402,6 +404,8 @@ impl App {
                 // Modern message handling through observer pattern
                 // Observer has already received the message, now handle UI updates
                 info!("ACTION: ReceiveMessage handler called with: '{}'", message);
+                info!("DEBUG: Current auth_state: {:?}", self.auth_state);
+                info!("DEBUG: Chat initialized: {}", self.home_component.is_chat_initialized());
                 
                 // Check if this is an authentication response from server
                 if message.contains("Welcome back") || 
@@ -469,16 +473,29 @@ impl App {
                     warn!("Chat not initialized, attempting to initialize with default user");
                     if let Err(e) = self.home_component.initialize_chat("DefaultUser".to_string()) {
                         error!("Failed to initialize chat: {}", e);
+                    } else {
+                        info!("DEBUG: Successfully initialized chat with DefaultUser");
                     }
+                } else {
+                    info!("DEBUG: Chat already initialized, proceeding with message handling");
                 }
                 
-                // Revert to legacy fallback until message system is fixed
-                #[allow(deprecated)]
-                crate::transport::add_text_message(message.to_string());
+                // Modern message handling through room system
+                info!("DEBUG: Adding message to room: '{}'", message);
+                self.home_component.add_message_to_room(message.to_string(), true);
                 
                 // Update status bar message count
                 self.status_bar.record_received_message();
                 info!("Message added to room and status updated: {}", message);
+            }
+            
+            Action::MessageSent(message) => {
+                // Handle sent messages from ConnectionManager
+                info!("ACTION: MessageSent handler called with: '{}'", message);
+                
+                // Add sent message to the room display
+                self.home_component.add_message_to_room(message.to_string(), false);
+                info!("Sent message added to room: {}", message);
             }
             
             Action::Error(error) => {
@@ -660,20 +677,27 @@ impl App {
         let connection_status = self.get_connection_status();
         
         if connection_status == crate::transport::ConnectionStatus::CONNECTED {
-            info!("Sending message via legacy transport (connection_status: {:?}): '{}'", connection_status, message);
+            info!("Sending message via ConnectionManager (connection_status: {:?}): '{}'", connection_status, message);
             
-            // Use legacy transport directly since it's what's actually connected
-            // TODO: Replace with ConnectionManager when fully integrated
+            // Use legacy transport for compatibility since authentication still uses legacy system
+            // TODO: Replace with direct ConnectionManager usage when fully integrated
             #[allow(deprecated)]
             use crate::transport::add_outgoing_message;
             #[allow(deprecated)]
             add_outgoing_message(message.clone());
             
+            info!("DEBUG: Message queued in legacy transport outgoing queue: {}", message);
+            info!("Message sent via legacy transport: {}", message);
+            
+            // Add sent message to display immediately for sending client
+            let sent_message = format!("You: {}", message);
+            info!("DEBUG: Adding sent message to room display: '{}'", sent_message);
+            self.home_component.add_message_to_room(sent_message, true);
+            
             // Update status bar message count
             self.status_bar.record_sent_message();
             
-            // Note: Legacy transport will add "You: {message}" to display automatically
-            info!("Message queued successfully via legacy transport: {}", message);
+            info!("Message queued for sending via ConnectionManager: {}", message);
         } else {
             warn!("Cannot send message - client not connected (status: {:?}): {}", connection_status, message);
             // Use modern error handling for connection failures
@@ -787,7 +811,7 @@ impl App {
                 // DEPRECATED: Using legacy transport and compatibility layer
                 // TODO: Replace with direct ConnectionManager usage in v0.6.0
                 #[allow(deprecated)]
-                use crate::transport::{CLIENT_STATUS, ConnectionStatus, add_text_message};
+                use crate::transport::{CLIENT_STATUS, ConnectionStatus};
                 #[allow(deprecated)]
                 use crate::compatibility_layer::connect_client_compat;
                 
@@ -824,26 +848,19 @@ impl App {
                                     }
                                     Err(e) => {
                                         error!("Failed to send authentication request for {}: {}", creds.username, e);
-                                        #[allow(deprecated)]
-                                        add_text_message(format!("Authentication failed: {}", e));
-                                        let _ = tx.send(Action::AuthenticationFailure("Failed to send authentication request".to_string()));
+                                        let _ = tx.send(Action::AuthenticationFailure(format!("Authentication failed: {}", e)));
                                     }
                                 }
                             }
                             Err(e) => {
                                 error!("Connection failed to {}: {}", server_addr, e);
-                                add_text_message(format!("Failed to connect to {}: {}", server_addr, e));
-                                add_text_message("Authentication failed - could not connect to server".to_string());
-                                add_text_message("Retrying connection may help if server is starting up...".to_string());
-                                add_text_message("Start the server with: cargo run --bin lair-chat-server".to_string());
                                 let detailed_error = format!("Connection to {} failed: {}. This could be due to: (1) Server not running - start with 'cargo run --bin lair-chat-server', (2) Server starting up - wait a moment and retry, (3) Port already in use, (4) Firewall blocking connection, (5) Server crashed or not listening properly.", server_addr, e);
                                 let _ = tx.send(Action::AuthenticationFailure(detailed_error));
                             }
                         }
                     }
                     Err(_) => {
-                        add_text_message(format!("Invalid server address: {}", server_addr));
-                        let _ = tx.send(Action::AuthenticationFailure("Invalid server address format".to_string()));
+                        let _ = tx.send(Action::AuthenticationFailure(format!("Invalid server address: {}", server_addr)));
                     }
                 }
             }
@@ -859,7 +876,7 @@ impl App {
             let creds = credentials.clone();
             let server_addr = server_address.clone();
             async move {
-                use crate::transport::{CLIENT_STATUS, ConnectionStatus, add_text_message};
+                use crate::transport::{CLIENT_STATUS, ConnectionStatus};
                 use crate::compatibility_layer::connect_client_compat;
                 
                 // Try to connect to the server first
@@ -885,25 +902,19 @@ impl App {
                                     }
                                     Err(e) => {
                                         error!("Failed to send registration request for {}: {}", creds.username, e);
-                                        add_text_message(format!("Registration failed: {}", e));
-                                        let _ = tx.send(Action::AuthenticationFailure("Failed to send registration request".to_string()));
+                                        let _ = tx.send(Action::AuthenticationFailure(format!("Registration failed: {}", e)));
                                     }
                                 }
                             }
                             Err(e) => {
                                 error!("Registration connection failed to {}: {}", server_addr, e);
-                                add_text_message(format!("Failed to connect to {}: {}", server_addr, e));
-                                add_text_message("Registration failed - could not connect to server".to_string());
-                                add_text_message("Retrying connection may help if server is starting up...".to_string());
-                                add_text_message("Start the server with: cargo run --bin lair-chat-server".to_string());
                                 let detailed_error = format!("Connection to {} failed: {}. This could be due to: (1) Server not running - start with 'cargo run --bin lair-chat-server', (2) Server starting up - wait a moment and retry, (3) Port already in use, (4) Firewall blocking connection, (5) Server crashed or not listening properly.", server_addr, e);
                                 let _ = tx.send(Action::AuthenticationFailure(detailed_error));
                             }
                         }
                     }
                     Err(_) => {
-                        add_text_message(format!("Invalid server address: {}", server_addr));
-                        let _ = tx.send(Action::AuthenticationFailure("Invalid server address format".to_string()));
+                        let _ = tx.send(Action::AuthenticationFailure(format!("Invalid server address: {}", server_addr)));
                     }
                 }
             }
@@ -916,7 +927,7 @@ impl App {
 
 /// Send registration request to server
 async fn register_compat(username: String, password: String) -> Result<(), crate::transport::TransportError> {
-    use crate::transport::{add_silent_outgoing_message, add_text_message};
+    use crate::transport::add_silent_outgoing_message;
     
     let auth_request = serde_json::json!({
         "username": username,
@@ -925,7 +936,7 @@ async fn register_compat(username: String, password: String) -> Result<(), crate
         "is_registration": true
     });
     
-    add_text_message("Sending registration request...".to_string());
+    // Registration request message will be handled via action system
     add_silent_outgoing_message(auth_request.to_string());
     
     Ok(())

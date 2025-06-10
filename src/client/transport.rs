@@ -25,6 +25,10 @@ use async_trait::async_trait;
 use crate::components::home::get_user_input;
 use crate::action::Action;
 use super::encryption::{encrypt, decrypt, EncryptionError};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+// Global counter to track transport instances for debugging
+static TRANSPORT_INSTANCE_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 /// Trait abstraction for encryption operations
 #[async_trait]
@@ -358,51 +362,90 @@ async fn process_outgoing_messages(
     sink: &mut ClientSink,
     shared_key: &str,
 ) -> Result<(), TransportError> {
-    if !MESSAGES.lock().unwrap().outgoing.is_empty() {
+    // Get current thread info for debugging
+    let thread_id = std::thread::current().id();
+    tracing::debug!("DEBUG: process_outgoing_messages called on thread: {:?}", thread_id);
+    
+    let queue_empty = MESSAGES.lock().unwrap().outgoing.is_empty();
+    let queue_contents = MESSAGES.lock().unwrap().outgoing.clone();
+    
+    tracing::debug!("DEBUG: Queue check - empty: {}, contents: {:?}", queue_empty, queue_contents);
+    
+    if !queue_empty {
         let outgoing_messages: Vec<String> = MESSAGES
             .lock()
             .unwrap()
             .outgoing
             .clone();
             
+        tracing::info!("DEBUG: process_outgoing_messages found {} queued messages: {:?}", outgoing_messages.len(), outgoing_messages);
+            
         for original_message in outgoing_messages {
-            // Check if this is a silent message (authentication request)
+            tracing::info!("DEBUG: Processing outgoing message: '{}'", original_message);
+            
+            // Check if this is a "silent" message (used for auth, etc.)
             let (is_silent, actual_message) = if original_message.starts_with("SILENT:") {
                 (true, original_message.strip_prefix("SILENT:").unwrap_or(&original_message).to_string())
             } else {
                 (false, original_message.clone())
             };
             
+            tracing::info!("DEBUG: Message type - is_silent: {}, actual_message: '{}'", is_silent, actual_message);
+            
             match encrypt(shared_key.to_string(), actual_message.clone()) {
                 Ok(encrypted_message) => {
-                    let _ = sink.tx.send(encrypted_message).await;
+                    tracing::info!("DEBUG: Message encrypted successfully, sending via sink.tx");
+                    let result = sink.tx.send(encrypted_message).await;
+                    match result {
+                        Ok(_) => {
+                            tracing::info!("DEBUG: Message sent successfully via sink.tx");
+                        }
+                        Err(e) => {
+                            tracing::error!("DEBUG: Failed to send message via sink.tx: {}", e);
+                        }
+                    }
                     
                     // Add small delay to ensure proper message ordering
                     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
                     
                     // Only show non-silent messages in chat after sending
                     if !is_silent {
+                        tracing::info!("DEBUG: Adding sent message to legacy display: 'You: {}'", actual_message);
                         add_text_message(format!("You: {}", actual_message));
                     }
                 }
                 Err(e) => {
+                    tracing::error!("DEBUG: Failed to encrypt message '{}': {}", actual_message, e);
                     add_text_message(format!("Failed to encrypt message: {}", e));
                 }
             }
         }
-        MESSAGES.lock().unwrap().outgoing.clear();
+        
+        // Clear the queue and log what we're clearing
+        {
+            let mut messages = MESSAGES.lock().unwrap();
+            let cleared_count = messages.outgoing.len();
+            messages.outgoing.clear();
+            tracing::info!("DEBUG: Cleared {} messages from outgoing queue", cleared_count);
+        }
+    } else {
+        tracing::debug!("DEBUG: No outgoing messages to process (queue empty or inaccessible)");
     }
     Ok(())
 }
 
 /// Handle incoming message by decrypting and displaying it
 fn handle_incoming_message(message: String, shared_key: &str) {
+    tracing::info!("DEBUG: handle_incoming_message called with encrypted message");
     match decrypt(shared_key.to_string(), message) {
         Ok(decrypted_message) => {
+            tracing::info!("DEBUG: Message decrypted successfully: '{}'", decrypted_message);
             // Send action to update status bar and display message
+            tracing::info!("DEBUG: Sending ReceiveMessage action");
             send_action(crate::action::Action::ReceiveMessage(decrypted_message));
         }
         Err(e) => {
+            tracing::error!("DEBUG: Failed to decrypt message: {}", e);
             let error_msg = format!("Failed to decrypt message: {}", e);
             add_text_message(error_msg);
         }
@@ -576,7 +619,20 @@ pub fn add_text_message(s: String) {
 /// Add a message to the outgoing buffer
 #[deprecated(since = "0.5.1", note = "Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
 pub fn add_outgoing_message(s: String) {
-    MESSAGES.lock().unwrap().outgoing.insert(0, s);
+    tracing::info!("DEBUG: add_outgoing_message called with: '{}'", s);
+    
+    // Get current thread info for debugging
+    let thread_id = std::thread::current().id();
+    tracing::info!("DEBUG: add_outgoing_message running on thread: {:?}", thread_id);
+    
+    {
+        let mut messages = MESSAGES.lock().unwrap();
+        tracing::info!("DEBUG: Before insert - outgoing queue contents: {:?}", messages.outgoing);
+        messages.outgoing.insert(0, s.clone());
+        tracing::info!("DEBUG: After insert - outgoing queue contents: {:?}", messages.outgoing);
+        let queue_size = messages.outgoing.len();
+        tracing::info!("DEBUG: Message '{}' added to outgoing queue, new queue size: {}", s, queue_size);
+    }
 }
 
 /// Set the action sender for transport layer to communicate with app
@@ -588,8 +644,18 @@ pub fn set_action_sender(sender: mpsc::UnboundedSender<Action>) {
 /// Send an action to the app if sender is available
 #[deprecated(since = "0.5.1", note = "Use ConnectionManager observer pattern instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
 pub fn send_action(action: Action) {
+    tracing::info!("DEBUG: send_action called with action: {:?}", action);
     if let Some(sender) = ACTION_SENDER.lock().unwrap().as_ref() {
-        let _ = sender.send(action);
+        match sender.send(action.clone()) {
+            Ok(_) => {
+                tracing::info!("DEBUG: Action sent successfully: {:?}", action);
+            }
+            Err(e) => {
+                tracing::error!("DEBUG: Failed to send action {:?}: {}", action, e);
+            }
+        }
+    } else {
+        tracing::warn!("DEBUG: No action sender available - action not sent: {:?}", action);
     }
 }
 
@@ -608,17 +674,23 @@ pub fn split_tcp_stream(stream: TcpStream) -> Result<(ClientStream, ClientSink)>
 
 #[deprecated(since = "0.5.1", note = "Use ConnectionManager.connect() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
 pub async fn connect_client(input: Input, address: SocketAddr) {
+    tracing::info!("DEBUG: connect_client called for address: {}", address);
     add_text_message(format!("Connecting to {}", address.clone()));
     let stream = TcpStream::connect(address).await;
     if stream.is_ok() {
+        tracing::info!("DEBUG: TCP connection established successfully");
         add_text_message("Connected to server.".to_owned());
         add_text_message("".to_owned());
         tokio::spawn(async move {
+            tracing::info!("DEBUG: Setting client status to CONNECTED and starting message loop");
             CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
             let (reader, writer) = split_tcp_stream(stream.unwrap()).unwrap();
+            tracing::info!("DEBUG: TCP stream split, calling client_io_select_loop_async");
             client_io_select_loop_async(input, reader, writer).await;
+            tracing::info!("DEBUG: client_io_select_loop_async has exited");
         });
     } else {
+        tracing::error!("DEBUG: Failed to establish TCP connection to {}", address);
         add_text_message("Failed to connect to server.".to_owned());
         add_text_message("".to_owned());
     }
@@ -641,24 +713,49 @@ pub async fn client_io_select_loop_async(
     input: Input,
     mut stream: ClientStream,
     mut sink: ClientSink) {
+    let instance_id = TRANSPORT_INSTANCE_COUNTER.fetch_add(1, Ordering::SeqCst);
+    tracing::info!("DEBUG: client_io_select_loop_async STARTED - Instance #{}", instance_id);
+    
+    // Check if there are other instances running
+    let active_instances = TRANSPORT_INSTANCE_COUNTER.load(Ordering::SeqCst);
+    if active_instances > 1 {
+        tracing::warn!("DEBUG: WARNING - Multiple transport instances detected! Total: {}", active_instances);
+    }
+    
     let cancel_token = CANCEL_TOKEN.lock().unwrap().token.clone();
     
     // perform key exchange with server
     let shared_aes256_key = match perform_key_exchange(&mut sink, &mut stream).await {
-        Ok(key) => key,
+        Ok(key) => {
+            tracing::info!("DEBUG: Key exchange completed successfully");
+            key
+        }
         Err(e) => {
+            tracing::error!("DEBUG: Key exchange failed: {}", e);
             add_text_message(format!("Key exchange failed: {}", e));
             return;
         }
     };
     // main client loop
+    tracing::info!("DEBUG: Entering main client message processing loop");
+    let mut loop_count = 0;
     loop {
+        loop_count += 1;
         // process any outgoing messages
+        tracing::debug!("DEBUG: Loop iteration #{} - checking for outgoing messages", loop_count);
+        
+        // Add small delay to prevent excessive logging
+        if loop_count % 100 == 1 {
+            tracing::info!("DEBUG: Main loop still running (iteration #{})", loop_count);
+        }
+        
         let _ = process_outgoing_messages(&mut sink, &shared_aes256_key).await;
         
         // select on futures
         select! {
             _ = cancel_token.cancelled().fuse() => {
+                tracing::info!("DEBUG: client_io_select_loop_async Instance #{} cancelled, shutting down", instance_id);
+                TRANSPORT_INSTANCE_COUNTER.fetch_sub(1, Ordering::SeqCst);
                 let mut writer = sink.tx.into_inner();
                 let _ = writer.shutdown().await;
                 return;
@@ -669,11 +766,15 @@ pub async fn client_io_select_loop_async(
                     continue;
                 },
                 None => {
+                    tracing::info!("DEBUG: Connection closed by server - Instance #{}", instance_id);
+                    TRANSPORT_INSTANCE_COUNTER.fetch_sub(1, Ordering::SeqCst);
                     add_text_message("The Lair has CLOSED.".to_string());
                     handle_connection_closed();
                     return;
                 },
                 Some(Err(e)) => {
+                    tracing::error!("DEBUG: Connection closed with error on Instance #{}: {}", instance_id, e);
+                    TRANSPORT_INSTANCE_COUNTER.fetch_sub(1, Ordering::SeqCst);
                     add_text_message(format!("Closed connection with error: {e}"));
                     handle_connection_closed();
                     return;

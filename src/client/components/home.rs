@@ -129,28 +129,29 @@ impl Home {
 
     /// Get current room messages for display
     fn get_display_messages(&self) -> Vec<String> {
-        // Temporarily force legacy system usage until message flow is fixed
-        // The room system gets initialized during auth but messages are added to legacy system
-        MESSAGES.lock().unwrap().text.clone()
+        if let Some(room_id) = self.current_room_id {
+            if let Some(room) = self.room_manager.get_room(&room_id) {
+                let messages = room.get_messages(Some(50))
+                    .iter()
+                    .map(|msg| {
+                        if msg.message_type == MessageType::System {
+                            msg.content.clone()
+                        } else {
+                            format!("{}: {}", msg.sender_username, msg.content)
+                        }
+                    })
+                    .collect::<Vec<String>>();
+                tracing::info!("DEBUG: get_display_messages returning {} messages", messages.len());
+                return messages;
+            } else {
+                tracing::warn!("DEBUG: Room not found in get_display_messages for room_id: {:?}", room_id);
+            }
+        } else {
+            tracing::warn!("DEBUG: No current_room_id in get_display_messages");
+        }
         
-        // TODO: Restore room system once message routing is fixed
-        // if let Some(room_id) = self.current_room_id {
-        //     if let Some(room) = self.room_manager.get_room(&room_id) {
-        //         return room.get_messages(Some(50))
-        //             .iter()
-        //             .map(|msg| {
-        //                 if msg.message_type == MessageType::System {
-        //                     msg.content.clone()
-        //                 } else {
-        //                     format!("{}: {}", msg.sender_username, msg.content)
-        //                 }
-        //             })
-        //             .collect();
-        //     }
-        // }
-        // 
-        // // Fallback to legacy system if no room is available
-        // MESSAGES.lock().unwrap().text.clone()
+        tracing::info!("DEBUG: get_display_messages returning empty vector");
+        Vec::new()
     }
 
     /// Check if chat system is initialized (has current room and user)
@@ -160,20 +161,29 @@ impl Home {
 
     /// Add a message to current room
     pub fn add_message_to_room(&mut self, content: String, is_system: bool) {
+        tracing::info!("DEBUG: add_message_to_room called with: '{}', is_system: {}", content, is_system);
+        tracing::info!("DEBUG: current_room_id: {:?}, current_user_id: {:?}", self.current_room_id, self.current_user_id);
+        
         if let (Some(room_id), Some(user_id)) = (self.current_room_id, self.current_user_id) {
             if let Some(room) = self.room_manager.get_room_mut(&room_id) {
                 let message = if is_system {
-                    ChatMessage::new_system(room_id, content)
+                    ChatMessage::new_system(room_id, content.clone())
                 } else {
                     let username = room.get_user(&user_id)
                         .map(|u| u.username.clone())
                         .unwrap_or_else(|| "Unknown".to_string());
-                    ChatMessage::new_text(room_id, user_id, username, content)
+                    ChatMessage::new_text(room_id, user_id, username, content.clone())
                 };
                 
+                tracing::info!("DEBUG: Adding message to room system: {:?}", message);
                 let _ = room.add_message(message);
+                tracing::info!("DEBUG: Message added to room successfully");
+            } else {
+                tracing::warn!("DEBUG: Room not found for room_id: {:?}", room_id);
+                add_text_message(content);
             }
         } else {
+            tracing::warn!("DEBUG: Fallback to legacy system - room_id or user_id missing");
             // Fallback to legacy system
             add_text_message(content);
         }
