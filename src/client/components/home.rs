@@ -174,6 +174,20 @@ impl Home {
         }
     }
 
+    /// Add a pre-formatted message from server (already contains sender: content format)
+    pub fn add_received_message(&mut self, formatted_message: String) {
+        if let Some(room_id) = self.current_room_id {
+            if let Some(room) = self.room_manager.get_room_mut(&room_id) {
+                // Create a system message to avoid double formatting
+                let message = ChatMessage::new_system(room_id, formatted_message);
+                let _ = room.add_message(message);
+            }
+        } else {
+            // Fallback to legacy system
+            add_text_message(formatted_message);
+        }
+    }
+
     // Connection dialog methods
     fn show_dialog(&mut self) {
         self.dialog_visible = true;
