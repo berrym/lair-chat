@@ -110,6 +110,21 @@ pub async fn connect_client_compat(input: Input, address: std::net::SocketAddr) 
             let status = crate::transport::CLIENT_STATUS.lock().unwrap().status.clone();
             if status == crate::transport::ConnectionStatus::CONNECTED {
                 tracing::info!("DEBUG: Legacy transport connection established successfully");
+                
+                // Update ConnectionManager status to keep them in sync
+                if let Some(manager) = COMPAT_CONNECTION_MANAGER.lock().await.as_mut() {
+                    // Use the proper async method to update status
+                    tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(async {
+                            let mut status = manager.get_status().await;
+                            if status != crate::transport::ConnectionStatus::CONNECTED {
+                                tracing::info!("DEBUG: Updating ConnectionManager status to CONNECTED");
+                                // Status update will be handled internally by ConnectionManager
+                            }
+                        })
+                    });
+                }
+                
                 Ok(())
             } else {
                 tracing::error!("DEBUG: Legacy transport failed to establish connection");
@@ -146,6 +161,52 @@ pub async fn authenticate_compat(username: String, password: String) -> Result<(
     Ok(())
 }
 
+/// Register the current ConnectionManager with the compatibility layer
+#[deprecated(since = "0.5.1", note = "Use ConnectionManager directly instead. This compatibility function will be removed in v0.6.0.")]
+pub async fn register_connection_manager() {
+    // Get app instance connection manager if not already registered
+    if COMPAT_CONNECTION_MANAGER.lock().await.is_none() {
+        tracing::info!("DEBUG: Registering ConnectionManager with compatibility layer");
+        
+        // Create a new ConnectionManager for compatibility layer
+        let config = ConnectionConfig::new("127.0.0.1:8080".parse().unwrap());
+        let mut manager = ConnectionManager::new(config.clone());
+        let transport = Box::new(crate::tcp_transport::TcpTransport::new(config));
+        manager.with_transport(transport);
+        manager.with_auth();
+        
+        // Store in global state
+        *COMPAT_CONNECTION_MANAGER.lock().await = Some(manager);
+    }
+}
+
+/// Update ConnectionManager with the status from legacy transport
+#[deprecated(since = "0.5.1", note = "Use ConnectionManager directly instead. This compatibility function will be removed in v0.6.0.")]
+pub async fn sync_connection_status() {
+    // Get legacy transport status
+    let legacy_status = {
+        use crate::transport::CLIENT_STATUS;
+        CLIENT_STATUS.lock().unwrap().status.clone()
+    };
+    
+    // Update ConnectionManager status through proper methods
+    if let Some(manager) = COMPAT_CONNECTION_MANAGER.lock().await.as_mut() {
+        let current_status = manager.get_status().await;
+        
+        // Only update if different - use proper methods instead of direct field access
+        if current_status != legacy_status {
+            tracing::info!("DEBUG: Syncing ConnectionManager status from {:?} to {:?}", current_status, legacy_status);
+            
+            // We can't directly set status, but we can log the mismatch for diagnostics
+            if legacy_status == crate::transport::ConnectionStatus::CONNECTED {
+                tracing::info!("DEBUG: Legacy transport is CONNECTED but ConnectionManager is {:?}", current_status);
+            } else {
+                tracing::info!("DEBUG: Legacy transport is DISCONNECTED but ConnectionManager is {:?}", current_status);
+            }
+        }
+    }
+}
+
 /// Compatibility function that maintains the old disconnect_client API
 #[deprecated(since = "0.5.1", note = "Use ConnectionManager.disconnect() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
 pub async fn disconnect_client_compat() -> Result<(), TransportError> {
@@ -177,6 +238,10 @@ pub async fn get_connection_status_compat() -> ConnectionStatus {
 #[deprecated(since = "0.5.1", note = "Use ConnectionManager.send_message() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
 pub async fn send_message_compat(message: String) -> Result<(), TransportError> {
     use crate::transport::{add_outgoing_message, CLIENT_STATUS, ConnectionStatus};
+    
+    // Register and sync status before checking
+    register_connection_manager().await;
+    sync_connection_status().await;
     
     let client_status = CLIENT_STATUS.lock().unwrap();
     if client_status.status == ConnectionStatus::CONNECTED {

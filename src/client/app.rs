@@ -679,21 +679,48 @@ impl App {
     
     /// Modern message sending using ConnectionManager
     fn handle_modern_send_message(&mut self, message: String) {
-        // Use modern ConnectionManager to get status
+        // Register ConnectionManager with compatibility layer and sync status
+        #[allow(deprecated)]
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                use crate::compatibility_layer::{sync_connection_status, register_connection_manager};
+                register_connection_manager().await;
+                sync_connection_status().await;
+            })
+        });
+        
+        // Use combined status check to determine if we can send
         let connection_status = self.get_connection_status();
         
         if connection_status == crate::transport::ConnectionStatus::CONNECTED {
-            info!("Sending message via ConnectionManager (connection_status: {:?}): '{}'", connection_status, message);
+            info!("Sending message via legacy transport (connection_status: {:?}): '{}'", connection_status, message);
             
-            // Use legacy transport for sending messages during transition period
-            // This ensures proper encryption and key exchange with the server
+            // Try both methods to ensure message delivery
+            // First use legacy transport for reliability during transition
             #[allow(deprecated)]
-            use crate::transport::add_outgoing_message;
-            #[allow(deprecated)]
-            add_outgoing_message(message.clone());
+            {
+                use crate::transport::add_outgoing_message;
+                add_outgoing_message(message.clone());
+                info!("DEBUG: Message queued in legacy transport outgoing queue: {}", message);
+            }
             
-            info!("DEBUG: Message queued in legacy transport outgoing queue: {}", message);
-            info!("Message sent via legacy transport: {}", message);
+            // Also try modern ConnectionManager (as backup)
+            // We'll use a thread-safe approach to ensure proper 'Send' implementation
+            let cm = self.connection_manager.clone();
+            let msg = message.clone();
+            
+            // Use a separate thread-safe function to handle the async send
+            tokio::task::spawn_blocking(move || {
+                tokio::runtime::Handle::current().block_on(async {
+                    if let Ok(mut manager) = cm.lock() {
+                        if let Err(e) = manager.send_message(msg).await {
+                            tracing::error!("Failed to send via ConnectionManager: {}", e);
+                        } else {
+                            tracing::info!("Message also sent via ConnectionManager");
+                        }
+                    }
+                });
+            });
             
             // Add sent message to display immediately for sending client
             let sent_message = format!("You: {}", message);
@@ -716,21 +743,64 @@ impl App {
 
 
 
-    /// Get current connection status from ConnectionManager
+    /// Get current connection status using a combination of legacy and modern sources
     /// Helper method to reduce code duplication
     fn get_connection_status(&self) -> crate::transport::ConnectionStatus {
+        // Register and sync ConnectionManager with legacy transport before checking
+        #[allow(deprecated)]
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
+                use crate::compatibility_layer::{sync_connection_status, register_connection_manager};
+                register_connection_manager().await;
+                sync_connection_status().await;
+            })
+        });
+        
+        // During transition period, get both statuses
+        #[allow(deprecated)]
+        let legacy_status = {
+            use crate::transport::CLIENT_STATUS;
+            CLIENT_STATUS.lock().unwrap().status.clone()
+        };
+        
+        // Get ConnectionManager status
+        let cm_status = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
                 if let Ok(manager) = self.connection_manager.lock() {
-                    manager.get_status().await
+                    let status = manager.get_status().await;
+                    tracing::info!("Connection status check - Legacy: {:?}, ConnectionManager: {:?}", legacy_status, status);
+                    status
                 } else {
                     crate::transport::ConnectionStatus::DISCONNECTED
                 }
             })
-        })
+        });
+        
+        // If either system reports connected, we're connected
+        // This ensures messages can be sent whenever possible
+        if legacy_status == crate::transport::ConnectionStatus::CONNECTED || 
+           cm_status == crate::transport::ConnectionStatus::CONNECTED {
+            crate::transport::ConnectionStatus::CONNECTED
+        } else {
+            crate::transport::ConnectionStatus::DISCONNECTED
+        }
     }
 
     fn draw(&mut self, tui: &mut Tui) -> Result<()> {
+        // Register and sync connection status before drawing to ensure UI is up-to-date
+        #[allow(deprecated)]
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                use crate::compatibility_layer::{sync_connection_status, register_connection_manager};
+                register_connection_manager().await;
+                sync_connection_status().await;
+            })
+        });
+        
+        // Get combined connection status for UI display
+        let connection_status = self.get_connection_status();
+        self.status_bar.set_connection_status(connection_status);
+        
         tui.draw(|frame| {
             let area = frame.area();
             
@@ -803,9 +873,12 @@ impl App {
             let server_addr = server_address.clone();
             async move {
                 // Use legacy authentication for now to maintain functionality
-                // This ensures key exchange happens properly with the server
+                // TODO: Replace with pure ConnectionManager authentication in future iteration
                 #[allow(deprecated)]
-                use crate::compatibility_layer::connect_client_compat;
+                use crate::compatibility_layer::{connect_client_compat, register_connection_manager};
+                                
+                // Register ConnectionManager with compatibility layer for status sync
+                register_connection_manager().await;
                                 
                 // Try to connect to the server first
                 let address: Result<std::net::SocketAddr, _> = server_addr.parse();
@@ -869,7 +942,10 @@ impl App {
             let server_addr = server_address.clone();
             async move {
                 use crate::transport::{CLIENT_STATUS, ConnectionStatus};
-                use crate::compatibility_layer::connect_client_compat;
+                use crate::compatibility_layer::{connect_client_compat, register_connection_manager};
+                
+                // Register ConnectionManager with compatibility layer for status sync
+                register_connection_manager().await;
                 
                 // Try to connect to the server first
                 let address: Result<std::net::SocketAddr, _> = server_addr.parse();
