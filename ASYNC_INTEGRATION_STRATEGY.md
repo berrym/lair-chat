@@ -158,6 +158,12 @@ This document tracks the step-by-step implementation of Priority 1 from NEXT_STE
 
 **Git Commit**: "Implement modern message sending with ConnectionManager"
 
+**CRITICAL FIX**: Fixed authentication actions to use legacy transport
+- Modern authentication was creating mock sessions without server connection
+- Reverted Action::Login/Register to use legacy methods for actual server connection
+- This ensures message sending/receiving works during transition period
+- Will be properly modernized in Steps 7-9 when ConnectionManager is fully integrated
+
 ---
 
 ### Step 7: Remove Remaining Global State Access

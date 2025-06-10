@@ -268,13 +268,19 @@ impl App {
                 self.fps_counter.update(action.clone())?;
             }
             
-            // Authentication actions - Modern implementation
+            // Authentication actions - TEMPORARY: Use legacy transport for actual server connection
+            // The modern handle_modern_login/register methods create mock sessions but don't connect
+            // to the actual server transport layer, so messages aren't sent/received.
+            // We use legacy methods here to maintain functionality while ConnectionManager
+            // integration is completed. This will be replaced in Step 7-9.
             Action::Login(credentials) => {
-                self.handle_modern_login(credentials.clone());
+                // Use legacy method that actually connects to server and enables message flow
+                self.handle_login_with_server(credentials.clone(), "127.0.0.1:8080".to_string());
             }
             
             Action::Register(credentials) => {
-                self.handle_modern_register(credentials.clone());
+                // Use legacy method that actually connects to server and enables message flow
+                self.handle_register_with_server(credentials.clone(), "127.0.0.1:8080".to_string());
             }
             
             Action::LoginWithServer(credentials, server_address) => {
