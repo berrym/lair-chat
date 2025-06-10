@@ -188,11 +188,11 @@ impl Component for StatusBar {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Length(20),  // Connection status
-                Constraint::Length(30),  // Auth status
-                Constraint::Length(20),  // Room
-                Constraint::Min(20),     // Stats
-                Constraint::Length(50),  // Error/message area
+                Constraint::Length(15),  // Connection status
+                Constraint::Length(25),  // Auth status
+                Constraint::Length(15),  // Room
+                Constraint::Length(25),  // Stats
+                Constraint::Min(20),     // Error/message area
             ])
             .split(area);
 
@@ -220,7 +220,7 @@ impl Component for StatusBar {
 
         // Draw stats
         let stats_text = format!(
-            "↑{} ↓{} ⌚{}",
+            "Sent: {} | Recv: {} | Up: {}",
             self.network_stats.messages_sent,
             self.network_stats.messages_received,
             self.network_stats.format_uptime(),

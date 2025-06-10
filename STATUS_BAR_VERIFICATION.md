@@ -22,9 +22,10 @@ The status bar mentioned in NEXT_STEPS.md has been successfully implemented and 
 - **Dynamic Updates**: Changes in real-time as auth state changes
 
 #### 📊 Network Statistics
-- **Message Counters**: Shows sent (↑) and received (↓) message counts
+- **Message Counters**: Shows sent and received message counts with clear labels
 - **Connection Uptime**: Displays time connected in HH:MM:SS format
 - **Real-time Updates**: Counters increment with each message
+- **Professional Format**: Uses text labels instead of symbols for universal compatibility
 
 #### 🏠 Room Information
 - **Current Room**: Shows active chat room name
@@ -41,7 +42,7 @@ The status bar appears at the **top of the screen** when authenticated:
 
 ```
 ┌─────── Status Bar (Connection | Auth | Room | Stats | Errors) ───────┐
-│ Connected    Logged in as user    Room: general    ↑5 ↓3 ⌚1:23:45    │
+│ Connected    Logged in as user    Room: general    Sent: 5 | Recv: 3 | Up: 1:23:45    │
 ├───────────────── Main Chat Area ─────────────────────────────────────┤
 │                                                                       │
 │  [Chat messages and content display here]                           │
@@ -58,9 +59,9 @@ To see the status bar in action:
 1. **Start the server**: `cargo run --bin lair-chat-server`
 2. **Start the client**: `cargo run --bin lair-chat-client` 
 3. **Register/Login**: Create account or login with existing credentials
-4. **Observe status bar**: Top line shows connection and user info
-5. **Send messages**: Watch message counters increment
-6. **Check uptime**: Timer shows connection duration
+4. **Observe status bar**: Top line shows connection and user info with professional text labels
+5. **Send messages**: Watch message counters increment (displayed as "Sent: X | Recv: Y")
+6. **Check uptime**: Timer shows connection duration (displayed as "Up: H:MM:SS")
 
 ### Code Verification
 
