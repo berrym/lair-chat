@@ -280,16 +280,9 @@ impl App {
                     }
                     
                     // Connection is already established during authentication
-                    use crate::transport::add_text_message;
+                    // Server will send welcome message, so we don't add duplicate client messages
                     
-                    // Add welcome message to chat
-                    add_text_message(" ".to_string());
-                    add_text_message(format!("Welcome to Lair Chat, {}!", profile.username));
-                    add_text_message("You are now connected and ready to chat!".to_string());
-                    add_text_message("Press '/' to start typing your first message.".to_string());
-                    add_text_message(" ".to_string());
-                    
-                    info!("Welcome messages added for user {}", profile.username);
+                    info!("User {} authenticated and ready for chat", profile.username);
                 }
             }
             
@@ -443,7 +436,7 @@ impl App {
                         match connect_client_compat(input, addr).await {
                             Ok(()) => {
                                 CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
-                                add_text_message(format!("Connected to server at {}", server_addr));
+                                // Connection message is handled by transport layer
                                 
                                 // Send authentication request to server
                                 use crate::compatibility_layer::authenticate_compat;
@@ -511,7 +504,7 @@ impl App {
                         match connect_client_compat(input, addr).await {
                             Ok(()) => {
                                 CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
-                                add_text_message(format!("Connected to server at {}", server_addr));
+                                // Connection message is handled by transport layer
                                 
                                 // Send registration request
                                 match register_compat(creds.username.clone(), creds.password.clone()).await {
@@ -558,7 +551,7 @@ impl App {
 
 /// Wait for and parse authentication response from server
 async fn wait_for_auth_response(username: String) -> Result<crate::auth::AuthState, String> {
-    use crate::transport::{MESSAGES, add_text_message};
+    use crate::transport::MESSAGES;
     use crate::auth::{UserProfile, Session};
     use uuid::Uuid;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -587,7 +580,6 @@ async fn wait_for_auth_response(username: String) -> Result<crate::auth::AuthSta
                message.contains(&format!("{} has joined", username)) ||
                message.contains("Registration successful") {
                 info!("Authentication success detected for user: {}", username);
-                add_text_message("Authentication successful!".to_string());
                 
                 let now = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
