@@ -407,10 +407,12 @@ impl App {
                 if message.contains("Welcome back") || 
                    message.contains("has joined the chat") ||
                    message.contains("Registration successful") {
-                    info!("Authentication success message detected: {}", message);
+                    info!("Authentication success message detected: '{}' (current auth_state: {:?})", message, self.auth_state);
                     
-                    // Extract username from message or use current auth state
+                    // Only process if we're currently authenticating to avoid interference
                     if self.auth_state == AuthState::Authenticating {
+                        info!("Processing authentication response for authenticating user");
+                        
                         // Create successful auth state - server has confirmed authentication
                         let username = if message.contains("Welcome back") {
                             // Extract from "Welcome back, username" format
@@ -423,6 +425,8 @@ impl App {
                         } else {
                             "User"
                         };
+                        
+                        info!("Extracted username from server response: '{}'", username);
                         
                         let auth_state = AuthState::Authenticated {
                             profile: crate::auth::UserProfile {
@@ -445,7 +449,18 @@ impl App {
                         };
                         
                         // Send authentication success action
+                        info!("Sending AuthenticationSuccess action for user: {}", username);
                         let _ = self.action_tx.send(Action::AuthenticationSuccess(auth_state));
+                    } else {
+                        info!("Ignoring authentication message - not currently authenticating (state: {:?})", self.auth_state);
+                    }
+                } else if message.contains("Authentication failed") || 
+                          message.contains("Login failed") ||
+                          message.contains("Invalid credentials") {
+                    warn!("Authentication failure message detected: '{}' (current auth_state: {:?})", message, self.auth_state);
+                    
+                    if self.auth_state == AuthState::Authenticating {
+                        let _ = self.action_tx.send(Action::AuthenticationFailure(message.clone()));
                     }
                 }
                 
@@ -643,48 +658,20 @@ impl App {
         let connection_status = self.get_connection_status();
         
         if connection_status == crate::transport::ConnectionStatus::CONNECTED {
-            // Use modern ConnectionManager for message sending
-            let result = tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(async {
-                    self.connection_manager.send_message(message.clone()).await
-                })
-            });
+            info!("Sending message via legacy transport (connection_status: {:?}): '{}'", connection_status, message);
             
-            match result {
-                Ok(()) => {
-                    // Update status bar message count on success
-                    self.status_bar.record_sent_message();
-                    
-                    // Add message to local chat display
-                    info!("Adding sent message to room display: '{}'", message);
-                    self.home_component.add_message_to_room(
-                        format!("You: {}", message),
-                        false
-                    );
-                    
-                    info!("Message sent successfully via modern ConnectionManager: {}", message);
-                }
-                Err(e) => {
-                    // Fallback to legacy transport for compatibility
-                    warn!("ConnectionManager send failed, falling back to legacy transport: {}", e);
-                    
-                    #[allow(deprecated)]
-                    use crate::transport::add_outgoing_message;
-                    #[allow(deprecated)]
-                    add_outgoing_message(message.clone());
-                    
-                    // Update status bar message count
-                    self.status_bar.record_sent_message();
-                    
-                    // Add message to local chat display
-                    self.home_component.add_message_to_room(
-                        format!("You: {}", message),
-                        false
-                    );
-                    
-                    info!("Message sent via legacy fallback transport: {}", message);
-                }
-            }
+            // Use legacy transport directly since it's what's actually connected
+            // TODO: Replace with ConnectionManager when fully integrated
+            #[allow(deprecated)]
+            use crate::transport::add_outgoing_message;
+            #[allow(deprecated)]
+            add_outgoing_message(message.clone());
+            
+            // Update status bar message count
+            self.status_bar.record_sent_message();
+            
+            // Note: Legacy transport will add "You: {message}" to display automatically
+            info!("Message queued successfully via legacy transport: {}", message);
         } else {
             warn!("Cannot send message - client not connected (status: {:?}): {}", connection_status, message);
             // Use modern error handling for connection failures
@@ -706,11 +693,21 @@ impl App {
     /// Get current connection status from ConnectionManager
     /// Helper method to reduce code duplication
     fn get_connection_status(&self) -> crate::transport::ConnectionStatus {
-        tokio::task::block_in_place(|| {
+        let cm_status = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
                 self.connection_manager.get_status().await
             })
-        })
+        });
+        
+        // Also check legacy status for comparison
+        #[allow(deprecated)]
+        let legacy_status = crate::transport::CLIENT_STATUS.lock().unwrap().status.clone();
+        
+        debug!("Connection status check - ConnectionManager: {:?}, Legacy: {:?}", cm_status, legacy_status);
+        
+        // For now, use legacy status since that's what's actually connected
+        // TODO: Remove this when ConnectionManager is fully integrated
+        legacy_status
     }
 
     fn draw(&mut self, tui: &mut Tui) -> Result<()> {
