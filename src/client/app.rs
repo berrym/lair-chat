@@ -66,8 +66,8 @@ impl ConnectionObserver for ChatMessageObserver {
     }
     
     fn on_error(&self, error: String) {
-        // Send error message to UI
-        let _ = self.action_sender.send(Action::ReceiveMessage(format!("ERROR: {}", error)));
+        // Send error to UI via Error action
+        let _ = self.action_sender.send(Action::Error(error));
     }
     
     fn on_status_change(&self, connected: bool) {
@@ -370,16 +370,22 @@ impl App {
             }
             
             Action::ReceiveMessage(message) => {
-                // Modern message handling - add to chat system
+                // Modern message handling through observer pattern
+                // Observer has already received the message, now handle UI updates
                 self.home_component.add_message_to_room(message.to_string(), false);
-                
-                // Also add to legacy system for compatibility
-                #[allow(deprecated)]
-                crate::transport::add_text_message(message.to_string());
                 
                 // Update status bar message count
                 self.status_bar.record_received_message();
-                debug!("Received message: {}", message);
+                debug!("Received message via observer pattern: {}", message);
+            }
+            
+            Action::Error(error) => {
+                // Handle errors from observer pattern and other sources
+                self.home_component.add_message_to_room(
+                    format!("Error: {}", error), 
+                    false
+                );
+                warn!("Error received via action system: {}", error);
             }
             
             // Pass other actions to appropriate components
@@ -499,7 +505,7 @@ impl App {
         // For now, use legacy transport system since it's proven to work
         // TODO: Complete ConnectionManager message sending integration
         #[allow(deprecated)]
-        use crate::transport::{CLIENT_STATUS, ConnectionStatus, add_text_message, add_outgoing_message};
+        use crate::transport::{CLIENT_STATUS, ConnectionStatus, add_outgoing_message};
         
         #[allow(deprecated)]
         let client_status = CLIENT_STATUS.lock().unwrap();
@@ -515,8 +521,11 @@ impl App {
             debug!("Message queued for sending: {}", message);
         } else {
             warn!("Cannot send message - client not connected: {}", message);
-            #[allow(deprecated)]
-            add_text_message("Cannot send message: Not connected to server".to_string());
+            // Use modern error handling instead of legacy add_text_message
+            self.home_component.add_message_to_room(
+                "Error: Cannot send message - not connected to server".to_string(),
+                false
+            );
         }
     }
 

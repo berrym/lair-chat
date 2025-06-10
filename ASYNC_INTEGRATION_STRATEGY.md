@@ -60,7 +60,7 @@ This document tracks the step-by-step implementation of Priority 1 from NEXT_STE
 ---
 
 ### Step 3: Replace Legacy Message Handling
-**Status**: [ ] Pending
+**Status**: [x] COMPLETED
 **Goal**: Remove direct `add_text_message` calls in favor of observer pattern
 **Files**: `src/client/app.rs`
 **Changes**:
@@ -69,14 +69,14 @@ This document tracks the step-by-step implementation of Priority 1 from NEXT_STE
 - Ensure UI updates work through action system
 
 **Success Criteria**:
-- [ ] Messages still appear in UI correctly
-- [ ] No duplicate messages from dual systems
-- [ ] Reduced deprecated API usage
+- [x] Messages still appear in UI correctly
+- [x] No duplicate messages from dual systems
+- [x] Reduced deprecated API usage
 
 **Test Plan**:
-- [ ] Received messages display correctly
-- [ ] No message duplication
-- [ ] Error messages still work
+- [x] Received messages display correctly
+- [x] No message duplication
+- [x] Error messages still work
 
 **Git Commit**: "Replace legacy message handling with observer pattern"
 
@@ -232,12 +232,13 @@ This document tracks the step-by-step implementation of Priority 1 from NEXT_STE
 ### Completed Steps
 - Step 1: Fix ConnectionManager Async Borrowing
 - Step 2: Implement Core Message Observer
-
-### In Progress
 - Step 3: Replace Legacy Message Handling
 
+### In Progress
+- Step 4: Complete Authentication Flow Integration
+
 ### Pending
-- Steps 4-9
+- Steps 5-9
 
 ## Success Metrics
 - [ ] Zero deprecated API usage in main App
