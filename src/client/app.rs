@@ -387,7 +387,18 @@ impl App {
                     username: creds.username.clone(),
                     roles: vec!["user".to_string()],
                 },
-                token: "mock_token".to_string(),
+                session: crate::auth::Session {
+                    id: uuid::Uuid::new_v4(),
+                    token: "mock_token".to_string(),
+                    created_at: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs(),
+                    expires_at: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs() + 3600,
+                },
             });
             
             let _ = action_tx.send(result);
@@ -426,7 +437,18 @@ impl App {
                     username: creds.username.clone(),
                     roles: vec!["user".to_string()],
                 },
-                token: "mock_token".to_string(),
+                session: crate::auth::Session {
+                    id: uuid::Uuid::new_v4(),
+                    token: "mock_token".to_string(),
+                    created_at: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs(),
+                    expires_at: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs() + 3600,
+                },
             });
             
             let _ = action_tx.send(auth_result);
