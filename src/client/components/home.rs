@@ -768,19 +768,12 @@ impl Component for Home {
             .collect();
         if messages.is_empty() {
             text.push("".into());
-            text.push("Welcome to Lair Chat! You are now connected and ready to chat.".cyan().into());
+            text.push("Waiting for messages...".dim().into());
             text.push("".into());
-            text.push("To send a message:".white().bold().into());
-            text.push("   1. Press '/' to enter insert mode".yellow().into());
-            text.push("   2. Type your message".yellow().into());
-            text.push("   3. Press Enter to send".yellow().into());
-            text.push("".into());
-            text.push("Other controls:".white().bold().into());
+            text.push("Controls:".white().bold().into());
             text.push("   ? - Show/hide help".cyan().into());
             text.push("   f - Toggle FPS counter".cyan().into());
             text.push("   q - Quit application".cyan().into());
-            text.push("".into());
-            text.push("Start chatting by pressing '/' and typing your first message!".green().bold().into());
             text.push("".into());
         } else {
             for l in messages {

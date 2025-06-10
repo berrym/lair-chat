@@ -588,7 +588,10 @@ async fn wait_for_auth_response(username: String) -> Result<crate::auth::AuthSta
         let recent_messages: Vec<String> = messages.text.iter().rev().take(10).cloned().collect();
         drop(messages);
         
-        for message in recent_messages {
+        let mut success_found = false;
+        let _failure_found = false;
+        
+        for message in &recent_messages {
             debug!("Checking auth message for {}: {}", username, message);
             
             // Check for authentication success indicators - handle both login and registration
@@ -597,35 +600,61 @@ async fn wait_for_auth_response(username: String) -> Result<crate::auth::AuthSta
                message.contains(&format!("{} has joined", username)) ||
                message.contains("Registration successful") {
                 info!("Authentication success detected for user: {}", username);
-                
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
-                
-                let profile = UserProfile {
-                    id: Uuid::new_v4(),
-                    username: username.clone(),
-                    roles: vec!["user".to_string()],
-                };
-                
-                let session = Session {
-                    id: Uuid::new_v4(),
-                    token: format!("session_{}", username),
-                    created_at: now,
-                    expires_at: now + 3600,
-                };
-                
-                return Ok(crate::auth::AuthState::Authenticated { profile, session });
+                success_found = true;
             }
             
             // Check for authentication failure indicators
             if message.contains("Authentication failed") || 
                message.contains("Login failed") ||
-               message.contains("Registration failed") {
+               message.contains("Registration failed") ||
+               message.contains("Internal error") ||
+               message.contains("Error:") {
                 error!("Authentication failure detected for user {}: {}", username, message);
-                return Err("Server rejected authentication credentials".to_string());
             }
+        }
+        
+        // Success indicators from server always take priority over client-side errors
+        if success_found {
+            info!("Server authentication SUCCESS detected for user {}", username);
+            
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            
+            let profile = UserProfile {
+                id: Uuid::new_v4(),
+                username: username.clone(),
+                roles: vec!["user".to_string()],
+            };
+            
+            let session = Session {
+                id: Uuid::new_v4(),
+                token: format!("session_{}", username),
+                created_at: now,
+                expires_at: now + 3600,
+            };
+            
+            return Ok(crate::auth::AuthState::Authenticated { profile, session });
+        } 
+        
+        // Only treat as failure if we see server-side failure messages (not client errors)
+        let server_failure = recent_messages.iter().any(|msg| {
+            msg.contains("Authentication failed:") ||  // Server sends this format
+            msg.contains("Login failed") ||
+            msg.contains("Registration failed")
+            // Exclude "Internal error" and generic "Error:" as these are often client-side
+        });
+        
+        if server_failure {
+            error!("Server authentication FAILURE detected for user {}", username);
+            let failure_message = recent_messages.iter()
+                .find(|msg| msg.contains("Authentication failed:") || 
+                           msg.contains("Login failed") ||
+                           msg.contains("Registration failed"))
+                .map(|msg| msg.clone())
+                .unwrap_or_else(|| "Server rejected authentication".to_string());
+            return Err(failure_message);
         }
     }
     
