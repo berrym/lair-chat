@@ -816,22 +816,9 @@ impl App {
                                 match authenticate_compat(creds.username.clone(), creds.password.clone()).await {
                                     Ok(()) => {
                                         info!("Authentication request sent for user: {}", creds.username);
-                                        // Start authentication response monitoring
-                                        let tx_clone = tx.clone();
-                                        let username = creds.username.clone();
-                                        
-                                        tokio::spawn(async move {
-                                            match wait_for_auth_response(username.clone()).await {
-                                                Ok(auth_state) => {
-                                                    info!("Authentication successful for user: {}", username);
-                                                    let _ = tx_clone.send(Action::AuthenticationSuccess(auth_state));
-                                                }
-                                                Err(error_msg) => {
-                                                    warn!("Authentication failed for user {}: {}", username, error_msg);
-                                                    let _ = tx_clone.send(Action::AuthenticationFailure(error_msg));
-                                                }
-                                            }
-                                        });
+                                        // Authentication response now handled by ReceiveMessage action handler
+                                        // which detects server responses like "Welcome back" and "has joined"
+                                        info!("Authentication request sent for user: {} - waiting for server response via message handler", creds.username);
                                     }
                                     Err(e) => {
                                         error!("Failed to send authentication request for {}: {}", creds.username, e);
@@ -890,22 +877,9 @@ impl App {
                                 match register_compat(creds.username.clone(), creds.password.clone()).await {
                                     Ok(()) => {
                                         info!("Registration request sent for user: {}", creds.username);
-                                        // Start registration response monitoring
-                                        let tx_clone = tx.clone();
-                                        let username = creds.username.clone();
-                                        
-                                        tokio::spawn(async move {
-                                            match wait_for_auth_response(username.clone()).await {
-                                                Ok(auth_state) => {
-                                                    info!("Registration and authentication successful for user: {}", username);
-                                                    let _ = tx_clone.send(Action::AuthenticationSuccess(auth_state));
-                                                }
-                                                Err(error_msg) => {
-                                                    warn!("Registration/authentication failed for user {}: {}", username, error_msg);
-                                                    let _ = tx_clone.send(Action::AuthenticationFailure(error_msg));
-                                                }
-                                            }
-                                        });
+                                        // Registration response now handled by ReceiveMessage action handler
+                                        // which detects server responses like "Registration successful" and "has joined"
+                                        info!("Registration request sent for user: {} - waiting for server response via message handler", creds.username);
                                     }
                                     Err(e) => {
                                         error!("Failed to send registration request for {}: {}", creds.username, e);
@@ -935,108 +909,8 @@ impl App {
     }
 }
 
-/// Wait for and parse authentication response from server
-async fn wait_for_auth_response(username: String) -> Result<crate::auth::AuthState, String> {
-    use crate::transport::MESSAGES;
-    use crate::auth::{UserProfile, Session};
-    use uuid::Uuid;
-    use std::time::{SystemTime, UNIX_EPOCH};
-    
-    info!("Starting authentication response wait for user: {}", username);
-    
-    // Monitor incoming messages for authentication response
-    for attempt in 0..200 { // Wait up to 20 seconds (200 * 100ms)
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        
-        // Log progress every 5 seconds
-        if attempt % 50 == 0 && attempt > 0 {
-            info!("Authentication wait progress: {} seconds elapsed for user {}", attempt / 10, username);
-        }
-        
-        // Check both legacy MESSAGES and modern message system
-        let mut recent_messages: Vec<String> = Vec::new();
-        
-        // Get from legacy system
-        let legacy_messages = MESSAGES.lock().unwrap();
-        recent_messages.extend(legacy_messages.text.iter().rev().take(5).cloned());
-        drop(legacy_messages);
-        
-        // Also check if there's a global way to access recent messages from modern system
-        // For now, we'll primarily rely on the action system and legacy fallback
-        
-        let mut success_found = false;
-        let _failure_found = false;
-        
-        for message in &recent_messages {
-            debug!("Checking auth message for {}: {}", username, message);
-            
-            // Check for authentication success indicators - handle both login and registration
-            if message.contains("Welcome back") || 
-               message.contains(&format!("Welcome back, {}", username)) ||
-               message.contains(&format!("{} has joined", username)) ||
-               message.contains("Registration successful") {
-                info!("Authentication success detected for user: {}", username);
-                success_found = true;
-            }
-            
-            // Check for authentication failure indicators
-            if message.contains("Authentication failed") || 
-               message.contains("Login failed") ||
-               message.contains("Registration failed") ||
-               message.contains("Internal error") ||
-               message.contains("Error:") {
-                error!("Authentication failure detected for user {}: {}", username, message);
-            }
-        }
-        
-        // Success indicators from server always take priority over client-side errors
-        if success_found {
-            info!("Server authentication SUCCESS detected for user {}", username);
-            
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
-            
-            let profile = UserProfile {
-                id: Uuid::new_v4(),
-                username: username.clone(),
-                roles: vec!["user".to_string()],
-            };
-            
-            let session = Session {
-                id: Uuid::new_v4(),
-                token: format!("session_{}", username),
-                created_at: now,
-                expires_at: now + 3600,
-            };
-            
-            return Ok(crate::auth::AuthState::Authenticated { profile, session });
-        } 
-        
-        // Only treat as failure if we see server-side failure messages (not client errors)
-        let server_failure = recent_messages.iter().any(|msg| {
-            msg.contains("Authentication failed:") ||  // Server sends this format
-            msg.contains("Login failed") ||
-            msg.contains("Registration failed")
-            // Exclude "Internal error" and generic "Error:" as these are often client-side
-        });
-        
-        if server_failure {
-            error!("Server authentication FAILURE detected for user {}", username);
-            let failure_message = recent_messages.iter()
-                .find(|msg| msg.contains("Authentication failed:") || 
-                           msg.contains("Login failed") ||
-                           msg.contains("Registration failed"))
-                .map(|msg| msg.clone())
-                .unwrap_or_else(|| "Server rejected authentication".to_string());
-            return Err(failure_message);
-        }
-    }
-    
-    error!("Authentication timeout after 20 seconds for user: {}", username);
-    Err("Authentication timeout - no response from server after 20 seconds".to_string())
-}
+/// Authentication response handling now done via ReceiveMessage action handler
+/// which detects server responses like "Welcome back" and "has joined the chat"
 
 /// Send registration request to server
 async fn register_compat(username: String, password: String) -> Result<(), crate::transport::TransportError> {
