@@ -403,6 +403,52 @@ impl App {
                 // Observer has already received the message, now handle UI updates
                 info!("ACTION: ReceiveMessage handler called with: '{}'", message);
                 
+                // Check if this is an authentication response from server
+                if message.contains("Welcome back") || 
+                   message.contains("has joined the chat") ||
+                   message.contains("Registration successful") {
+                    info!("Authentication success message detected: {}", message);
+                    
+                    // Extract username from message or use current auth state
+                    if self.auth_state == AuthState::Authenticating {
+                        // Create successful auth state - server has confirmed authentication
+                        let username = if message.contains("Welcome back") {
+                            // Extract from "Welcome back, username" format
+                            message.split("Welcome back, ").nth(1)
+                                .and_then(|s| s.split(',').next())
+                                .unwrap_or("User")
+                        } else if message.contains("has joined") {
+                            // Extract from "username has joined the chat" format
+                            message.split(" has joined").next().unwrap_or("User")
+                        } else {
+                            "User"
+                        };
+                        
+                        let auth_state = AuthState::Authenticated {
+                            profile: crate::auth::UserProfile {
+                                id: uuid::Uuid::new_v4(),
+                                username: username.to_string(),
+                                roles: vec!["user".to_string()],
+                            },
+                            session: crate::auth::Session {
+                                id: uuid::Uuid::new_v4(),
+                                token: format!("server_token_{}", username),
+                                created_at: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs(),
+                                expires_at: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs() + 3600,
+                            },
+                        };
+                        
+                        // Send authentication success action
+                        let _ = self.action_tx.send(Action::AuthenticationSuccess(auth_state));
+                    }
+                }
+                
                 // Ensure chat is initialized
                 if !self.home_component.is_chat_initialized() {
                     warn!("Chat not initialized, attempting to initialize with default user");
@@ -910,9 +956,16 @@ async fn wait_for_auth_response(username: String) -> Result<crate::auth::AuthSta
             info!("Authentication wait progress: {} seconds elapsed for user {}", attempt / 10, username);
         }
         
-        let messages = MESSAGES.lock().unwrap();
-        let recent_messages: Vec<String> = messages.text.iter().rev().take(10).cloned().collect();
-        drop(messages);
+        // Check both legacy MESSAGES and modern message system
+        let mut recent_messages: Vec<String> = Vec::new();
+        
+        // Get from legacy system
+        let legacy_messages = MESSAGES.lock().unwrap();
+        recent_messages.extend(legacy_messages.text.iter().rev().take(5).cloned());
+        drop(legacy_messages);
+        
+        // Also check if there's a global way to access recent messages from modern system
+        // For now, we'll primarily rely on the action system and legacy fallback
         
         let mut success_found = false;
         let _failure_found = false;
