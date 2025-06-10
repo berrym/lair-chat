@@ -144,8 +144,10 @@ impl App {
         let size = tui.size()?;
         self.init_components(size.into())?;
 
-        // Legacy transport action sender no longer needed with ConnectionManager
-        // Observer pattern handles status updates automatically
+        // Set up action sender for transport layer to update status bar (legacy compatibility)
+        // This is needed because authentication still uses legacy transport
+        #[allow(deprecated)]
+        crate::transport::set_action_sender(self.action_tx.clone());
 
         // Set up ConnectionManager observer for modern message handling
         // TODO: Fix Arc<Mutex> access pattern for observer registration
@@ -795,54 +797,63 @@ impl App {
         self.auth_state = AuthState::Authenticating;
         self.auth_status.update_state(self.auth_state.clone());
         
-        let tx = self.action_tx.clone();
-        let server_addr = server_address.clone();
-        let creds = credentials.clone();
-
-        tokio::spawn(async move {
-            // Parse server address
-            let address: Result<std::net::SocketAddr, _> = server_addr.parse();
-            match address {
-                Ok(addr) => {
-                    // Create connection config for this specific server
-                    let config = ConnectionConfig::new(addr);
-                    
-                    // Create new ConnectionManager for this connection
-                    let mut connection_manager = ConnectionManager::new(config.clone());
-                    let transport = Box::new(TcpTransport::new(config));
-                    connection_manager.with_transport(transport);
-                    connection_manager.with_auth();
+        tokio::spawn({
+            let tx = self.action_tx.clone();
+            let creds = credentials.clone();
+            let server_addr = server_address.clone();
+            async move {
+                // Use legacy authentication for now to maintain functionality
+                // TODO: Replace with pure ConnectionManager authentication in future iteration
+                #[allow(deprecated)]
+                use crate::compatibility_layer::connect_client_compat;
                 
-                    // Connect to server
-                    match connection_manager.connect().await {
-                        Ok(()) => {
-                            info!("Successfully connected to server at {}", server_addr);
-                    
-                            // Add small delay to ensure connection is stable
-                            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                    
-                            // Authenticate with server
-                            match connection_manager.login(creds.clone()).await {
-                                Ok(()) => {
-                                    info!("Authentication successful for user: {}", creds.username);
-                                    // Authentication success will be handled by the observer pattern
+                // Try to connect to the server first
+                let address: Result<std::net::SocketAddr, _> = server_addr.parse();
+                match address {
+                    Ok(addr) => {
+                        let input = tui_input::Input::default();
+                        #[allow(deprecated)]
+                        match connect_client_compat(input, addr).await {
+                            Ok(()) => {
+                                #[allow(deprecated)]
+                                {
+                                    use crate::transport::{CLIENT_STATUS, ConnectionStatus};
+                                    CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
                                 }
-                                Err(e) => {
-                                    error!("Authentication failed for user {}: {}", creds.username, e);
-                                    let _ = tx.send(Action::AuthenticationFailure(format!("Authentication failed: {}", e)));
+                                info!("Successfully connected to server at {}", server_addr);
+                                
+                                // Add small delay to ensure connection is stable
+                                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                                
+                                // Send authentication request to server
+                                #[allow(deprecated)]
+                                use crate::compatibility_layer::authenticate_compat;
+                                
+                                // Send authentication request
+                                #[allow(deprecated)]
+                                match authenticate_compat(creds.username.clone(), creds.password.clone()).await {
+                                    Ok(()) => {
+                                        info!("Authentication request sent for user: {}", creds.username);
+                                        // Authentication response now handled by ReceiveMessage action handler
+                                        // which detects server responses like "Welcome back" and "has joined"
+                                        info!("Authentication request sent for user: {} - waiting for server response via message handler", creds.username);
+                                    }
+                                    Err(e) => {
+                                        error!("Failed to send authentication request for {}: {}", creds.username, e);
+                                        let _ = tx.send(Action::AuthenticationFailure(format!("Authentication failed: {}", e)));
+                                    }
                                 }
                             }
-                        }
-                        Err(e) => {
-                            error!("Connection failed to {}: {}", server_addr, e);
-                            let detailed_error = format!("Connection to {} failed: {}. This could be due to: (1) Server not running - start with 'cargo run --bin lair-chat-server', (2) Server starting up - wait a moment and retry, (3) Port already in use, (4) Firewall blocking connection, (5) Server crashed or not listening properly.", server_addr, e);
-                            let _ = tx.send(Action::AuthenticationFailure(detailed_error));
+                            Err(e) => {
+                                error!("Connection failed to {}: {}", server_addr, e);
+                                let detailed_error = format!("Connection to {} failed: {}. This could be due to: (1) Server not running - start with 'cargo run --bin lair-chat-server', (2) Server starting up - wait a moment and retry, (3) Port already in use, (4) Firewall blocking connection, (5) Server crashed or not listening properly.", server_addr, e);
+                                let _ = tx.send(Action::AuthenticationFailure(detailed_error));
+                            }
                         }
                     }
-                }
-                Err(e) => {
-                    error!("Invalid server address {}: {}", server_addr, e);
-                    let _ = tx.send(Action::AuthenticationFailure(format!("Invalid server address: {}", e)));
+                    Err(_) => {
+                        let _ = tx.send(Action::AuthenticationFailure(format!("Invalid server address: {}", server_addr)));
+                    }
                 }
             }
         });
@@ -852,56 +863,70 @@ impl App {
         self.auth_state = AuthState::Authenticating;
         self.auth_status.update_state(self.auth_state.clone());
         
-        let tx = self.action_tx.clone();
-        let server_addr = server_address.clone();
-        let creds = credentials.clone();
-
-        tokio::spawn(async move {
-            // Parse server address
-            let address: Result<std::net::SocketAddr, _> = server_addr.parse();
-            match address {
-                Ok(addr) => {
-                    // Create connection config for this specific server
-                    let config = ConnectionConfig::new(addr);
-                    
-                    // Create new ConnectionManager for this connection
-                    let mut connection_manager = ConnectionManager::new(config.clone());
-                    let transport = Box::new(TcpTransport::new(config));
-                    connection_manager.with_transport(transport);
-                    connection_manager.with_auth();
+        tokio::spawn({
+            let tx = self.action_tx.clone();
+            let creds = credentials.clone();
+            let server_addr = server_address.clone();
+            async move {
+                use crate::transport::{CLIENT_STATUS, ConnectionStatus};
+                use crate::compatibility_layer::connect_client_compat;
                 
-                    // Connect to server
-                    match connection_manager.connect().await {
-                        Ok(()) => {
-                            info!("Successfully connected to server at {} for registration", server_addr);
-                    
-                            // Add small delay to ensure connection is stable
-                            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                    
-                            // Register with server
-                            match connection_manager.register(creds.clone()).await {
-                                Ok(()) => {
-                                    info!("Registration successful for user: {}", creds.username);
-                                    // Registration success will be handled by the observer pattern
-                                }
-                                Err(e) => {
-                                    error!("Registration failed for user {}: {}", creds.username, e);
-                                    let _ = tx.send(Action::AuthenticationFailure(format!("Registration failed: {}", e)));
+                // Try to connect to the server first
+                let address: Result<std::net::SocketAddr, _> = server_addr.parse();
+                match address {
+                    Ok(addr) => {
+                        let input = tui_input::Input::default();
+                        match connect_client_compat(input, addr).await {
+                            Ok(()) => {
+                                CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
+                                info!("Successfully connected to server at {} for registration", server_addr);
+                                
+                                // Add small delay to ensure connection is stable
+                                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                                
+                                // Send registration request
+                                match register_compat(creds.username.clone(), creds.password.clone()).await {
+                                    Ok(()) => {
+                                        info!("Registration request sent for user: {}", creds.username);
+                                        // Registration response now handled by ReceiveMessage action handler
+                                        // which detects server responses like "Registration successful" and "has joined"
+                                        info!("Registration request sent for user: {} - waiting for server response via message handler", creds.username);
+                                    }
+                                    Err(e) => {
+                                        error!("Failed to send registration request for {}: {}", creds.username, e);
+                                        let _ = tx.send(Action::AuthenticationFailure(format!("Registration failed: {}", e)));
+                                    }
                                 }
                             }
-                        }
-                        Err(e) => {
-                            error!("Registration connection failed to {}: {}", server_addr, e);
-                            let detailed_error = format!("Connection to {} failed: {}. This could be due to: (1) Server not running - start with 'cargo run --bin lair-chat-server', (2) Server starting up - wait a moment and retry, (3) Port already in use, (4) Firewall blocking connection, (5) Server crashed or not listening properly.", server_addr, e);
-                            let _ = tx.send(Action::AuthenticationFailure(detailed_error));
+                            Err(e) => {
+                                error!("Registration connection failed to {}: {}", server_addr, e);
+                                let detailed_error = format!("Connection to {} failed: {}. This could be due to: (1) Server not running - start with 'cargo run --bin lair-chat-server', (2) Server starting up - wait a moment and retry, (3) Port already in use, (4) Firewall blocking connection, (5) Server crashed or not listening properly.", server_addr, e);
+                                let _ = tx.send(Action::AuthenticationFailure(detailed_error));
+                            }
                         }
                     }
-                }
-                Err(e) => {
-                    error!("Invalid server address {}: {}", server_addr, e);
-                    let _ = tx.send(Action::AuthenticationFailure(format!("Invalid server address: {}", e)));
+                    Err(_) => {
+                        let _ = tx.send(Action::AuthenticationFailure(format!("Invalid server address: {}", server_addr)));
+                    }
                 }
             }
         });
     }
+}
+
+/// Send registration request to server
+async fn register_compat(username: String, password: String) -> Result<(), crate::transport::TransportError> {
+    use crate::transport::add_silent_outgoing_message;
+    
+    let auth_request = serde_json::json!({
+        "username": username,
+        "password": password,
+        "fingerprint": "client_device_fingerprint",
+        "is_registration": true
+    });
+    
+    // Registration request message will be handled via action system
+    add_silent_outgoing_message(auth_request.to_string());
+    
+    Ok(())
 }
