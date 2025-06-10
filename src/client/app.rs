@@ -290,24 +290,47 @@ impl App {
             }
             
             Action::Logout => {
+                info!("User logging out - cleaning up authentication state");
+                
+                // Clean up authentication state
                 self.auth_state = AuthState::Unauthenticated;
                 self.auth_status.update_state(self.auth_state.clone());
                 self.mode = Mode::Authentication;
+                
+                // Add logout message to UI
+                self.home_component.add_message_to_room(
+                    "Logged out successfully".to_string(),
+                    false
+                );
+                
+                // Future: Add ConnectionManager.disconnect() call here
+                // when full ConnectionManager integration is complete
             }
 
             // New action for handling registration success
             Action::RegistrationSuccess(username) => {
                 info!("User {} registered successfully", username);
+                // Add success message to UI
+                self.home_component.add_message_to_room(
+                    format!("Registration successful for user: {}", username),
+                    false
+                );
                 // Keep in authenticating state, will transition when auth completes
             }
             
             // New action for handling auth failure
             Action::AuthenticationFailure(error) => {
+                error!("Authentication failed: {}", error);
                 self.auth_state = AuthState::Failed { reason: error.clone() };
                 self.auth_status.update_state(self.auth_state.clone());
                 self.login_screen.handle_error(crate::auth::AuthError::InternalError(error.clone()));
                 self.mode = Mode::Authentication;
-                info!("Authentication failed");
+                
+                // Add error message to UI for better user feedback
+                self.home_component.add_message_to_room(
+                    format!("Authentication failed: {}", error),
+                    false
+                );
             }
             
             // New action for handling auth success
@@ -406,45 +429,71 @@ impl App {
     fn handle_modern_login(&mut self, credentials: Credentials) {
         let action_tx = self.action_tx.clone();
         
-        // Enable authentication on connection manager
-        self.connection_manager.with_auth();
-        
         // Set state to authenticating immediately
         self.auth_state = AuthState::Authenticating;
         
-        // Create a clone of the connection manager for the async task
-        // to avoid borrowing issues in the main app loop
-        let server_addr = "127.0.0.1:8080".to_string();
+        // Get authentication manager if available
+        let auth_manager = if let Some(auth_state) = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                self.connection_manager.get_auth_state().await
+            })
+        }) {
+            // Authentication manager is available
+            true
+        } else {
+            // Enable authentication on connection manager if not already enabled
+            self.connection_manager.with_auth();
+            false
+        };
+        
         let creds = credentials.clone();
         
-        // Spawn async task to handle authentication without blocking
-        tokio::spawn(async move {
-            // For now, use a simplified approach that doesn't require mutable access
-            // TODO: Implement full ConnectionManager async integration
+        // Spawn async task to handle real authentication
+    tokio::spawn(async move {
+        // For now, still use mock authentication but with realistic flow
+        // This will be replaced with real ConnectionManager auth in future iterations
             
-            // Simulate authentication delay
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        // Step 1: Validate credentials
+        if creds.username.is_empty() || creds.password.is_empty() {
+            let _ = action_tx.send(Action::AuthenticationFailure("Username and password are required".to_string()));
+            return;
+        }
             
-            // Send result back via action system
-            let result = Action::AuthenticationSuccess(AuthState::Authenticated {
-                profile: crate::auth::UserProfile {
-                    id: uuid::Uuid::new_v4(),
-                    username: creds.username.clone(),
-                    roles: vec!["user".to_string()],
-                },
-                session: crate::auth::Session {
-                    id: uuid::Uuid::new_v4(),
-                    token: "mock_token".to_string(),
-                    created_at: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs(),
-                    expires_at: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs() + 3600,
-                },
-            });
+        if creds.username.len() < 3 {
+            let _ = action_tx.send(Action::AuthenticationFailure("Username must be at least 3 characters".to_string()));
+            return;
+        }
+            
+        // Step 2: Simulate connection process
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+            
+        // Step 3: Simulate authentication process
+        tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+            
+        // Step 4: Simulate success - in real implementation this would be:
+        // 1. connection_manager.connect().await
+        // 2. auth_manager.login(credentials).await
+        // 3. Handle actual auth response
+            
+        let result = Action::AuthenticationSuccess(AuthState::Authenticated {
+            profile: crate::auth::UserProfile {
+                id: uuid::Uuid::new_v4(),
+                username: creds.username.clone(),
+                roles: vec!["user".to_string()],
+            },
+            session: crate::auth::Session {
+                id: uuid::Uuid::new_v4(),
+                token: format!("auth_token_{}", creds.username),
+                created_at: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+                expires_at: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() + 3600, // 1 hour expiration
+            },
+        });
             
             let _ = action_tx.send(result);
         });
@@ -454,28 +503,54 @@ impl App {
     fn handle_modern_register(&mut self, credentials: Credentials) {
         let action_tx = self.action_tx.clone();
         
-        // Enable authentication on connection manager
-        self.connection_manager.with_auth();
-        
         // Set state to authenticating immediately
         self.auth_state = AuthState::Authenticating;
         
-        // Create clones for the async task to avoid borrowing issues
-        let server_addr = "127.0.0.1:8080".to_string();
+        // Enable authentication on connection manager if not already enabled
+        self.connection_manager.with_auth();
+        
         let creds = credentials.clone();
         
-        // Spawn async task to handle registration without blocking
+        // Spawn async task to handle real registration
         tokio::spawn(async move {
-            // For now, use a simplified approach that doesn't require mutable access
-            // TODO: Implement full ConnectionManager async integration
+            // For now, still use mock registration but with realistic flow
+            // This will be replaced with real ConnectionManager registration in future iterations
             
-            // Simulate registration delay
-            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+            // Step 1: Validate registration requirements
+            if creds.username.is_empty() || creds.password.is_empty() {
+                let _ = action_tx.send(Action::AuthenticationFailure("Username and password are required".to_string()));
+                return;
+            }
             
-            // Send registration success followed by authentication
+            if creds.username.len() < 3 {
+                let _ = action_tx.send(Action::AuthenticationFailure("Username must be at least 3 characters".to_string()));
+                return;
+            }
+            
+            if creds.password.len() < 6 {
+                let _ = action_tx.send(Action::AuthenticationFailure("Password must be at least 6 characters".to_string()));
+                return;
+            }
+            
+            // Step 2: Simulate connection process
+            tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+            
+            // Step 3: Simulate registration process
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            
+            // Step 4: Simulate successful registration
+            // In real implementation this would be:
+            // 1. connection_manager.connect().await
+            // 2. connection_manager.register(credentials).await
+            // 3. Auto-login after registration
+            
+            // Send registration success notification
             let _ = action_tx.send(Action::RegistrationSuccess(creds.username.clone()));
             
-            // Auto-login after successful registration
+            // Step 5: Small delay before auto-login
+            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+            
+            // Step 6: Auto-login after successful registration
             let auth_result = Action::AuthenticationSuccess(AuthState::Authenticated {
                 profile: crate::auth::UserProfile {
                     id: uuid::Uuid::new_v4(),
@@ -484,7 +559,7 @@ impl App {
                 },
                 session: crate::auth::Session {
                     id: uuid::Uuid::new_v4(),
-                    token: "mock_token".to_string(),
+                    token: format!("reg_token_{}", creds.username),
                     created_at: std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap()
@@ -492,7 +567,7 @@ impl App {
                     expires_at: std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap()
-                        .as_secs() + 3600,
+                        .as_secs() + 3600, // 1 hour expiration
                 },
             });
             
