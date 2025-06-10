@@ -440,14 +440,30 @@ fn handle_incoming_message(message: String, shared_key: &str) {
     match decrypt(shared_key.to_string(), message) {
         Ok(decrypted_message) => {
             tracing::info!("DEBUG: Message decrypted successfully: '{}'", decrypted_message);
-            // Send action to update status bar and display message
-            tracing::info!("DEBUG: Sending ReceiveMessage action");
-            send_action(crate::action::Action::ReceiveMessage(decrypted_message));
+            
+            // Message might be from server or another client
+            let formatted_message = if decrypted_message.contains(":") {
+                // Already formatted message from client (e.g., "username: message")
+                decrypted_message.clone()
+            } else if decrypted_message.contains("has joined") || decrypted_message.contains("Welcome back") {
+                // System message or authentication confirmation
+                decrypted_message.clone()
+            } else {
+                // Unformatted message from server, add formatting
+                format!("Server: {}", decrypted_message)
+            };
+            
+            // Just display the message directly in the UI
+            // Avoid potential recursion with multiple action dispatches
+            add_text_message(formatted_message.clone());
+            
+            // Skip ConnectionManager bridge for now - simplify to ensure messages display
+            // Let the action system handle the message display instead
+            add_text_message(format!("{}", decrypted_message.clone()));
         }
         Err(e) => {
             tracing::error!("DEBUG: Failed to decrypt message: {}", e);
-            let error_msg = format!("Failed to decrypt message: {}", e);
-            add_text_message(error_msg);
+            add_text_message(format!("Error decrypting message: {}", e));
         }
     }
 }
@@ -613,7 +629,21 @@ pub static ACTION_SENDER: Lazy<Mutex<Option<mpsc::UnboundedSender<Action>>>> = L
 /// Add a message to displayed in the main window
 #[deprecated(since = "0.5.1", note = "Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
 pub fn add_text_message(s: String) {
-    MESSAGES.lock().unwrap().text.push(s);
+    tracing::info!("DEBUG: add_text_message: '{}'", s);
+    // Add message to global text buffer
+    MESSAGES.lock().unwrap().text.push(s.clone());
+    
+    // Only send non-empty messages that aren't from the current user
+    if !s.is_empty() && !s.contains("You:") && !s.contains("STATUS:") && !s.contains("DEBUG:") {
+        // Send message through action system with a delay to ensure no recursion
+        let message = s.clone();
+        std::thread::spawn(move || {
+            // Small delay to avoid recursion issues
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            tracing::info!("DEBUG: Sending received message through action system: '{}'", message);
+            send_action(crate::action::Action::ReceiveMessage(message));
+        });
+    }
 }
 
 /// Add a message to the outgoing buffer
@@ -643,21 +673,54 @@ pub fn set_action_sender(sender: mpsc::UnboundedSender<Action>) {
 
 /// Send an action to the app if sender is available
 #[deprecated(since = "0.5.1", note = "Use ConnectionManager observer pattern instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
-
 pub fn send_action(action: Action) {
+    // Thread-local flag to prevent infinite recursion
+    thread_local! {
+        static SENDING_ACTION: std::cell::RefCell<bool> = std::cell::RefCell::new(false);
+    }
+    
+    // If we're already sending an action, don't recursively send another one
+    let should_send = SENDING_ACTION.with(|flag| {
+        if *flag.borrow() {
+            false
+        } else {
+            *flag.borrow_mut() = true;
+            true
+        }
+    });
+    
+    if !should_send {
+        return;
+    }
+    
     tracing::info!("DEBUG: send_action called with action: {:?}", action);
     if let Some(sender) = ACTION_SENDER.lock().unwrap().as_ref() {
         match sender.send(action.clone()) {
             Ok(_) => {
-                tracing::info!("DEBUG: Action sent successfully: {:?}", action);
+                tracing::info!("DEBUG: Action sent successfully");
             }
             Err(e) => {
-                tracing::error!("DEBUG: Failed to send action {:?}: {}", action, e);
+                tracing::error!("DEBUG: Failed to send action: {}", e);
+                // Fallback to direct message display if action send fails
+                if let Action::ReceiveMessage(msg) = action {
+                    // Skip add_text_message to avoid recursion
+                    tracing::warn!("DEBUG: Action send failed - message not displayed: {}", msg);
+                }
             }
         }
     } else {
-        tracing::warn!("DEBUG: No action sender available - action not sent: {:?}", action);
+        tracing::error!("DEBUG: Cannot send action - action sender not initialized");
+        // Fallback to direct message storage without recursion
+        if let Action::ReceiveMessage(msg) = action {
+            // Add directly to messages list to avoid recursion
+            MESSAGES.lock().unwrap().text.push(msg);
+        }
     }
+    
+    // Reset flag
+    SENDING_ACTION.with(|flag| {
+        *flag.borrow_mut() = false;
+    });
 }
 
 #[deprecated(since = "0.5.1", note = "Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
@@ -710,7 +773,7 @@ pub fn client_io_select_loop(
     });
 }
 
-pub async fn client_io_select_loop_async(
+async fn client_io_select_loop_async(
     input: Input,
     mut stream: ClientStream,
     mut sink: ClientSink) {
@@ -725,10 +788,14 @@ pub async fn client_io_select_loop_async(
     
     let cancel_token = CANCEL_TOKEN.lock().unwrap().token.clone();
     
+    // Notify status change to CONNECTING before key exchange
+    add_text_message("Performing encryption key exchange with server...".to_string());
+    
     // perform key exchange with server
     let shared_aes256_key = match perform_key_exchange(&mut sink, &mut stream).await {
         Ok(key) => {
             tracing::info!("DEBUG: Key exchange completed successfully");
+            add_text_message("Encryption key exchange completed successfully.".to_string());
             key
         }
         Err(e) => {

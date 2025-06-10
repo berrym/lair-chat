@@ -188,6 +188,20 @@ impl Home {
             add_text_message(content);
         }
     }
+    
+    /// Check if a message is a system message
+    pub fn is_system_message(&self, content: &str) -> bool {
+        // System messages typically have special formatting or prefixes
+        content.starts_with("STATUS:") || 
+        content.starts_with("SYSTEM:") || 
+        content.starts_with("Error:") || 
+        content.contains("has joined the chat") ||
+        content.contains("Welcome back") ||
+        content.contains("Connected to server") ||
+        content.contains("Disconnected from server") ||
+        content.contains("Authentication") ||
+        content.contains("Registration")
+    }
 
     /// Add a pre-formatted message from server (already contains sender: content format)
     pub fn add_received_message(&mut self, formatted_message: String) {

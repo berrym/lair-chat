@@ -17,8 +17,33 @@ use crate::transport::{
 };
 
 /// Global ConnectionManager instance for compatibility
-static COMPAT_CONNECTION_MANAGER: Lazy<Arc<Mutex<Option<ConnectionManager>>>> = 
+pub static COMPAT_CONNECTION_MANAGER: Lazy<Arc<Mutex<Option<ConnectionManager>>>> = 
     Lazy::new(|| Arc::new(Mutex::new(None)));
+
+/// Bridge observer to connect legacy transport messages to ConnectionManager
+struct LegacyTransportObserver;
+
+impl LegacyTransportObserver {
+    fn new() -> Self {
+        tracing::info!("DEBUG: Created new LegacyTransportObserver");
+        Self
+    }
+}
+
+impl ConnectionObserver for LegacyTransportObserver {
+    fn on_message(&self, message: String) {
+        tracing::info!("DEBUG: LegacyTransportObserver received message: {}", message);
+        // We don't need to do anything - the App's ChatMessageObserver will receive this message
+    }
+    
+    fn on_error(&self, error: String) {
+        tracing::error!("DEBUG: LegacyTransportObserver received error: {}", error);
+    }
+    
+    fn on_status_change(&self, connected: bool) {
+        tracing::info!("DEBUG: LegacyTransportObserver connection status changed: {}", connected);
+    }
+}
 
 /// Bridge observer that synchronizes new ConnectionManager state with old global state
 pub struct CompatibilityObserver;
@@ -174,6 +199,10 @@ pub async fn register_connection_manager() {
         let transport = Box::new(crate::tcp_transport::TcpTransport::new(config));
         manager.with_transport(transport);
         manager.with_auth();
+        
+        // Set up a compatibility observer that will bridge legacy transport messages to ConnectionManager
+        let observer = Arc::new(LegacyTransportObserver::new());
+        manager.register_observer(observer);
         
         // Store in global state
         *COMPAT_CONNECTION_MANAGER.lock().await = Some(manager);

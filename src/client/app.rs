@@ -149,9 +149,14 @@ impl App {
         #[allow(deprecated)]
         crate::transport::set_action_sender(self.action_tx.clone());
 
-        // Set up ConnectionManager observer for modern message handling
-        // TODO: Fix Arc<Mutex> access pattern for observer registration
-        // For now, using legacy transport bridge for message handling
+        // Register observer with ConnectionManager for message handling
+        if let Ok(mut manager) = self.connection_manager.lock() {
+            let observer = Arc::new(ChatMessageObserver::new(self.action_tx.clone()));
+            manager.register_observer(observer);
+            tracing::info!("DEBUG: Registered ChatMessageObserver with ConnectionManager");
+        }
+        
+        // Set up legacy transport bridge for backward compatibility
 
         let action_tx = self.action_tx.clone();
         loop {
@@ -403,11 +408,19 @@ impl App {
             }
             
             Action::ReceiveMessage(message) => {
-                // Modern message handling through observer pattern
-                // Observer has already received the message, now handle UI updates
+                // Message handling from either modern or legacy systems
+                // Messages can come from observer pattern or legacy transport
                 info!("ACTION: ReceiveMessage handler called with: '{}'", message);
                 info!("DEBUG: Current auth_state: {:?}", self.auth_state);
                 info!("DEBUG: Chat initialized: {}", self.home_component.is_chat_initialized());
+                
+                // Make sure the message appears in the chat regardless of source
+                if !message.is_empty() && self.auth_state.is_authenticated() {
+                    // Only add to chat if it's not a system message and we're authenticated
+                    if !message.starts_with("You:") && !self.home_component.is_system_message(&message) {
+                        self.home_component.add_message_to_room(message.clone(), false);
+                    }
+                }
                 
                 // Check if this is an authentication response from server
                 if message.contains("Welcome back") || 
@@ -700,6 +713,13 @@ impl App {
             #[allow(deprecated)]
             {
                 use crate::transport::add_outgoing_message;
+                use crate::transport::add_text_message;
+                
+                // Add directly to displayed messages
+                let sent_message = format!("You: {}", message);
+                add_text_message(sent_message.clone());
+                
+                // Queue for sending to others
                 add_outgoing_message(message.clone());
                 info!("DEBUG: Message queued in legacy transport outgoing queue: {}", message);
             }
@@ -725,7 +745,7 @@ impl App {
             // Add sent message to display immediately for sending client
             let sent_message = format!("You: {}", message);
             info!("DEBUG: Adding sent message to room display: '{}'", sent_message);
-            self.home_component.add_message_to_room(sent_message, true);
+            self.home_component.add_message_to_room(sent_message, false);
             
             // Update status bar message count
             self.status_bar.record_sent_message();
