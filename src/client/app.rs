@@ -17,10 +17,11 @@ use crate::{
         Component
     },
     config::Config,
-    transport::ConnectionConfig,
+    transport::{ConnectionConfig, ConnectionObserver},
     tui::{Event, Tui},
     tcp_transport::TcpTransport,
 };
+use std::sync::Arc;
 
 pub struct App {
     config: Config,
@@ -45,6 +46,41 @@ pub struct App {
     home_component: Home,
     status_bar: StatusBar,
     fps_counter: FpsCounter,
+}
+
+/// Observer for handling ConnectionManager messages and events
+pub struct ChatMessageObserver {
+    action_sender: mpsc::UnboundedSender<Action>,
+}
+
+impl ChatMessageObserver {
+    pub fn new(action_sender: mpsc::UnboundedSender<Action>) -> Self {
+        Self { action_sender }
+    }
+}
+
+impl ConnectionObserver for ChatMessageObserver {
+    fn on_message(&self, message: String) {
+        // Send received message to UI via action system
+        let _ = self.action_sender.send(Action::ReceiveMessage(message));
+    }
+    
+    fn on_error(&self, error: String) {
+        // Send error message to UI
+        let _ = self.action_sender.send(Action::ReceiveMessage(format!("ERROR: {}", error)));
+    }
+    
+    fn on_status_change(&self, connected: bool) {
+        // Handle connection status changes
+        let status = if connected {
+            crate::transport::ConnectionStatus::CONNECTED
+        } else {
+            crate::transport::ConnectionStatus::DISCONNECTED
+        };
+        
+        // For now, just log the status change
+        tracing::info!("Connection status changed: connected={}", connected);
+    }
 }
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -110,6 +146,9 @@ impl App {
         // Set up action sender for transport layer to update status bar (legacy compatibility)
         #[allow(deprecated)]
         crate::transport::set_action_sender(self.action_tx.clone());
+
+        // Set up ConnectionManager observer for modern message handling
+        self.setup_connection_observer()?;
 
         let action_tx = self.action_tx.clone();
         loop {
@@ -479,6 +518,14 @@ impl App {
             #[allow(deprecated)]
             add_text_message("Cannot send message: Not connected to server".to_string());
         }
+    }
+
+    /// Set up message observer for ConnectionManager
+    fn setup_connection_observer(&mut self) -> Result<()> {
+        let observer = Arc::new(ChatMessageObserver::new(self.action_tx.clone()));
+        self.connection_manager.register_observer(observer);
+        tracing::info!("ConnectionManager message observer registered");
+        Ok(())
     }
 
     fn draw(&mut self, tui: &mut Tui) -> Result<()> {

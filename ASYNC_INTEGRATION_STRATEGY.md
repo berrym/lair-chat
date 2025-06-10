@@ -37,7 +37,7 @@ This document tracks the step-by-step implementation of Priority 1 from NEXT_STE
 ---
 
 ### Step 2: Implement Core Message Observer
-**Status**: [ ] Pending
+**Status**: [x] COMPLETED
 **Goal**: Create observer pattern foundation for message handling
 **Files**: `src/client/app.rs`, potentially new observer file
 **Changes**:
@@ -46,14 +46,14 @@ This document tracks the step-by-step implementation of Priority 1 from NEXT_STE
 - Implement basic `on_message`, `on_error`, `on_status_change` methods
 
 **Success Criteria**:
-- [ ] Observer is properly registered with ConnectionManager
-- [ ] Observer methods are called when appropriate
-- [ ] No compilation errors or warnings
+- [x] Observer is properly registered with ConnectionManager
+- [x] Observer methods are called when appropriate
+- [x] No compilation errors or warnings
 
 **Test Plan**:
-- [ ] Observer registration works
-- [ ] Mock message triggers observer
-- [ ] Error handling works through observer
+- [x] Observer registration works
+- [x] Mock message triggers observer
+- [x] Error handling works through observer
 
 **Git Commit**: "Add message observer pattern foundation"
 
@@ -231,12 +231,13 @@ This document tracks the step-by-step implementation of Priority 1 from NEXT_STE
 
 ### Completed Steps
 - Step 1: Fix ConnectionManager Async Borrowing
-
-### In Progress
 - Step 2: Implement Core Message Observer
 
+### In Progress
+- Step 3: Replace Legacy Message Handling
+
 ### Pending
-- Steps 3-9
+- Steps 4-9
 
 ## Success Metrics
 - [ ] Zero deprecated API usage in main App
