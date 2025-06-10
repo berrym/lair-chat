@@ -399,9 +399,7 @@ async fn process_outgoing_messages(
 fn handle_incoming_message(message: String, shared_key: &str) {
     match decrypt(shared_key.to_string(), message) {
         Ok(decrypted_message) => {
-            // Add received message immediately to ensure proper ordering
-            add_text_message(decrypted_message.clone());
-            // Also send action to update status bar
+            // Send action to update status bar and display message
             send_action(crate::action::Action::ReceiveMessage(decrypted_message));
         }
         Err(e) => {
@@ -606,10 +604,10 @@ pub async fn connect_client(input: Input, address: SocketAddr) {
     if stream.is_ok() {
         add_text_message("Connected to server.".to_owned());
         add_text_message("".to_owned());
-        tokio::task::spawn_blocking(move || {
+        tokio::spawn(async move {
             CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
             let (reader, writer) = split_tcp_stream(stream.unwrap()).unwrap();
-            client_io_select_loop(input, reader, writer);
+            client_io_select_loop_async(input, reader, writer).await;
         });
     } else {
         add_text_message("Failed to connect to server.".to_owned());
@@ -626,53 +624,62 @@ pub fn client_io_select_loop(
     let mut sink = writer;
     let cancel_token = CANCEL_TOKEN.lock().unwrap().token.clone();
     tokio::spawn(async move {
-        // perform key exchange with server
-        let shared_aes256_key = match perform_key_exchange(&mut sink, &mut stream).await {
-            Ok(key) => key,
-            Err(e) => {
-                add_text_message(format!("Key exchange failed: {}", e));
+        client_io_select_loop_async(input, stream, sink).await;
+    });
+}
+
+pub async fn client_io_select_loop_async(
+    input: Input,
+    mut stream: ClientStream,
+    mut sink: ClientSink) {
+    let cancel_token = CANCEL_TOKEN.lock().unwrap().token.clone();
+    
+    // perform key exchange with server
+    let shared_aes256_key = match perform_key_exchange(&mut sink, &mut stream).await {
+        Ok(key) => key,
+        Err(e) => {
+            add_text_message(format!("Key exchange failed: {}", e));
+            return;
+        }
+    };
+    // main client loop
+    loop {
+        // process any outgoing messages
+        let _ = process_outgoing_messages(&mut sink, &shared_aes256_key).await;
+        
+        // select on futures
+        select! {
+            _ = cancel_token.cancelled().fuse() => {
+                let mut writer = sink.tx.into_inner();
+                let _ = writer.shutdown().await;
                 return;
-            }
-        };
-        // main client loop
-        loop {
-            // process any outgoing messages
-            let _ = process_outgoing_messages(&mut sink, &shared_aes256_key).await;
-            
-            // select on futures
-            select! {
-                _ = cancel_token.cancelled().fuse() => {
-                    let mut writer = sink.tx.into_inner();
-                    let _ = writer.shutdown().await;
+            },
+            message = stream.rx.next().fuse() => match message {
+                Some(Ok(message)) => {
+                    handle_incoming_message(message, &shared_aes256_key);
+                    continue;
+                },
+                None => {
+                    add_text_message("The Lair has CLOSED.".to_string());
+                    handle_connection_closed();
                     return;
                 },
-                message = stream.rx.next().fuse() => match message {
-                    Some(Ok(message)) => {
-                        handle_incoming_message(message, &shared_aes256_key);
-                        continue;
-                    },
-                    None => {
-                        add_text_message("The Lair has CLOSED.".to_string());
-                        handle_connection_closed();
-                        return;
-                    },
-                    Some(Err(e)) => {
-                        add_text_message(format!("Closed connection with error: {e}"));
-                        handle_connection_closed();
-                        return;
-                    }
-                },
-                message = get_user_input(input.clone()).fuse() => match message {
-                    Some(message) => {
-                        let _ = handle_user_input(&mut sink, message, &shared_aes256_key).await;
-                    },
-                    None => {
-                        sleep(Duration::from_millis(250)).await;
-                    },
+                Some(Err(e)) => {
+                    add_text_message(format!("Closed connection with error: {e}"));
+                    handle_connection_closed();
+                    return;
                 }
+            },
+            message = get_user_input(input.clone()).fuse() => match message {
+                Some(message) => {
+                    let _ = handle_user_input(&mut sink, message, &shared_aes256_key).await;
+                },
+                None => {
+                    sleep(Duration::from_millis(250)).await;
+                },
             }
         }
-    });
+    }
 }
 
 pub async fn disconnect_client() {
