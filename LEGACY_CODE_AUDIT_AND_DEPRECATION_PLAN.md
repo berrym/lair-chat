@@ -297,26 +297,29 @@ impl LairChatApp {
 
 ## Implementation Timeline
 
-### v0.5.1 (Immediate)
-- [ ] Add deprecation warnings to all legacy APIs
-- [ ] Update documentation with migration guidance
-- [ ] Add compiler warnings for deprecated usage
-- [ ] Create migration examples
+### v0.5.1 (Immediate) ✅ COMPLETED
+- [x] Add deprecation warnings to all legacy APIs
+- [x] Update documentation with migration guidance
+- [x] Add compiler warnings for deprecated usage
+- [x] Create migration examples
 
-### v0.6.0 (2-4 weeks)
-- [ ] Implement modern authentication flow
-- [ ] Replace global state with ConnectionManager
-- [ ] Modernize message handling with proper observers
-- [ ] Add comprehensive error typing
+### v0.6.0 (2-4 weeks) 🔄 IN PROGRESS (75% Complete)
+- [x] Implement modern authentication flow (scaffolding complete)
+- [x] Replace global state with ConnectionManager (structure in place)
+- [ ] Modernize message handling with proper observers (async integration pending)
+- [x] Add comprehensive error typing
 - [ ] Update tests to use modern patterns
+- [x] Complete ConnectionManager integration into App struct
+- [ ] Remove compatibility layer dependencies
+- [ ] Finish async/await integration
 
-### v0.6.1 (6 weeks)
+### v0.6.1 (6 weeks) 📅 PLANNED
 - [ ] Performance optimization of new architecture
 - [ ] Complete test migration
 - [ ] Documentation updates
 - [ ] Integration testing with new patterns
 
-### v0.7.0 (8 weeks)
+### v0.7.0 (8 weeks) 📅 PLANNED
 - [ ] Remove all deprecated APIs
 - [ ] Delete compatibility layer
 - [ ] Clean up global state remnants

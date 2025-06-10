@@ -593,6 +593,7 @@ pub fn send_action(action: Action) {
     }
 }
 
+#[deprecated(since = "0.5.1", note = "Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
 pub fn add_silent_outgoing_message(s: String) {
     // Add message to outgoing queue but mark it as silent (auth request)
     let mut messages = MESSAGES.lock().unwrap();
@@ -605,7 +606,7 @@ pub fn split_tcp_stream(stream: TcpStream) -> Result<(ClientStream, ClientSink)>
     Ok((ClientStream::new(reader), ClientSink::new(writer)))
 }
 
-#[deprecated(since = "0.5.1", note = "Use ConnectionManager.connect() instead. This legacy transport function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
+#[deprecated(since = "0.5.1", note = "Use ConnectionManager.connect() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
 pub async fn connect_client(input: Input, address: SocketAddr) {
     add_text_message(format!("Connecting to {}", address.clone()));
     let stream = TcpStream::connect(address).await;
@@ -690,6 +691,7 @@ pub async fn client_io_select_loop_async(
     }
 }
 
+#[deprecated(since = "0.5.1", note = "Use ConnectionManager.disconnect() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
 pub async fn disconnect_client() {
     if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
         CANCEL_TOKEN.lock().unwrap().token.cancel();

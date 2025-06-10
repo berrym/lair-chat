@@ -88,7 +88,7 @@ async fn get_or_create_manager(address: SocketAddr) -> Result<(), TransportError
 /// 
 /// This function uses the old transport system that properly handles encryption
 /// and authentication as expected by the server.
-#[deprecated(since = "0.5.1", note = "Use ConnectionManager.connect() instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
+#[deprecated(since = "0.5.1", note = "Use ConnectionManager.connect() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
 pub async fn connect_client_compat(input: Input, address: SocketAddr) -> Result<(), TransportError> {
     use crate::transport::connect_client;
     
@@ -120,7 +120,7 @@ pub async fn authenticate_compat(username: String, password: String) -> Result<(
 }
 
 /// Compatibility function that maintains the old disconnect_client API
-#[deprecated(since = "0.5.1", note = "Use ConnectionManager.disconnect() instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
+#[deprecated(since = "0.5.1", note = "Use ConnectionManager.disconnect() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
 pub async fn disconnect_client_compat() -> Result<(), TransportError> {
     use crate::transport::disconnect_client;
     
@@ -130,7 +130,7 @@ pub async fn disconnect_client_compat() -> Result<(), TransportError> {
 
 /// Get the current connection status using the new architecture if available,
 /// falling back to the old global state
-#[deprecated(since = "0.5.1", note = "Use ConnectionManager.get_status() instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
+#[deprecated(since = "0.5.1", note = "Use ConnectionManager.get_status() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
 pub async fn get_connection_status_compat() -> ConnectionStatus {
     let manager_guard = COMPAT_CONNECTION_MANAGER.lock().await;
     
@@ -147,6 +147,7 @@ pub async fn get_connection_status_compat() -> ConnectionStatus {
 }
 
 /// Send a message using the legacy transport system
+#[deprecated(since = "0.5.1", note = "Use ConnectionManager.send_message() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
 pub async fn send_message_compat(message: String) -> Result<(), TransportError> {
     use crate::transport::{add_outgoing_message, CLIENT_STATUS, ConnectionStatus};
     
@@ -175,6 +176,7 @@ pub async fn migrate_to_new_architecture(address: SocketAddr) -> Result<(), Tran
 }
 
 /// Clean up the compatibility layer (useful for tests or shutdown)
+#[deprecated(since = "0.5.1", note = "This cleanup function will no longer be needed when compatibility layer is removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
 pub async fn cleanup_compatibility_layer() {
     let mut manager_guard = COMPAT_CONNECTION_MANAGER.lock().await;
     

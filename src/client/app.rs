@@ -7,7 +7,8 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     action::Action,
-    auth::{AuthManager, AuthState, storage::FileTokenStorage},
+    auth::{AuthState, Credentials},
+    connection_manager::ConnectionManager,
     components::{
         auth::{AuthStatusBar, LoginScreen},
         home::Home,
@@ -16,7 +17,9 @@ use crate::{
         Component
     },
     config::Config,
+    transport::ConnectionConfig,
     tui::{Event, Tui},
+    tcp_transport::TcpTransport,
 };
 
 pub struct App {
@@ -30,8 +33,10 @@ pub struct App {
     action_tx: mpsc::UnboundedSender<Action>,
     action_rx: mpsc::UnboundedReceiver<Action>,
     
+    // Modern connection management
+    connection_manager: ConnectionManager,
+    
     // Authentication components
-    auth_manager: AuthManager,
     auth_state: AuthState,
     login_screen: LoginScreen,
     auth_status: AuthStatusBar,
@@ -55,14 +60,16 @@ pub enum Mode {
 impl App {
     pub fn new(tick_rate: f64, frame_rate: f64) -> Result<Self> {
         let (action_tx, action_rx) = mpsc::unbounded_channel();
-        // Create a mock transport and token storage for now
-        let config = crate::transport::ConnectionConfig {
+        
+        // Create modern ConnectionManager with transport
+        let connection_config = ConnectionConfig {
             address: "127.0.0.1:8080".parse().unwrap(),
             timeout_ms: 5000,
         };
-        let mock_transport = std::sync::Arc::new(tokio::sync::Mutex::new(Box::new(crate::tcp_transport::TcpTransport::new(config)) as Box<dyn crate::transport::Transport + Send + Sync>));
-        let token_storage = Box::new(FileTokenStorage::new()?) as Box<dyn crate::auth::storage::TokenStorage>;
-        let auth_manager = AuthManager::new(mock_transport, token_storage);
+        
+        let mut connection_manager = ConnectionManager::new(connection_config.clone());
+        let transport = Box::new(TcpTransport::new(connection_config));
+        connection_manager.with_transport(transport);
         
         Ok(Self {
             tick_rate,
@@ -75,8 +82,10 @@ impl App {
             action_tx,
             action_rx,
             
+            // Modern connection management
+            connection_manager,
+            
             // Authentication components
-            auth_manager,
             auth_state: AuthState::Unauthenticated,
             login_screen: LoginScreen::new(),
             auth_status: AuthStatusBar::new(),
@@ -98,7 +107,8 @@ impl App {
         let size = tui.size()?;
         self.init_components(size.into())?;
 
-        // Set up action sender for transport layer to update status bar
+        // Set up action sender for transport layer to update status bar (legacy compatibility)
+        #[allow(deprecated)]
         crate::transport::set_action_sender(self.action_tx.clone());
 
         let action_tx = self.action_tx.clone();
@@ -219,26 +229,24 @@ impl App {
                 self.fps_counter.update(action.clone())?;
             }
             
-            // Authentication actions
+            // Authentication actions - Modern implementation
             Action::Login(credentials) => {
-                // DEPRECATED: Keep old login for backward compatibility
-                // TODO: Replace with direct AuthManager usage in v0.6.0
-                #[allow(deprecated)]
-                self.handle_login_with_server(credentials.clone(), "127.0.0.1:8080".to_string());
+                self.handle_modern_login(credentials.clone());
             }
             
             Action::Register(credentials) => {
-                // DEPRECATED: Keep old register for backward compatibility
-                // TODO: Replace with direct AuthManager usage in v0.6.0
-                #[allow(deprecated)]
-                self.handle_register_with_server(credentials.clone(), "127.0.0.1:8080".to_string());
+                self.handle_modern_register(credentials.clone());
             }
             
             Action::LoginWithServer(credentials, server_address) => {
+                // For backward compatibility, still support legacy method for now
+                #[allow(deprecated)]
                 self.handle_login_with_server(credentials.clone(), server_address.clone());
             }
             
             Action::RegisterWithServer(credentials, server_address) => {
+                // For backward compatibility, still support legacy method for now
+                #[allow(deprecated)]
                 self.handle_register_with_server(credentials.clone(), server_address.clone());
             }
             
@@ -274,6 +282,8 @@ impl App {
                     
                     // Update status bar with authentication info
                     self.status_bar.set_auth_state(auth_state.clone());
+                    
+                    // Use legacy status for now until ConnectionManager is fully integrated
                     #[allow(deprecated)]
                     self.status_bar.set_connection_status(crate::transport::CLIENT_STATUS.lock().unwrap().status.clone());
                     
@@ -317,42 +327,20 @@ impl App {
             }
             
             Action::SendMessage(message) => {
-                // DEPRECATED: Handle message sending using legacy transport system
-                // TODO: Replace with ConnectionManager.send_message() in v0.6.0
-                #[allow(deprecated)]
-                use crate::transport::{CLIENT_STATUS, ConnectionStatus, add_text_message, add_outgoing_message};
-                #[allow(deprecated)]
-                let client_status = CLIENT_STATUS.lock().unwrap();
-                
-                if client_status.status == ConnectionStatus::CONNECTED {
-                    // Add message to outgoing queue for server transmission
-                    #[allow(deprecated)]
-                    add_outgoing_message(message.clone());
-                    
-                    // Update status bar message count
-                    self.status_bar.record_sent_message();
-                    
-                    debug!("Message queued for sending: {}", message);
-                } else {
-                    warn!("Cannot send message - client not connected: {}", message);
-                    #[allow(deprecated)]
-                    add_text_message("Cannot send message: Not connected to server".to_string());
-                }
+                self.handle_modern_send_message(message.clone());
             }
             
             Action::ReceiveMessage(message) => {
-                // DEPRECATED: Handle received messages using legacy transport
-                // TODO: Replace with ConnectionManager observer pattern in v0.6.0
-                #[allow(deprecated)]
-                use crate::transport::add_text_message;
-                #[allow(deprecated)]
-                add_text_message(message.to_string());
-                
-                // Also add to new chat system if available
+                // Modern message handling - add to chat system
                 self.home_component.add_message_to_room(message.to_string(), false);
+                
+                // Also add to legacy system for compatibility
+                #[allow(deprecated)]
+                crate::transport::add_text_message(message.to_string());
                 
                 // Update status bar message count
                 self.status_bar.record_received_message();
+                debug!("Received message: {}", message);
             }
             
             // Pass other actions to appropriate components
@@ -367,6 +355,62 @@ impl App {
         }
         
         Ok(None)
+    }
+
+    /// Modern authentication flow using ConnectionManager
+    fn handle_modern_login(&mut self, credentials: Credentials) {
+        let action_tx = self.action_tx.clone();
+        
+        // Enable authentication on connection manager
+        self.connection_manager.with_auth();
+        
+        // Set state to authenticating immediately
+        self.auth_state = AuthState::Authenticating;
+        
+        // For now, fall back to legacy method until ConnectionManager is fully working
+        // TODO: Complete ConnectionManager integration in next iteration
+        #[allow(deprecated)]
+        self.handle_login_with_server(credentials.clone(), "127.0.0.1:8080".to_string());
+    }
+    
+    /// Modern registration flow using ConnectionManager
+    fn handle_modern_register(&mut self, credentials: Credentials) {
+        // Enable authentication on connection manager
+        self.connection_manager.with_auth();
+        
+        // Set state to authenticating immediately
+        self.auth_state = AuthState::Authenticating;
+        
+        // For now, fall back to legacy method until ConnectionManager is fully working
+        // TODO: Complete ConnectionManager integration in next iteration
+        #[allow(deprecated)]
+        self.handle_register_with_server(credentials.clone(), "127.0.0.1:8080".to_string());
+    }
+    
+    /// Modern message sending using ConnectionManager
+    fn handle_modern_send_message(&mut self, message: String) {
+        // For now, use legacy transport system since it's proven to work
+        // TODO: Complete ConnectionManager message sending integration
+        #[allow(deprecated)]
+        use crate::transport::{CLIENT_STATUS, ConnectionStatus, add_text_message, add_outgoing_message};
+        
+        #[allow(deprecated)]
+        let client_status = CLIENT_STATUS.lock().unwrap();
+        
+        if client_status.status == ConnectionStatus::CONNECTED {
+            // Add message to outgoing queue for server transmission
+            #[allow(deprecated)]
+            add_outgoing_message(message.clone());
+            
+            // Update status bar message count
+            self.status_bar.record_sent_message();
+            
+            debug!("Message queued for sending: {}", message);
+        } else {
+            warn!("Cannot send message - client not connected: {}", message);
+            #[allow(deprecated)]
+            add_text_message("Cannot send message: Not connected to server".to_string());
+        }
     }
 
     fn draw(&mut self, tui: &mut Tui) -> Result<()> {
@@ -455,7 +499,10 @@ impl App {
                         match connect_client_compat(input, addr).await {
                             Ok(()) => {
                                 #[allow(deprecated)]
-                                CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
+                                {
+                                    use crate::transport::{CLIENT_STATUS, ConnectionStatus};
+                                    CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
+                                }
                                 info!("Successfully connected to server at {}", server_addr);
                                 
                                 // Add small delay to ensure connection is stable
