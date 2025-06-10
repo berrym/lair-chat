@@ -10,6 +10,7 @@ use tokio::{
         tcp::{OwnedReadHalf, OwnedWriteHalf},
         TcpStream,
     },
+    sync::mpsc,
     time::{sleep, Duration},
 };
 use tokio_stream::{wrappers::LinesStream, Stream, StreamExt};
@@ -22,6 +23,7 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 use async_trait::async_trait;
 
 use crate::components::home::get_user_input;
+use crate::action::Action;
 use super::encryption::{encrypt, decrypt, EncryptionError};
 
 /// Trait abstraction for encryption operations
@@ -398,10 +400,13 @@ fn handle_incoming_message(message: String, shared_key: &str) {
     match decrypt(shared_key.to_string(), message) {
         Ok(decrypted_message) => {
             // Add received message immediately to ensure proper ordering
-            add_text_message(decrypted_message);
+            add_text_message(decrypted_message.clone());
+            // Also send action to update status bar
+            send_action(crate::action::Action::ReceiveMessage(decrypted_message));
         }
         Err(e) => {
-            add_text_message(format!("Failed to decrypt message: {}", e));
+            let error_msg = format!("Failed to decrypt message: {}", e);
+            add_text_message(error_msg);
         }
     }
 }
@@ -556,6 +561,11 @@ pub static MESSAGES: Lazy<Mutex<Messages>> = Lazy::new(|| {
     Mutex::new(m)
 });
 
+/// Global action sender for transport layer to communicate with app
+pub static ACTION_SENDER: Lazy<Mutex<Option<mpsc::UnboundedSender<Action>>>> = Lazy::new(|| {
+    Mutex::new(None)
+});
+
 /// Add a message to displayed in the main window
 pub fn add_text_message(s: String) {
     MESSAGES.lock().unwrap().text.push(s);
@@ -564,6 +574,18 @@ pub fn add_text_message(s: String) {
 /// Add a message to the outgoing buffer
 pub fn add_outgoing_message(s: String) {
     MESSAGES.lock().unwrap().outgoing.insert(0, s);
+}
+
+/// Set the action sender for transport layer to communicate with app
+pub fn set_action_sender(sender: mpsc::UnboundedSender<Action>) {
+    *ACTION_SENDER.lock().unwrap() = Some(sender);
+}
+
+/// Send an action to the app if sender is available
+pub fn send_action(action: Action) {
+    if let Some(sender) = ACTION_SENDER.lock().unwrap().as_ref() {
+        let _ = sender.send(action);
+    }
 }
 
 pub fn add_silent_outgoing_message(s: String) {

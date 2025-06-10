@@ -98,6 +98,9 @@ impl App {
         let size = tui.size()?;
         self.init_components(size.into())?;
 
+        // Set up action sender for transport layer to update status bar
+        crate::transport::set_action_sender(self.action_tx.clone());
+
         let action_tx = self.action_tx.clone();
         loop {
             self.handle_events(&mut tui).await?;
