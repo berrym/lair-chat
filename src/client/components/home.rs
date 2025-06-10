@@ -148,6 +148,11 @@ impl Home {
         MESSAGES.lock().unwrap().text.clone()
     }
 
+    /// Check if chat system is initialized (has current room and user)
+    pub fn is_chat_initialized(&self) -> bool {
+        self.current_room_id.is_some() && self.current_user_id.is_some()
+    }
+
     /// Add a message to current room
     pub fn add_message_to_room(&mut self, content: String, is_system: bool) {
         if let (Some(room_id), Some(user_id)) = (self.current_room_id, self.current_user_id) {

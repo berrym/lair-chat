@@ -401,11 +401,21 @@ impl App {
             Action::ReceiveMessage(message) => {
                 // Modern message handling through observer pattern
                 // Observer has already received the message, now handle UI updates
+                info!("ACTION: ReceiveMessage handler called with: '{}'", message);
+                
+                // Ensure chat is initialized
+                if !self.home_component.is_chat_initialized() {
+                    warn!("Chat not initialized, attempting to initialize with default user");
+                    if let Err(e) = self.home_component.initialize_chat("DefaultUser".to_string()) {
+                        error!("Failed to initialize chat: {}", e);
+                    }
+                }
+                
                 self.home_component.add_message_to_room(message.to_string(), false);
                 
                 // Update status bar message count
                 self.status_bar.record_received_message();
-                debug!("Received message via observer pattern: {}", message);
+                info!("Message added to room and status updated: {}", message);
             }
             
             Action::Error(error) => {
@@ -600,6 +610,7 @@ impl App {
                     self.status_bar.record_sent_message();
                     
                     // Add message to local chat display
+                    info!("Adding sent message to room display: '{}'", message);
                     self.home_component.add_message_to_room(
                         format!("You: {}", message),
                         false
