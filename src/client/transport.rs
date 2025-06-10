@@ -643,6 +643,7 @@ pub fn set_action_sender(sender: mpsc::UnboundedSender<Action>) {
 
 /// Send an action to the app if sender is available
 #[deprecated(since = "0.5.1", note = "Use ConnectionManager observer pattern instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
+
 pub fn send_action(action: Action) {
     tracing::info!("DEBUG: send_action called with action: {:?}", action);
     if let Some(sender) = ACTION_SENDER.lock().unwrap().as_ref() {

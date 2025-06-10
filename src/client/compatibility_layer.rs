@@ -89,7 +89,7 @@ async fn get_or_create_manager(address: SocketAddr) -> Result<(), TransportError
 /// This function uses the old transport system that properly handles encryption
 /// and authentication as expected by the server.
 #[deprecated(since = "0.5.1", note = "Use ConnectionManager.connect() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
-pub async fn connect_client_compat(input: Input, address: SocketAddr) -> Result<(), TransportError> {
+pub async fn connect_client_compat(input: Input, address: std::net::SocketAddr) -> Result<(), TransportError> {
     use crate::transport::connect_client;
     use tokio::net::TcpStream;
     use tokio::time::{timeout, Duration};

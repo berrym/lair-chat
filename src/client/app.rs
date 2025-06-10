@@ -685,8 +685,8 @@ impl App {
         if connection_status == crate::transport::ConnectionStatus::CONNECTED {
             info!("Sending message via ConnectionManager (connection_status: {:?}): '{}'", connection_status, message);
             
-            // Use legacy transport for compatibility since ConnectionManager async access
-            // across await points is complex with Arc<Mutex>. This will be improved in future iterations.
+            // Use legacy transport for sending messages during transition period
+            // This ensures proper encryption and key exchange with the server
             #[allow(deprecated)]
             use crate::transport::add_outgoing_message;
             #[allow(deprecated)]
@@ -803,10 +803,10 @@ impl App {
             let server_addr = server_address.clone();
             async move {
                 // Use legacy authentication for now to maintain functionality
-                // TODO: Replace with pure ConnectionManager authentication in future iteration
+                // This ensures key exchange happens properly with the server
                 #[allow(deprecated)]
                 use crate::compatibility_layer::connect_client_compat;
-                
+                                
                 // Try to connect to the server first
                 let address: Result<std::net::SocketAddr, _> = server_addr.parse();
                 match address {
