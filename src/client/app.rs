@@ -221,12 +221,16 @@ impl App {
             
             // Authentication actions
             Action::Login(credentials) => {
-                // Keep old login for backward compatibility
+                // DEPRECATED: Keep old login for backward compatibility
+                // TODO: Replace with direct AuthManager usage in v0.6.0
+                #[allow(deprecated)]
                 self.handle_login_with_server(credentials.clone(), "127.0.0.1:8080".to_string());
             }
             
             Action::Register(credentials) => {
-                // Keep old register for backward compatibility  
+                // DEPRECATED: Keep old register for backward compatibility
+                // TODO: Replace with direct AuthManager usage in v0.6.0
+                #[allow(deprecated)]
                 self.handle_register_with_server(credentials.clone(), "127.0.0.1:8080".to_string());
             }
             
@@ -270,6 +274,7 @@ impl App {
                     
                     // Update status bar with authentication info
                     self.status_bar.set_auth_state(auth_state.clone());
+                    #[allow(deprecated)]
                     self.status_bar.set_connection_status(crate::transport::CLIENT_STATUS.lock().unwrap().status.clone());
                     
                     // Initialize chat system for authenticated user
@@ -312,12 +317,16 @@ impl App {
             }
             
             Action::SendMessage(message) => {
-                // Handle message sending using legacy transport system
+                // DEPRECATED: Handle message sending using legacy transport system
+                // TODO: Replace with ConnectionManager.send_message() in v0.6.0
+                #[allow(deprecated)]
                 use crate::transport::{CLIENT_STATUS, ConnectionStatus, add_text_message, add_outgoing_message};
+                #[allow(deprecated)]
                 let client_status = CLIENT_STATUS.lock().unwrap();
                 
                 if client_status.status == ConnectionStatus::CONNECTED {
                     // Add message to outgoing queue for server transmission
+                    #[allow(deprecated)]
                     add_outgoing_message(message.clone());
                     
                     // Update status bar message count
@@ -326,13 +335,17 @@ impl App {
                     debug!("Message queued for sending: {}", message);
                 } else {
                     warn!("Cannot send message - client not connected: {}", message);
+                    #[allow(deprecated)]
                     add_text_message("Cannot send message: Not connected to server".to_string());
                 }
             }
             
             Action::ReceiveMessage(message) => {
-                // Handle received messages
+                // DEPRECATED: Handle received messages using legacy transport
+                // TODO: Replace with ConnectionManager observer pattern in v0.6.0
+                #[allow(deprecated)]
                 use crate::transport::add_text_message;
+                #[allow(deprecated)]
                 add_text_message(message.to_string());
                 
                 // Also add to new chat system if available
@@ -394,6 +407,7 @@ impl App {
 
                     // Update status bar with current state
                     self.status_bar.set_auth_state(self.auth_state.clone());
+                    #[allow(deprecated)]
                     self.status_bar.set_connection_status(crate::transport::CLIENT_STATUS.lock().unwrap().status.clone());
                     
                     // Draw status bar
@@ -425,7 +439,11 @@ impl App {
             let creds = credentials.clone();
             let server_addr = server_address.clone();
             async move {
+                // DEPRECATED: Using legacy transport and compatibility layer
+                // TODO: Replace with direct ConnectionManager usage in v0.6.0
+                #[allow(deprecated)]
                 use crate::transport::{CLIENT_STATUS, ConnectionStatus, add_text_message};
+                #[allow(deprecated)]
                 use crate::compatibility_layer::connect_client_compat;
                 
                 // Try to connect to the server first
@@ -433,8 +451,10 @@ impl App {
                 match address {
                     Ok(addr) => {
                         let input = tui_input::Input::default();
+                        #[allow(deprecated)]
                         match connect_client_compat(input, addr).await {
                             Ok(()) => {
+                                #[allow(deprecated)]
                                 CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
                                 info!("Successfully connected to server at {}", server_addr);
                                 
@@ -442,9 +462,11 @@ impl App {
                                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                                 
                                 // Send authentication request to server
+                                #[allow(deprecated)]
                                 use crate::compatibility_layer::authenticate_compat;
                                 
                                 // Send authentication request
+                                #[allow(deprecated)]
                                 match authenticate_compat(creds.username.clone(), creds.password.clone()).await {
                                     Ok(()) => {
                                         info!("Authentication request sent for user: {}", creds.username);
@@ -467,6 +489,7 @@ impl App {
                                     }
                                     Err(e) => {
                                         error!("Failed to send authentication request for {}: {}", creds.username, e);
+                                        #[allow(deprecated)]
                                         add_text_message(format!("Authentication failed: {}", e));
                                         let _ = tx.send(Action::AuthenticationFailure("Failed to send authentication request".to_string()));
                                     }

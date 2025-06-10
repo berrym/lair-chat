@@ -492,6 +492,7 @@ impl ClientStatus {
 }
 
 /// Lazy Mutex wrapped global client connection status
+#[deprecated(since = "0.5.1", note = "Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
 pub static CLIENT_STATUS: Lazy<Mutex<ClientStatus>> = Lazy::new(|| {
     let m = ClientStatus::new();
     Mutex::new(m)
@@ -554,32 +555,38 @@ impl Messages {
 }
 
 /// Lazy Mutex wrapped global message buffers
+#[deprecated(since = "0.5.1", note = "Use ConnectionManager with proper observers instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
 pub static MESSAGES: Lazy<Mutex<Messages>> = Lazy::new(|| {
     let m = Messages::new();
     Mutex::new(m)
 });
 
 /// Global action sender for transport layer to communicate with app
+#[deprecated(since = "0.5.1", note = "Use ConnectionManager with proper observer pattern instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
 pub static ACTION_SENDER: Lazy<Mutex<Option<mpsc::UnboundedSender<Action>>>> = Lazy::new(|| {
     Mutex::new(None)
 });
 
 /// Add a message to displayed in the main window
+#[deprecated(since = "0.5.1", note = "Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
 pub fn add_text_message(s: String) {
     MESSAGES.lock().unwrap().text.push(s);
 }
 
 /// Add a message to the outgoing buffer
+#[deprecated(since = "0.5.1", note = "Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
 pub fn add_outgoing_message(s: String) {
     MESSAGES.lock().unwrap().outgoing.insert(0, s);
 }
 
 /// Set the action sender for transport layer to communicate with app
+#[deprecated(since = "0.5.1", note = "Use ConnectionManager with proper observer registration instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
 pub fn set_action_sender(sender: mpsc::UnboundedSender<Action>) {
     *ACTION_SENDER.lock().unwrap() = Some(sender);
 }
 
 /// Send an action to the app if sender is available
+#[deprecated(since = "0.5.1", note = "Use ConnectionManager observer pattern instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
 pub fn send_action(action: Action) {
     if let Some(sender) = ACTION_SENDER.lock().unwrap().as_ref() {
         let _ = sender.send(action);
@@ -598,6 +605,7 @@ pub fn split_tcp_stream(stream: TcpStream) -> Result<(ClientStream, ClientSink)>
     Ok((ClientStream::new(reader), ClientSink::new(writer)))
 }
 
+#[deprecated(since = "0.5.1", note = "Use ConnectionManager.connect() instead. This legacy transport function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.")]
 pub async fn connect_client(input: Input, address: SocketAddr) {
     add_text_message(format!("Connecting to {}", address.clone()));
     let stream = TcpStream::connect(address).await;
