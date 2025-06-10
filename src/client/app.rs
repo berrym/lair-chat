@@ -436,7 +436,10 @@ impl App {
                         match connect_client_compat(input, addr).await {
                             Ok(()) => {
                                 CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
-                                // Connection message is handled by transport layer
+                                info!("Successfully connected to server at {}", server_addr);
+                                
+                                // Add small delay to ensure connection is stable
+                                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                                 
                                 // Send authentication request to server
                                 use crate::compatibility_layer::authenticate_compat;
@@ -444,31 +447,36 @@ impl App {
                                 // Send authentication request
                                 match authenticate_compat(creds.username.clone(), creds.password.clone()).await {
                                     Ok(()) => {
+                                        info!("Authentication request sent for user: {}", creds.username);
                                         // Start authentication response monitoring
                                         let tx_clone = tx.clone();
                                         let username = creds.username.clone();
-                                
+                                        
                                         tokio::spawn(async move {
-                                            // Wait for and handle server authentication response
                                             match wait_for_auth_response(username.clone()).await {
                                                 Ok(auth_state) => {
+                                                    info!("Authentication successful for user: {}", username);
                                                     let _ = tx_clone.send(Action::AuthenticationSuccess(auth_state));
                                                 }
                                                 Err(error_msg) => {
+                                                    warn!("Authentication failed for user {}: {}", username, error_msg);
                                                     let _ = tx_clone.send(Action::AuthenticationFailure(error_msg));
                                                 }
                                             }
                                         });
                                     }
                                     Err(e) => {
+                                        error!("Failed to send authentication request for {}: {}", creds.username, e);
                                         add_text_message(format!("Authentication failed: {}", e));
                                         let _ = tx.send(Action::AuthenticationFailure("Failed to send authentication request".to_string()));
                                     }
                                 }
                             }
                             Err(e) => {
+                                error!("Connection failed to {}: {}", server_addr, e);
                                 add_text_message(format!("Failed to connect to {}: {}", server_addr, e));
                                 add_text_message("Authentication failed - could not connect to server".to_string());
+                                add_text_message("Retrying connection may help if server is starting up...".to_string());
                                 add_text_message("Start the server with: cargo run --bin lair-chat-server".to_string());
                                 let detailed_error = format!("Connection to {} failed: {}. This could be due to: (1) Server not running - start with 'cargo run --bin lair-chat-server', (2) Server starting up - wait a moment and retry, (3) Port already in use, (4) Firewall blocking connection, (5) Server crashed or not listening properly.", server_addr, e);
                                 let _ = tx.send(Action::AuthenticationFailure(detailed_error));
@@ -504,11 +512,15 @@ impl App {
                         match connect_client_compat(input, addr).await {
                             Ok(()) => {
                                 CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
-                                // Connection message is handled by transport layer
+                                info!("Successfully connected to server at {} for registration", server_addr);
+                                
+                                // Add small delay to ensure connection is stable
+                                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                                 
                                 // Send registration request
                                 match register_compat(creds.username.clone(), creds.password.clone()).await {
                                     Ok(()) => {
+                                        info!("Registration request sent for user: {}", creds.username);
                                         // Start registration response monitoring
                                         let tx_clone = tx.clone();
                                         let username = creds.username.clone();
@@ -516,23 +528,28 @@ impl App {
                                         tokio::spawn(async move {
                                             match wait_for_auth_response(username.clone()).await {
                                                 Ok(auth_state) => {
+                                                    info!("Registration and authentication successful for user: {}", username);
                                                     let _ = tx_clone.send(Action::AuthenticationSuccess(auth_state));
                                                 }
                                                 Err(error_msg) => {
+                                                    warn!("Registration/authentication failed for user {}: {}", username, error_msg);
                                                     let _ = tx_clone.send(Action::AuthenticationFailure(error_msg));
                                                 }
                                             }
                                         });
                                     }
                                     Err(e) => {
+                                        error!("Failed to send registration request for {}: {}", creds.username, e);
                                         add_text_message(format!("Registration failed: {}", e));
                                         let _ = tx.send(Action::AuthenticationFailure("Failed to send registration request".to_string()));
                                     }
                                 }
                             }
                             Err(e) => {
+                                error!("Registration connection failed to {}: {}", server_addr, e);
                                 add_text_message(format!("Failed to connect to {}: {}", server_addr, e));
                                 add_text_message("Registration failed - could not connect to server".to_string());
+                                add_text_message("Retrying connection may help if server is starting up...".to_string());
                                 add_text_message("Start the server with: cargo run --bin lair-chat-server".to_string());
                                 let detailed_error = format!("Connection to {} failed: {}. This could be due to: (1) Server not running - start with 'cargo run --bin lair-chat-server', (2) Server starting up - wait a moment and retry, (3) Port already in use, (4) Firewall blocking connection, (5) Server crashed or not listening properly.", server_addr, e);
                                 let _ = tx.send(Action::AuthenticationFailure(detailed_error));
@@ -559,11 +576,11 @@ async fn wait_for_auth_response(username: String) -> Result<crate::auth::AuthSta
     info!("Starting authentication response wait for user: {}", username);
     
     // Monitor incoming messages for authentication response
-    for attempt in 0..150 { // Wait up to 15 seconds (150 * 100ms)
+    for attempt in 0..200 { // Wait up to 20 seconds (200 * 100ms)
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         
-        // Log progress every 3 seconds
-        if attempt % 30 == 0 && attempt > 0 {
+        // Log progress every 5 seconds
+        if attempt % 50 == 0 && attempt > 0 {
             info!("Authentication wait progress: {} seconds elapsed for user {}", attempt / 10, username);
         }
         
@@ -612,8 +629,8 @@ async fn wait_for_auth_response(username: String) -> Result<crate::auth::AuthSta
         }
     }
     
-    error!("Authentication timeout after 15 seconds for user: {}", username);
-    Err("Authentication timeout - no response from server after 15 seconds".to_string())
+    error!("Authentication timeout after 20 seconds for user: {}", username);
+    Err("Authentication timeout - no response from server after 20 seconds".to_string())
 }
 
 /// Send registration request to server

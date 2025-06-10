@@ -90,8 +90,8 @@ impl EncryptionService for DefaultEncryptionService {
 pub struct DefaultConnectionObserver;
 
 impl ConnectionObserver for DefaultConnectionObserver {
-    fn on_message(&self, message: String) {
-        add_text_message(message);
+    fn on_message(&self, _message: String) {
+        // Disabled to prevent duplication - messages now handled via action system
     }
     
     fn on_error(&self, error: String) {
@@ -111,8 +111,8 @@ impl ConnectionObserver for DefaultConnectionObserver {
 pub struct TuiObserver;
 
 impl ConnectionObserver for TuiObserver {
-    fn on_message(&self, message: String) {
-        add_text_message(message);
+    fn on_message(&self, _message: String) {
+        // Disabled to prevent duplication - messages now handled via action system
     }
     
     fn on_error(&self, error: String) {

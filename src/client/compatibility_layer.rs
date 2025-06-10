@@ -24,9 +24,8 @@ static COMPAT_CONNECTION_MANAGER: Lazy<Arc<Mutex<Option<ConnectionManager>>>> =
 pub struct CompatibilityObserver;
 
 impl ConnectionObserver for CompatibilityObserver {
-    fn on_message(&self, message: String) {
-        // Delegate to the global message system
-        add_text_message(message);
+    fn on_message(&self, _message: String) {
+        // Disabled to prevent duplication - messages now handled via action system
     }
     
     fn on_error(&self, error: String) {
