@@ -86,6 +86,14 @@ impl ConnectionManager {
         }
     }
     
+    /// Login with existing credentials
+    pub async fn login(&self, credentials: Credentials) -> AuthResult<()> {
+        match &self.auth_manager {
+            Some(mgr) => mgr.login(credentials).await,
+            None => Err(AuthError::InternalError("Authentication not configured".into())),
+        }
+    }
+    
     /// Register a new user account
     pub async fn register(&self, credentials: Credentials) -> AuthResult<()> {
         match &self.auth_manager {
