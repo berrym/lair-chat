@@ -345,9 +345,9 @@ impl App {
                     // Update status bar with authentication info
                     self.status_bar.set_auth_state(auth_state.clone());
                     
-                    // Use legacy status for now until ConnectionManager is fully integrated
-                    #[allow(deprecated)]
-                    self.status_bar.set_connection_status(crate::transport::CLIENT_STATUS.lock().unwrap().status.clone());
+                    // Use modern ConnectionManager to get status
+                    let connection_status = self.get_connection_status();
+                    self.status_bar.set_connection_status(connection_status);
                     
                     // Initialize chat system for authenticated user
                     if let Err(e) = self.home_component.initialize_chat(profile.username.clone()) {
@@ -577,25 +577,23 @@ impl App {
     
     /// Modern message sending using ConnectionManager
     fn handle_modern_send_message(&mut self, message: String) {
-        // For now, use legacy transport system since it's proven to work
-        // TODO: Complete ConnectionManager message sending integration
-        #[allow(deprecated)]
-        use crate::transport::{CLIENT_STATUS, ConnectionStatus, add_outgoing_message};
+        // Use modern ConnectionManager to get status instead of global CLIENT_STATUS
+        let connection_status = self.get_connection_status();
         
-        #[allow(deprecated)]
-        let client_status = CLIENT_STATUS.lock().unwrap();
-        
-        if client_status.status == ConnectionStatus::CONNECTED {
-            // Add message to outgoing queue for server transmission
+        if connection_status == crate::transport::ConnectionStatus::CONNECTED {
+            // For now, still use legacy transport for actual message sending
+            // TODO: Replace with ConnectionManager.send_message() in next steps
+            #[allow(deprecated)]
+            use crate::transport::add_outgoing_message;
             #[allow(deprecated)]
             add_outgoing_message(message.clone());
             
             // Update status bar message count
             self.status_bar.record_sent_message();
             
-            debug!("Message queued for sending: {}", message);
+            debug!("Message queued for sending via modern status check: {}", message);
         } else {
-            warn!("Cannot send message - client not connected: {}", message);
+            warn!("Cannot send message - client not connected (status: {:?}): {}", connection_status, message);
             // Use modern error handling instead of legacy add_text_message
             self.home_component.add_message_to_room(
                 "Error: Cannot send message - not connected to server".to_string(),
@@ -610,6 +608,16 @@ impl App {
         self.connection_manager.register_observer(observer);
         tracing::info!("ConnectionManager message observer registered");
         Ok(())
+    }
+
+    /// Get current connection status from ConnectionManager
+    /// Helper method to reduce code duplication
+    fn get_connection_status(&self) -> crate::transport::ConnectionStatus {
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                self.connection_manager.get_status().await
+            })
+        })
     }
 
     fn draw(&mut self, tui: &mut Tui) -> Result<()> {
@@ -650,8 +658,10 @@ impl App {
 
                     // Update status bar with current state
                     self.status_bar.set_auth_state(self.auth_state.clone());
-                    #[allow(deprecated)]
-                    self.status_bar.set_connection_status(crate::transport::CLIENT_STATUS.lock().unwrap().status.clone());
+                    
+                    // Use modern ConnectionManager to get status
+                    let connection_status = self.get_connection_status();
+                    self.status_bar.set_connection_status(connection_status);
                     
                     // Draw status bar
                     if let Err(e) = self.status_bar.draw(frame, chunks[0]) {

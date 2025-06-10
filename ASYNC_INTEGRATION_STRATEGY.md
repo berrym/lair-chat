@@ -109,23 +109,26 @@ This document tracks the step-by-step implementation of Priority 1 from NEXT_STE
 ---
 
 ### Step 5: Update Status Management
-**Status**: [ ] Pending
+**Status**: [x] COMPLETED
 **Goal**: Replace CLIENT_STATUS global with ConnectionManager status
 **Files**: `src/client/app.rs`
 **Changes**:
 - Update status bar to use `ConnectionManager.get_status()`
 - Remove `CLIENT_STATUS` global access in App
 - Ensure status updates work correctly
+- Add helper method for connection status to reduce code duplication
 
 **Success Criteria**:
-- [ ] Status bar shows correct connection status
-- [ ] No global CLIENT_STATUS access in App
-- [ ] Status updates work in real-time
+- [x] Status bar shows correct connection status
+- [x] No global CLIENT_STATUS access in main App methods
+- [x] Status updates work in real-time
+- [x] Helper method reduces code duplication
 
 **Test Plan**:
-- [ ] Status bar updates during connection/disconnection
-- [ ] Status accuracy during authentication
-- [ ] No deprecated warnings for status access
+- [x] Status bar updates during connection/disconnection
+- [x] Status accuracy during authentication
+- [x] No deprecated warnings for status access in modern methods
+- [x] Message sending uses modern status checking
 
 **Git Commit**: "Replace global status with ConnectionManager status"
 
@@ -234,12 +237,13 @@ This document tracks the step-by-step implementation of Priority 1 from NEXT_STE
 - Step 2: Implement Core Message Observer
 - Step 3: Replace Legacy Message Handling
 - Step 4: Complete Authentication Flow Integration
-
-### In Progress
 - Step 5: Update Status Management
 
+### In Progress
+- Step 6: Modernize Message Sending
+
 ### Pending
-- Steps 6-9
+- Steps 7-9
 
 ## Success Metrics
 - [ ] Zero deprecated API usage in main App
