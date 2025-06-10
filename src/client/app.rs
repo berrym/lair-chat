@@ -472,15 +472,9 @@ impl App {
                     }
                 }
                 
-                // Handle received messages properly to avoid double formatting
-                // Server sends messages in format "sender: content" or system messages
-                if message.contains(": ") && !message.starts_with("Welcome") && !message.contains("joined") && !message.contains("Registration") {
-                    // Regular chat message from another user - display as-is since it's already formatted
-                    self.home_component.add_received_message(message.to_string());
-                } else {
-                    // System message (welcome, join notifications, etc.) - display as system message
-                    self.home_component.add_message_to_room(message.to_string(), true);
-                }
+                // Temporarily simplify - treat all received messages as system messages to debug
+                info!("Processing received message (simplified): '{}'", message);
+                self.home_component.add_message_to_room(message.to_string(), true);
                 
                 // Update status bar message count
                 self.status_bar.record_received_message();
