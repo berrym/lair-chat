@@ -472,9 +472,9 @@ impl App {
                     }
                 }
                 
-                // Temporarily simplify - treat all received messages as system messages to debug
-                info!("Processing received message (simplified): '{}'", message);
-                self.home_component.add_message_to_room(message.to_string(), true);
+                // Revert to legacy fallback until message system is fixed
+                #[allow(deprecated)]
+                crate::transport::add_text_message(message.to_string());
                 
                 // Update status bar message count
                 self.status_bar.record_received_message();

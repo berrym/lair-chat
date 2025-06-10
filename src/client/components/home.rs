@@ -131,9 +131,7 @@ impl Home {
     fn get_display_messages(&self) -> Vec<String> {
         if let Some(room_id) = self.current_room_id {
             if let Some(room) = self.room_manager.get_room(&room_id) {
-                let room_messages = room.get_messages(Some(50));
-                println!("DEBUG: Using room system - {} messages in room", room_messages.len());
-                return room_messages
+                return room.get_messages(Some(50))
                     .iter()
                     .map(|msg| {
                         if msg.message_type == MessageType::System {
@@ -143,17 +141,11 @@ impl Home {
                         }
                     })
                     .collect();
-            } else {
-                println!("DEBUG: Room not found for room_id: {:?}", room_id);
             }
-        } else {
-            println!("DEBUG: No current_room_id set");
         }
         
         // Fallback to legacy system if no room is available
-        let legacy_messages = MESSAGES.lock().unwrap().text.clone();
-        println!("DEBUG: Using legacy fallback - {} messages", legacy_messages.len());
-        legacy_messages
+        MESSAGES.lock().unwrap().text.clone()
     }
 
     /// Check if chat system is initialized (has current room and user)
@@ -163,30 +155,21 @@ impl Home {
 
     /// Add a message to current room
     pub fn add_message_to_room(&mut self, content: String, is_system: bool) {
-        println!("DEBUG: add_message_to_room called - content: '{}', is_system: {}", content, is_system);
-        println!("DEBUG: current_room_id: {:?}, current_user_id: {:?}", self.current_room_id, self.current_user_id);
-        
         if let (Some(room_id), Some(user_id)) = (self.current_room_id, self.current_user_id) {
             if let Some(room) = self.room_manager.get_room_mut(&room_id) {
                 let message = if is_system {
-                    println!("DEBUG: Creating system message");
                     ChatMessage::new_system(room_id, content)
                 } else {
                     let username = room.get_user(&user_id)
                         .map(|u| u.username.clone())
                         .unwrap_or_else(|| "Unknown".to_string());
-                    println!("DEBUG: Creating text message for user: {}", username);
                     ChatMessage::new_text(room_id, user_id, username, content)
                 };
                 
-                let result = room.add_message(message);
-                println!("DEBUG: Message added to room - result: {:?}", result);
-            } else {
-                println!("DEBUG: Room not found for room_id: {:?}", room_id);
+                let _ = room.add_message(message);
             }
         } else {
             // Fallback to legacy system
-            println!("DEBUG: Falling back to legacy add_text_message");
             add_text_message(content);
         }
     }
