@@ -129,23 +129,28 @@ impl Home {
 
     /// Get current room messages for display
     fn get_display_messages(&self) -> Vec<String> {
-        if let Some(room_id) = self.current_room_id {
-            if let Some(room) = self.room_manager.get_room(&room_id) {
-                return room.get_messages(Some(50))
-                    .iter()
-                    .map(|msg| {
-                        if msg.message_type == MessageType::System {
-                            msg.content.clone()
-                        } else {
-                            format!("{}: {}", msg.sender_username, msg.content)
-                        }
-                    })
-                    .collect();
-            }
-        }
-        
-        // Fallback to legacy system if no room is available
+        // Temporarily force legacy system usage until message flow is fixed
+        // The room system gets initialized during auth but messages are added to legacy system
         MESSAGES.lock().unwrap().text.clone()
+        
+        // TODO: Restore room system once message routing is fixed
+        // if let Some(room_id) = self.current_room_id {
+        //     if let Some(room) = self.room_manager.get_room(&room_id) {
+        //         return room.get_messages(Some(50))
+        //             .iter()
+        //             .map(|msg| {
+        //                 if msg.message_type == MessageType::System {
+        //                     msg.content.clone()
+        //                 } else {
+        //                     format!("{}: {}", msg.sender_username, msg.content)
+        //                 }
+        //             })
+        //             .collect();
+        //     }
+        // }
+        // 
+        // // Fallback to legacy system if no room is available
+        // MESSAGES.lock().unwrap().text.clone()
     }
 
     /// Check if chat system is initialized (has current room and user)
