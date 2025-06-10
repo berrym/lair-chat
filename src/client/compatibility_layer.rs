@@ -12,7 +12,7 @@ use std::net::SocketAddr;
 use tui_input::Input;
 use crate::connection_manager::ConnectionManager;
 use crate::transport::{
-    ConnectionConfig, ConnectionObserver, ConnectionStatus, TransportError, MESSAGES,
+    ConnectionConfig, ConnectionObserver, ConnectionStatus, TransportError,
     TuiObserver, CLIENT_STATUS, add_text_message
 };
 

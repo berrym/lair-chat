@@ -14,7 +14,7 @@ use crate::{
     migration_facade,
     transport::*,
     errors::display::{show_validation_error, show_disconnection, show_info, show_warning},
-    chat::{RoomManager, Room, ChatMessage, MessageType, RoomUser, UserRole, RoomSettings, RoomType},
+    chat::{RoomManager, ChatMessage, MessageType, RoomUser, UserRole, RoomSettings},
 };
 
 /// Get any text in the input box

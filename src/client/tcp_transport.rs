@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, AsyncReadExt};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::Mutex;
 use std::sync::Arc;
 use async_trait::async_trait;

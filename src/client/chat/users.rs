@@ -4,7 +4,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
-use super::{UserId, RoomId};
+use super::UserId;
 
 /// User role within a room
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
