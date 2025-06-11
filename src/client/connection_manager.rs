@@ -323,6 +323,11 @@ impl ConnectionManager {
         }
     }
 
+    /// Update the connection configuration
+    pub fn update_config(&mut self, config: ConnectionConfig) {
+        self.config = config;
+    }
+
     /// Start the connection processing tasks
     async fn start_connection_tasks(&self) -> Result<(), TransportError> {
         if self.transport.is_none() {

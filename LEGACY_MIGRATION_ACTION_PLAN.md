@@ -4,7 +4,7 @@
 
 This document provides a comprehensive, step-by-step action plan for completing the legacy code migration to the modern ConnectionManager architecture. Each step is designed to be completed, tested, and committed independently.
 
-**Current Status**: 24% Complete (10/41 steps)
+**Current Status**: 34% Complete (14/41 steps)
 **Target**: v0.6.0 release with full modern architecture
 **Timeline**: 2-4 weeks
 
@@ -121,7 +121,7 @@ This document provides a comprehensive, step-by-step action plan for completing 
 **Estimated Time**: 3 days
 **Files**: `src/client/app.rs`
 
-- [ ] **2.1.1** Replace `handle_login_with_server` function (lines 954-1000)
+- [x] **2.1.1** Replace `handle_login_with_server` function (lines 954-1000)
   ```rust
   async fn handle_login_with_server(&mut self, credentials: Credentials, server_address: String) -> Result<()> {
       self.auth_state = AuthState::Authenticating;
@@ -158,9 +158,9 @@ This document provides a comprehensive, step-by-step action plan for completing 
   }
   ```
 
-- [ ] **2.1.2** Remove compatibility layer dependencies
-- [ ] **2.1.3** Test authentication flow
-- [ ] **2.1.4** Commit: "Implement modern authentication flow"
+- [x] **2.1.2** Remove compatibility layer dependencies
+- [x] **2.1.3** Test authentication flow
+- [x] **2.1.4** Commit: "Implement modern authentication flow"
 
 #### Step 2.2: Replace Registration Flow
 **Estimated Time**: 2 days
@@ -387,7 +387,7 @@ Use this checklist to track progress:
 - [x] Step 1.3: Replace Legacy Status Checking (4/4 substeps)
 
 ### Phase 2 Progress: Authentication Migration  
-- [ ] Step 2.1: Create Modern Authentication Flow (0/4 substeps)
+- [x] Step 2.1: Create Modern Authentication Flow (4/4 substeps)
 - [ ] Step 2.2: Replace Registration Flow (0/4 substeps)
 
 ### Phase 3 Progress: UI Component Migration
@@ -403,7 +403,7 @@ Use this checklist to track progress:
 - [ ] Step 5.1: End-to-End Testing (0/7 substeps)
 - [ ] Step 5.2: Documentation and Release Preparation (0/4 substeps)
 
-**Overall Progress: 10/41 steps completed (24%)**
+**Overall Progress: 14/41 steps completed (34%)**
 
 ---
 
