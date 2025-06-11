@@ -8,20 +8,19 @@ use tracing::{debug, error, info, warn};
 use crate::{
     action::Action,
     auth::{AuthState, Credentials},
-    connection_manager::ConnectionManager,
     components::{
         auth::{AuthStatusBar, LoginScreen},
-        home::Home,
         fps::FpsCounter,
-        StatusBar,
-        Component
+        home::Home,
+        Component, StatusBar,
     },
     config::Config,
-    transport::{ConnectionConfig, ConnectionObserver},
-    tui::{Event, Tui},
+    connection_manager::ConnectionManager,
     tcp_transport::TcpTransport,
+    transport::{ConnectionConfig, ConnectionObserver, Message, MessageStore},
+    tui::{Event, Tui},
 };
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 pub struct App {
     config: Config,
@@ -33,15 +32,15 @@ pub struct App {
     last_tick_key_events: Vec<KeyEvent>,
     action_tx: mpsc::UnboundedSender<Action>,
     action_rx: mpsc::UnboundedReceiver<Action>,
-    
+
     // Modern connection management
-    connection_manager: Arc<Mutex<ConnectionManager>>,
-    
+    connection_manager: Arc<tokio::sync::Mutex<ConnectionManager>>,
+
     // Authentication components
     auth_state: AuthState,
     login_screen: LoginScreen,
     auth_status: AuthStatusBar,
-    
+
     // Main application components
     home_component: Home,
     status_bar: StatusBar,
@@ -51,35 +50,69 @@ pub struct App {
 /// Observer for handling ConnectionManager messages and events
 pub struct ChatMessageObserver {
     action_sender: mpsc::UnboundedSender<Action>,
+    message_store: Arc<std::sync::Mutex<MessageStore>>,
 }
 
 impl ChatMessageObserver {
     pub fn new(action_sender: mpsc::UnboundedSender<Action>) -> Self {
-        Self { action_sender }
+        Self {
+            action_sender,
+            message_store: Arc::new(std::sync::Mutex::new(MessageStore::new())),
+        }
+    }
+
+    /// Get a reference to the message store
+    pub fn get_message_store(&self) -> Arc<std::sync::Mutex<MessageStore>> {
+        Arc::clone(&self.message_store)
     }
 }
 
 impl ConnectionObserver for ChatMessageObserver {
     fn on_message(&self, message: String) {
+        // Store message in local store
+        if let Ok(mut store) = self.message_store.lock() {
+            store.add_message(Message::received_message(message.clone()));
+        }
+
         // Send received message to UI via action system
         let _ = self.action_sender.send(Action::ReceiveMessage(message));
     }
-    
+
     fn on_error(&self, error: String) {
+        // Store error as system message
+        if let Ok(mut store) = self.message_store.lock() {
+            store.add_message(Message::error_message(error.clone()));
+        }
+
         // Send error to UI via Error action
         let _ = self.action_sender.send(Action::Error(error));
     }
-    
+
     fn on_status_change(&self, connected: bool) {
         // Handle connection status changes
-        let _status = if connected {
+        let status = if connected {
             crate::transport::ConnectionStatus::CONNECTED
         } else {
             crate::transport::ConnectionStatus::DISCONNECTED
         };
-        
-        // For now, just log the status change
-        tracing::info!("Connection status changed: connected={}", connected);
+
+        // Store system message about connection status
+        if let Ok(mut store) = self.message_store.lock() {
+            let status_msg = if connected {
+                "Connected to server."
+            } else {
+                "Disconnected from server."
+            };
+            store.add_message(Message::system_message(status_msg.to_string()));
+        }
+
+        // Send status change to UI via action system
+        let _ = self
+            .action_sender
+            .send(Action::ConnectionStatusChanged(status));
+
+        // Log for debugging
+        tracing::info!("Connection status changed: {:?}", status);
     }
 }
 
@@ -96,18 +129,18 @@ pub enum Mode {
 impl App {
     pub fn new(tick_rate: f64, frame_rate: f64) -> Result<Self> {
         let (action_tx, action_rx) = mpsc::unbounded_channel();
-        
+
         // Create modern ConnectionManager with transport
         let connection_config = ConnectionConfig {
             address: "127.0.0.1:8080".parse().unwrap(),
             timeout_ms: 5000,
         };
-        
+
         let mut connection_manager = ConnectionManager::new(connection_config.clone());
         let transport = Box::new(TcpTransport::new(connection_config));
         connection_manager.with_transport(transport);
-        let connection_manager = Arc::new(Mutex::new(connection_manager));
-        
+        let connection_manager = Arc::new(tokio::sync::Mutex::new(connection_manager));
+
         Ok(Self {
             tick_rate,
             frame_rate,
@@ -118,15 +151,15 @@ impl App {
             last_tick_key_events: Vec::new(),
             action_tx,
             action_rx,
-            
+
             // Modern connection management
             connection_manager,
-            
+
             // Authentication components
             auth_state: AuthState::Unauthenticated,
             login_screen: LoginScreen::new(),
             auth_status: AuthStatusBar::new(),
-            
+
             // Main components
             home_component: Home::new(),
             status_bar: StatusBar::new(),
@@ -150,19 +183,19 @@ impl App {
         crate::transport::set_action_sender(self.action_tx.clone());
 
         // Register observer with ConnectionManager for message handling
-        if let Ok(mut manager) = self.connection_manager.lock() {
+        {
+            let mut manager = self.connection_manager.lock().await;
             let observer = Arc::new(ChatMessageObserver::new(self.action_tx.clone()));
             manager.register_observer(observer);
-            tracing::info!("DEBUG: Registered ChatMessageObserver with ConnectionManager");
         }
-        
+
         // Set up legacy transport bridge for backward compatibility
 
         let action_tx = self.action_tx.clone();
         loop {
             self.handle_events(&mut tui).await?;
             self.handle_actions(&mut tui)?;
-            
+
             if self.should_suspend {
                 tui.suspend()?;
                 action_tx.send(Action::Resume)?;
@@ -179,14 +212,18 @@ impl App {
 
     fn init_components(&mut self, size: ratatui::prelude::Size) -> Result<()> {
         // Initialize components
-        self.home_component.register_action_handler(self.action_tx.clone())?;
-        self.home_component.register_config_handler(self.config.clone())?;
+        self.home_component
+            .register_action_handler(self.action_tx.clone())?;
+        self.home_component
+            .register_config_handler(self.config.clone())?;
         self.home_component.init(size)?;
-        
-        self.fps_counter.register_action_handler(self.action_tx.clone())?;
-        self.fps_counter.register_config_handler(self.config.clone())?;
+
+        self.fps_counter
+            .register_action_handler(self.action_tx.clone())?;
+        self.fps_counter
+            .register_config_handler(self.config.clone())?;
         self.fps_counter.init(size)?;
-        
+
         Ok(())
     }
 
@@ -194,7 +231,7 @@ impl App {
         let Some(event) = tui.next_event().await else {
             return Ok(());
         };
-        
+
         let action_tx = self.action_tx.clone();
         match event {
             Event::Quit => action_tx.send(Action::Quit)?,
@@ -203,10 +240,14 @@ impl App {
             Event::Resize(x, y) => action_tx.send(Action::Resize(x, y))?,
             Event::Key(key) => {
                 self.last_tick_key_events.push(key);
-                
+
                 // Handle global keys first
                 match key.code {
-                    crossterm::event::KeyCode::Char('c') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+                    crossterm::event::KeyCode::Char('c')
+                        if key
+                            .modifiers
+                            .contains(crossterm::event::KeyModifiers::CONTROL) =>
+                    {
                         action_tx.send(Action::Quit)?;
                     }
                     _ => {
@@ -246,7 +287,7 @@ impl App {
                 self.action_tx.send(action)?;
             }
         }
-        
+
         // Always render
         self.draw(tui)?;
         Ok(())
@@ -281,13 +322,13 @@ impl App {
             Action::Tick => {
                 // Update components that need tick events
                 self.last_tick_key_events.drain(..);
-                
+
                 // Update FPS counter
                 self.fps_counter.update(action.clone())?;
-                
+
                 Ok(None)
             }
-            
+
             // Authentication actions - TEMPORARY: Use legacy transport for actual server connection
             // The modern handle_modern_login/register methods create mock sessions but don't connect
             // to the actual server transport layer, so messages aren't sent/received.
@@ -298,43 +339,41 @@ impl App {
                 self.handle_login_with_server(credentials.clone(), "127.0.0.1:8080".to_string());
                 Ok(None)
             }
-            
+
             Action::Register(credentials) => {
                 // Use legacy method that actually connects to server and enables message flow
                 self.handle_register_with_server(credentials.clone(), "127.0.0.1:8080".to_string());
                 Ok(None)
             }
-            
+
             Action::LoginWithServer(credentials, server_address) => {
                 // For backward compatibility, still support legacy method for now
                 #[allow(deprecated)]
                 self.handle_login_with_server(credentials.clone(), server_address.clone());
                 Ok(None)
             }
-            
+
             Action::RegisterWithServer(credentials, server_address) => {
                 // For backward compatibility, still support legacy method for now
                 #[allow(deprecated)]
                 self.handle_register_with_server(credentials.clone(), server_address.clone());
                 Ok(None)
             }
-            
+
             Action::Logout => {
                 info!("User logging out - cleaning up authentication state");
-                
+
                 // Clean up authentication state
                 self.auth_state = AuthState::Unauthenticated;
                 self.auth_status.update_state(self.auth_state.clone());
                 self.mode = Mode::Authentication;
-                
+
                 // Add logout message to UI
-                self.home_component.add_message_to_room(
-                    "Logged out successfully".to_string(),
-                    false
-                );
-                
+                self.home_component
+                    .add_message_to_room("Logged out successfully".to_string(), false);
+
                 Ok(None)
-                
+
                 // Future: Add ConnectionManager.disconnect() call here
                 // when full ConnectionManager integration is complete
             }
@@ -345,61 +384,74 @@ impl App {
                 // Add success message to UI
                 self.home_component.add_message_to_room(
                     format!("Registration successful for user: {}", username),
-                    false
+                    false,
                 );
                 // Keep in authenticating state, will transition when auth completes
                 Ok(None)
             }
-            
+
             // New action for handling auth failure
             Action::AuthenticationFailure(error) => {
                 error!("Authentication failed: {}", error);
-                self.auth_state = AuthState::Failed { reason: error.clone() };
+                self.auth_state = AuthState::Failed {
+                    reason: error.clone(),
+                };
                 self.auth_status.update_state(self.auth_state.clone());
-                self.login_screen.handle_error(crate::auth::AuthError::InternalError(error.clone()));
+                self.login_screen
+                    .handle_error(crate::auth::AuthError::InternalError(error.clone()));
                 self.mode = Mode::Authentication;
-                
+
                 // Add error message to UI for better user feedback
-                self.home_component.add_message_to_room(
-                    format!("Authentication failed: {}", error),
-                    false
-                );
-                
+                self.home_component
+                    .add_message_to_room(format!("Authentication failed: {}", error), false);
+
                 Ok(None)
             }
-            
+
             // New action for handling auth success
             Action::AuthenticationSuccess(auth_state) => {
                 self.auth_state = auth_state.clone();
                 self.auth_status.update_state(auth_state.clone());
                 self.mode = Mode::Home;
-                
+
                 if let AuthState::Authenticated { ref profile, .. } = auth_state {
-                    info!("User {} authenticated successfully - transitioning to home mode", profile.username);
-                    
+                    info!(
+                        "User {} authenticated successfully - transitioning to home mode",
+                        profile.username
+                    );
+
                     // Update status bar with authentication info
                     self.status_bar.set_auth_state(auth_state.clone());
-                    
+
                     // Use modern ConnectionManager to get status
                     let connection_status = self.get_connection_status();
                     self.status_bar.set_connection_status(connection_status);
-                    
+
                     // Initialize chat system for authenticated user
-                    if let Err(e) = self.home_component.initialize_chat(profile.username.clone()) {
-                        error!("Failed to initialize chat system for {}: {}", profile.username, e);
+                    if let Err(e) = self
+                        .home_component
+                        .initialize_chat(profile.username.clone())
+                    {
+                        error!(
+                            "Failed to initialize chat system for {}: {}",
+                            profile.username, e
+                        );
                     } else {
-                        info!("Chat system initialized successfully for {}", profile.username);
+                        info!(
+                            "Chat system initialized successfully for {}",
+                            profile.username
+                        );
                     }
-                    
+
                     // Connection is already established during authentication
                     // Server will send welcome message, so we don't add duplicate client messages
-                    
+
                     info!("User {} authenticated and ready for chat", profile.username);
                 }
-                
+
                 Ok(None)
             }
-            
+
             Action::EnterInsert => {
                 // Switch home component to insert mode
                 self.home_component.update(action.clone())?;
@@ -430,42 +482,55 @@ impl App {
                 self.home_component.update(action.clone())?;
                 Ok(None)
             }
-            
+
             Action::SendMessage(message) => {
                 info!("DEBUG: SendMessage action received: '{}'", message);
-                self.handle_modern_send_message(message.clone());
+                // Handle message sending synchronously by using try_lock
+                self.handle_modern_send_message_sync(message.clone());
                 Ok(None)
             }
-            
+
             Action::ReceiveMessage(message) => {
                 // Message handling from either modern or legacy systems
                 // Messages can come from observer pattern or legacy transport
                 info!("ACTION: ReceiveMessage handler called with: '{}'", message);
                 info!("DEBUG: Current auth_state: {:?}", self.auth_state);
-                info!("DEBUG: Chat initialized: {}", self.home_component.is_chat_initialized());
-                
+                info!(
+                    "DEBUG: Chat initialized: {}",
+                    self.home_component.is_chat_initialized()
+                );
+
                 // Make sure the message appears in the chat regardless of source
                 if !message.is_empty() && self.auth_state.is_authenticated() {
                     // Only add to chat if it's not a system message and we're authenticated
-                    if !message.starts_with("You:") && !self.home_component.is_system_message(&message) {
-                        self.home_component.add_message_to_room(message.clone(), false);
+                    if !message.starts_with("You:")
+                        && !self.home_component.is_system_message(&message)
+                    {
+                        self.home_component
+                            .add_message_to_room(message.clone(), false);
                     }
                 }
-                
+
                 // Check if this is an authentication response from server
-                if message.contains("Welcome back") || 
-                   message.contains("has joined the chat") ||
-                   message.contains("Registration successful") {
-                    info!("Authentication success message detected: '{}' (current auth_state: {:?})", message, self.auth_state);
-                    
+                if message.contains("Welcome back")
+                    || message.contains("has joined the chat")
+                    || message.contains("Registration successful")
+                {
+                    info!(
+                        "Authentication success message detected: '{}' (current auth_state: {:?})",
+                        message, self.auth_state
+                    );
+
                     // Only process if we're currently authenticating to avoid interference
                     if self.auth_state == AuthState::Authenticating {
                         info!("Processing authentication response for authenticating user");
-                        
+
                         // Create successful auth state - server has confirmed authentication
                         let username = if message.contains("Welcome back") {
                             // Extract from "Welcome back, username" format
-                            message.split("Welcome back, ").nth(1)
+                            message
+                                .split("Welcome back, ")
+                                .nth(1)
                                 .and_then(|s| s.split(',').next())
                                 .unwrap_or("User")
                         } else if message.contains("has joined") {
@@ -474,9 +539,9 @@ impl App {
                         } else {
                             "User"
                         };
-                        
+
                         info!("Extracted username from server response: '{}'", username);
-                        
+
                         let auth_state = AuthState::Authenticated {
                             profile: crate::auth::UserProfile {
                                 id: uuid::Uuid::new_v4(),
@@ -493,30 +558,45 @@ impl App {
                                 expires_at: std::time::SystemTime::now()
                                     .duration_since(std::time::UNIX_EPOCH)
                                     .unwrap()
-                                    .as_secs() + 3600,
+                                    .as_secs()
+                                    + 3600,
                             },
                         };
-                        
+
                         // Send authentication success action
-                        info!("Sending AuthenticationSuccess action for user: {}", username);
-                        let _ = self.action_tx.send(Action::AuthenticationSuccess(auth_state));
+                        info!(
+                            "Sending AuthenticationSuccess action for user: {}",
+                            username
+                        );
+                        let _ = self
+                            .action_tx
+                            .send(Action::AuthenticationSuccess(auth_state));
                     } else {
                         info!("Ignoring authentication message - not currently authenticating (state: {:?})", self.auth_state);
                     }
-                } else if message.contains("Authentication failed") || 
-                          message.contains("Login failed") ||
-                          message.contains("Invalid credentials") {
-                    warn!("Authentication failure message detected: '{}' (current auth_state: {:?})", message, self.auth_state);
-                    
+                } else if message.contains("Authentication failed")
+                    || message.contains("Login failed")
+                    || message.contains("Invalid credentials")
+                {
+                    warn!(
+                        "Authentication failure message detected: '{}' (current auth_state: {:?})",
+                        message, self.auth_state
+                    );
+
                     if self.auth_state == AuthState::Authenticating {
-                        let _ = self.action_tx.send(Action::AuthenticationFailure(message.clone()));
+                        let _ = self
+                            .action_tx
+                            .send(Action::AuthenticationFailure(message.clone()));
                     }
                 }
-                
+
                 // Ensure chat is initialized
                 if !self.home_component.is_chat_initialized() {
                     warn!("Chat not initialized, attempting to initialize with default user");
-                    if let Err(e) = self.home_component.initialize_chat("DefaultUser".to_string()) {
+                    if let Err(e) = self
+                        .home_component
+                        .initialize_chat("DefaultUser".to_string())
+                    {
                         error!("Failed to initialize chat: {}", e);
                     } else {
                         info!("DEBUG: Successfully initialized chat with DefaultUser");
@@ -524,11 +604,12 @@ impl App {
                 } else {
                     info!("DEBUG: Chat already initialized, proceeding with message handling");
                 }
-                
+
                 // Modern message handling through room system
                 info!("DEBUG: Adding message to room: '{}'", message);
-                self.home_component.add_message_to_room(message.to_string(), true);
-                
+                self.home_component
+                    .add_message_to_room(message.to_string(), true);
+
                 // Only automatically count messages from server/system
                 // User-initiated messages should use explicit RecordReceivedMessage action
                 if message.starts_with("You:") || self.is_system_message(&message) {
@@ -539,27 +620,26 @@ impl App {
                 }
                 Ok(None)
             }
-            
+
             Action::MessageSent(message) => {
                 // Handle sent messages from ConnectionManager
                 info!("ACTION: MessageSent handler called with: '{}'", message);
-                
+
                 // Add sent message to the room display
-                self.home_component.add_message_to_room(message.to_string(), false);
+                self.home_component
+                    .add_message_to_room(message.to_string(), false);
                 info!("Sent message added to room: {}", message);
                 Ok(None)
             }
-            
+
             Action::Error(error) => {
                 // Handle errors from observer pattern and other sources
-                self.home_component.add_message_to_room(
-                    format!("Error: {}", error), 
-                    false
-                );
+                self.home_component
+                    .add_message_to_room(format!("Error: {}", error), false);
                 warn!("Error received via action system: {}", error);
                 Ok(None)
             }
-            
+
             // Pass other actions to appropriate components
             _ => {
                 match self.mode {
@@ -575,145 +655,156 @@ impl App {
 
     /// Helper function to detect system messages
     fn is_system_message(&self, message: &str) -> bool {
-        message.contains("has joined") || 
-        message.contains("has left") || 
-        message.contains("Welcome back") || 
-        message.contains("Authentication") || 
-        message.contains("Connected to") || 
-        message.contains("Disconnected from") ||
-        message.contains("ERROR:") ||
-        message.contains("Error:")
+        message.contains("has joined")
+            || message.contains("has left")
+            || message.contains("Welcome back")
+            || message.contains("Authentication")
+            || message.contains("Connected to")
+            || message.contains("Disconnected from")
+            || message.contains("ERROR:")
+            || message.contains("Error:")
     }
 
     /// Modern authentication flow using ConnectionManager
     fn handle_modern_login(&mut self, credentials: Credentials) {
         let action_tx = self.action_tx.clone();
-        
+
         // Set state to authenticating immediately
         self.auth_state = AuthState::Authenticating;
-        
-        // Get authentication manager if available
-        let _auth_manager = if let Ok(manager) = self.connection_manager.lock() {
-            if let Some(_auth_state) = tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(async {
-                    manager.get_auth_state().await
-                })
-            }) {
+
+        // Spawn async task for authentication
+        let connection_manager = Arc::clone(&self.connection_manager);
+        tokio::spawn(async move {
+            // Get authentication manager if available
+            let manager = connection_manager.lock().await;
+            if let Some(_auth_state) = manager.get_auth_state().await {
                 // Authentication manager is available
-                true
+                tracing::info!("Authentication manager is available");
             } else {
-                false
+                tracing::info!("No authentication manager configured");
             }
-        } else {
-            false
-        };
-        
-        let creds = credentials.clone();
-        
-        // Spawn async task to handle real authentication
-    tokio::spawn(async move {
-        // For now, still use mock authentication but with realistic flow
-        // This will be replaced with real ConnectionManager auth in future iterations
-            
-        // Step 1: Validate credentials
-        if creds.username.is_empty() || creds.password.is_empty() {
-            let _ = action_tx.send(Action::AuthenticationFailure("Username and password are required".to_string()));
-            return;
-        }
-            
-        if creds.username.len() < 3 {
-            let _ = action_tx.send(Action::AuthenticationFailure("Username must be at least 3 characters".to_string()));
-            return;
-        }
-            
-        // Step 2: Simulate connection process
-        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-            
-        // Step 3: Simulate authentication process
-        tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
-            
-        // Step 4: Simulate success - in real implementation this would be:
-        // 1. connection_manager.connect().await
-        // 2. auth_manager.login(credentials).await
-        // 3. Handle actual auth response
-            
-        let result = Action::AuthenticationSuccess(AuthState::Authenticated {
-            profile: crate::auth::UserProfile {
-                id: uuid::Uuid::new_v4(),
-                username: creds.username.clone(),
-                roles: vec!["user".to_string()],
-            },
-            session: crate::auth::Session {
-                id: uuid::Uuid::new_v4(),
-                token: format!("auth_token_{}", creds.username),
-                created_at: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs(),
-                expires_at: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs() + 3600, // 1 hour expiration
-            },
         });
-            
+
+        let creds = credentials.clone();
+
+        // Spawn async task to handle real authentication
+        tokio::spawn(async move {
+            // For now, still use mock authentication but with realistic flow
+            // This will be replaced with real ConnectionManager auth in future iterations
+
+            // Step 1: Validate credentials
+            if creds.username.is_empty() || creds.password.is_empty() {
+                let _ = action_tx.send(Action::AuthenticationFailure(
+                    "Username and password are required".to_string(),
+                ));
+                return;
+            }
+
+            if creds.username.len() < 3 {
+                let _ = action_tx.send(Action::AuthenticationFailure(
+                    "Username must be at least 3 characters".to_string(),
+                ));
+                return;
+            }
+
+            // Step 2: Simulate connection process
+            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+
+            // Step 3: Simulate authentication process
+            tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+
+            // Step 4: Simulate success - in real implementation this would be:
+            // 1. connection_manager.connect().await
+            // 2. auth_manager.login(credentials).await
+            // 3. Handle actual auth response
+
+            let result = Action::AuthenticationSuccess(AuthState::Authenticated {
+                profile: crate::auth::UserProfile {
+                    id: uuid::Uuid::new_v4(),
+                    username: creds.username.clone(),
+                    roles: vec!["user".to_string()],
+                },
+                session: crate::auth::Session {
+                    id: uuid::Uuid::new_v4(),
+                    token: format!("auth_token_{}", creds.username),
+                    created_at: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs(),
+                    expires_at: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs()
+                        + 3600, // 1 hour expiration
+                },
+            });
+
             let _ = action_tx.send(result);
         });
     }
-    
+
     /// Modern registration flow using ConnectionManager
     fn handle_modern_register(&mut self, credentials: Credentials) {
         let action_tx = self.action_tx.clone();
-        
+
         // Set state to authenticating immediately
         self.auth_state = AuthState::Authenticating;
-        
-        // Enable authentication on connection manager if not already enabled
-        if let Ok(mut manager) = self.connection_manager.lock() {
+
+        // Spawn async task for registration
+        let connection_manager = Arc::clone(&self.connection_manager);
+        tokio::spawn(async move {
+            // Enable authentication on connection manager if not already enabled
+            let mut manager = connection_manager.lock().await;
             manager.with_auth();
-        }
-        
+        });
+
         let creds = credentials.clone();
-        
+
         // Spawn async task to handle real registration
         tokio::spawn(async move {
             // For now, still use mock registration but with realistic flow
             // This will be replaced with real ConnectionManager registration in future iterations
-            
+
             // Step 1: Validate registration requirements
             if creds.username.is_empty() || creds.password.is_empty() {
-                let _ = action_tx.send(Action::AuthenticationFailure("Username and password are required".to_string()));
+                let _ = action_tx.send(Action::AuthenticationFailure(
+                    "Username and password are required".to_string(),
+                ));
                 return;
             }
-            
+
             if creds.username.len() < 3 {
-                let _ = action_tx.send(Action::AuthenticationFailure("Username must be at least 3 characters".to_string()));
+                let _ = action_tx.send(Action::AuthenticationFailure(
+                    "Username must be at least 3 characters".to_string(),
+                ));
                 return;
             }
-            
+
             if creds.password.len() < 6 {
-                let _ = action_tx.send(Action::AuthenticationFailure("Password must be at least 6 characters".to_string()));
+                let _ = action_tx.send(Action::AuthenticationFailure(
+                    "Password must be at least 6 characters".to_string(),
+                ));
                 return;
             }
-            
+
             // Step 2: Simulate connection process
             tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
-            
+
             // Step 3: Simulate registration process
             tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-            
+
             // Step 4: Simulate successful registration
             // In real implementation this would be:
             // 1. connection_manager.connect().await
             // 2. connection_manager.register(credentials).await
             // 3. Auto-login after registration
-            
+
             // Send registration success notification
             let _ = action_tx.send(Action::RegistrationSuccess(creds.username.clone()));
-            
+
             // Step 5: Small delay before auto-login
             tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-            
+
             // Step 6: Auto-login after successful registration
             let auth_result = Action::AuthenticationSuccess(AuthState::Authenticated {
                 profile: crate::auth::UserProfile {
@@ -731,26 +822,17 @@ impl App {
                     expires_at: std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap()
-                        .as_secs() + 3600, // 1 hour expiration
+                        .as_secs()
+                        + 3600, // 1 hour expiration
                 },
             });
-            
+
             let _ = action_tx.send(auth_result);
         });
     }
-    
-    /// Modern message sending using ConnectionManager
-    fn handle_modern_send_message(&mut self, message: String) {
-        // Register ConnectionManager with compatibility layer and sync status
-        #[allow(deprecated)]
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                use crate::compatibility_layer::{sync_connection_status, register_connection_manager};
-                register_connection_manager().await;
-                sync_connection_status().await;
-            })
-        });
-        
+
+    /// Modern message sending using ConnectionManager only (synchronous version)
+    fn handle_modern_send_message_sync(&mut self, message: String) {
         // Format message with username to avoid confusion
         let formatted_message = if self.auth_state.is_authenticated() {
             if let Some(username) = self.auth_state.profile().map(|p| p.username.clone()) {
@@ -761,67 +843,62 @@ impl App {
         } else {
             message.clone()
         };
-        
-        // Use combined status check to determine if we can send
-        let connection_status = self.get_connection_status();
-        
-        if connection_status == crate::transport::ConnectionStatus::CONNECTED {
-            info!("Sending message via legacy transport (connection_status: {:?}): '{}'", connection_status, message);
-            
-            // Try both methods to ensure message delivery
-            // First use legacy transport for reliability during transition
-            #[allow(deprecated)]
-            {
-                use crate::transport::add_outgoing_message;
-                use crate::transport::add_text_message;
-                
-                // Add directly to displayed messages
-                let sent_message = format!("You: {}", message);
-                add_text_message(sent_message.clone());
-                
-                // Queue for sending to others with username prefix to avoid confusion
-                add_outgoing_message(formatted_message.clone());
-                info!("DEBUG: Message queued in legacy transport outgoing queue: {}", formatted_message);
-            }
-            
-            // Also try modern ConnectionManager (as backup)
-            // We'll use a thread-safe approach to ensure proper 'Send' implementation
-            let cm = self.connection_manager.clone();
-            let msg = formatted_message.clone();
-            
-            // Use a separate thread-safe function to handle the async send
-            tokio::task::spawn_blocking(move || {
-                tokio::runtime::Handle::current().block_on(async {
-                    if let Ok(mut manager) = cm.lock() {
-                        if let Err(e) = manager.send_message(msg).await {
-                            tracing::error!("Failed to send via ConnectionManager: {}", e);
-                        } else {
-                            tracing::info!("Message also sent via ConnectionManager");
-                        }
-                    }
-                });
-            });
-            
-            // Add sent message to display immediately for sending client
-            let sent_message = format!("You: {}", message);
-            info!("DEBUG: Adding sent message to room display: '{}'", sent_message);
-            self.home_component.add_message_to_room(sent_message, false);
-            
-            // Update status bar message count
-            self.status_bar.record_sent_message();
-            
-            info!("Message queued for sending via ConnectionManager: {}", message);
+
+        // Get connection status from ConnectionManager
+        let connection_status = if let Ok(manager) = self.connection_manager.try_lock() {
+            manager.get_status_sync()
         } else {
-            warn!("Cannot send message - client not connected (status: {:?}): {}", connection_status, message);
-            // Use modern error handling for connection failures
-            self.home_component.add_message_to_room(
-                format!("Error: Cannot send message - not connected (status: {:?})", connection_status),
-                false
+            crate::transport::ConnectionStatus::DISCONNECTED
+        };
+
+        if connection_status == crate::transport::ConnectionStatus::CONNECTED {
+            info!(
+                "Sending message via ConnectionManager (status: {:?}): '{}'",
+                connection_status, message
             );
+
+            // Queue the message sending as an async task
+            let connection_manager = Arc::clone(&self.connection_manager);
+            let action_tx = self.action_tx.clone();
+            let message_clone = message.clone();
+            let formatted_message_clone = formatted_message.clone();
+
+            tokio::spawn(async move {
+                let send_result = {
+                    let mut manager = connection_manager.lock().await;
+                    manager.send_message(formatted_message_clone).await
+                };
+
+                match send_result {
+                    Ok(()) => {
+                        info!(
+                            "Message sent successfully via ConnectionManager: {}",
+                            message_clone
+                        );
+
+                        // Display sent message to user
+                        let sent_message = format!("You: {}", message_clone);
+                        let _ = action_tx.send(Action::ReceiveMessage(sent_message));
+
+                        // Record sent message for status bar
+                        let _ = action_tx.send(Action::MessageSent(message_clone));
+                    }
+                    Err(e) => {
+                        let error_msg = format!("Failed to send message: {}", e);
+                        tracing::error!("{}", error_msg);
+                        let _ = action_tx.send(Action::Error(error_msg));
+                    }
+                }
+            });
+        } else {
+            let error_msg = format!(
+                "Cannot send message - not connected (status: {:?})",
+                connection_status
+            );
+            warn!("{}: {}", error_msg, message);
+            let _ = self.action_tx.send(Action::Error(error_msg));
         }
     }
-
-
 
     /// Get current connection status using a combination of legacy and modern sources
     /// Helper method to reduce code duplication
@@ -830,36 +907,40 @@ impl App {
         #[allow(deprecated)]
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
-                use crate::compatibility_layer::{sync_connection_status, register_connection_manager};
+                use crate::compatibility_layer::{
+                    register_connection_manager, sync_connection_status,
+                };
                 register_connection_manager().await;
                 sync_connection_status().await;
             })
         });
-        
+
         // During transition period, get both statuses
         #[allow(deprecated)]
         let legacy_status = {
             use crate::transport::CLIENT_STATUS;
             CLIENT_STATUS.lock().unwrap().status.clone()
         };
-        
+
         // Get ConnectionManager status
         let cm_status = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
-                if let Ok(manager) = self.connection_manager.lock() {
-                    let status = manager.get_status().await;
-                    tracing::info!("Connection status check - Legacy: {:?}, ConnectionManager: {:?}", legacy_status, status);
+                let manager = self.connection_manager.lock().await;
+                let status = manager.get_status().await;
+                tracing::info!(
+                    "Connection status check - Legacy: {:?}, ConnectionManager: {:?}",
+                    legacy_status,
                     status
-                } else {
-                    crate::transport::ConnectionStatus::DISCONNECTED
-                }
+                );
+                status
             })
         });
-        
+
         // If either system reports connected, we're connected
         // This ensures messages can be sent whenever possible
-        if legacy_status == crate::transport::ConnectionStatus::CONNECTED || 
-           cm_status == crate::transport::ConnectionStatus::CONNECTED {
+        if legacy_status == crate::transport::ConnectionStatus::CONNECTED
+            || cm_status == crate::transport::ConnectionStatus::CONNECTED
+        {
             crate::transport::ConnectionStatus::CONNECTED
         } else {
             crate::transport::ConnectionStatus::DISCONNECTED
@@ -871,19 +952,21 @@ impl App {
         #[allow(deprecated)]
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
-                use crate::compatibility_layer::{sync_connection_status, register_connection_manager};
+                use crate::compatibility_layer::{
+                    register_connection_manager, sync_connection_status,
+                };
                 register_connection_manager().await;
                 sync_connection_status().await;
             })
         });
-        
+
         // Get combined connection status for UI display
         let connection_status = self.get_connection_status();
         self.status_bar.set_connection_status(connection_status);
-        
+
         tui.draw(|frame| {
             let area = frame.area();
-            
+
             match self.auth_state {
                 AuthState::Unauthenticated | AuthState::Failed { .. } => {
                     // Show login screen
@@ -893,10 +976,17 @@ impl App {
                 }
                 AuthState::Authenticating => {
                     // Show loading screen with appropriate message
-                    use ratatui::{widgets::{Block, Borders, Paragraph}, style::{Color, Style}};
+                    use ratatui::{
+                        style::{Color, Style},
+                        widgets::{Block, Borders, Paragraph},
+                    };
                     let message = match self.login_screen.mode {
-                        crate::components::auth::LoginMode::Register => "Creating account and connecting...",
-                        crate::components::auth::LoginMode::Login => "Authenticating and connecting...",
+                        crate::components::auth::LoginMode::Register => {
+                            "Creating account and connecting..."
+                        }
+                        crate::components::auth::LoginMode::Login => {
+                            "Authenticating and connecting..."
+                        }
                     };
                     let loading = Paragraph::new(message)
                         .style(Style::default().fg(Color::Yellow))
@@ -906,33 +996,33 @@ impl App {
                 AuthState::Authenticated { .. } => {
                     // Show main application
                     use ratatui::layout::{Constraint, Direction, Layout};
-                    
+
                     let chunks = Layout::default()
                         .direction(Direction::Vertical)
                         .constraints([
-                            Constraint::Length(1),  // Status bar
-                            Constraint::Min(0),     // Main content
-                            Constraint::Length(1),  // FPS counter
+                            Constraint::Length(1), // Status bar
+                            Constraint::Min(0),    // Main content
+                            Constraint::Length(1), // FPS counter
                         ])
                         .split(area);
 
                     // Update status bar with current state
                     self.status_bar.set_auth_state(self.auth_state.clone());
-                    
+
                     // Use modern ConnectionManager to get status
                     let connection_status = self.get_connection_status();
                     self.status_bar.set_connection_status(connection_status);
-                    
+
                     // Draw status bar
                     if let Err(e) = self.status_bar.draw(frame, chunks[0]) {
                         debug!("Error drawing status bar: {}", e);
                     }
-                    
+
                     // Draw main content
                     if let Err(e) = self.home_component.draw(frame, chunks[1]) {
                         debug!("Error drawing home component: {}", e);
                     }
-                    
+
                     // Draw FPS counter
                     if let Err(e) = self.fps_counter.draw(frame, chunks[2]) {
                         debug!("Error drawing FPS counter: {}", e);
@@ -943,10 +1033,14 @@ impl App {
         Ok(())
     }
 
-    fn handle_login_with_server(&mut self, credentials: crate::auth::Credentials, server_address: String) {
+    fn handle_login_with_server(
+        &mut self,
+        credentials: crate::auth::Credentials,
+        server_address: String,
+    ) {
         self.auth_state = AuthState::Authenticating;
         self.auth_status.update_state(self.auth_state.clone());
-        
+
         tokio::spawn({
             let tx = self.action_tx.clone();
             let creds = credentials.clone();
@@ -955,11 +1049,13 @@ impl App {
                 // Use legacy authentication for now to maintain functionality
                 // TODO: Replace with pure ConnectionManager authentication in future iteration
                 #[allow(deprecated)]
-                use crate::compatibility_layer::{connect_client_compat, register_connection_manager};
-                                
+                use crate::compatibility_layer::{
+                    connect_client_compat, register_connection_manager,
+                };
+
                 // Register ConnectionManager with compatibility layer for status sync
                 register_connection_manager().await;
-                                
+
                 // Try to connect to the server first
                 let address: Result<std::net::SocketAddr, _> = server_addr.parse();
                 match address {
@@ -970,30 +1066,45 @@ impl App {
                             Ok(()) => {
                                 #[allow(deprecated)]
                                 {
-                                    use crate::transport::{CLIENT_STATUS, ConnectionStatus};
-                                    CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
+                                    use crate::transport::{ConnectionStatus, CLIENT_STATUS};
+                                    CLIENT_STATUS.lock().unwrap().status =
+                                        ConnectionStatus::CONNECTED;
                                 }
                                 info!("Successfully connected to server at {}", server_addr);
-                                
+
                                 // Add small delay to ensure connection is stable
                                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                                
+
                                 // Send authentication request to server
                                 #[allow(deprecated)]
                                 use crate::compatibility_layer::authenticate_compat;
-                                
+
                                 // Send authentication request
                                 #[allow(deprecated)]
-                                match authenticate_compat(creds.username.clone(), creds.password.clone()).await {
+                                match authenticate_compat(
+                                    creds.username.clone(),
+                                    creds.password.clone(),
+                                )
+                                .await
+                                {
                                     Ok(()) => {
-                                        info!("Authentication request sent for user: {}", creds.username);
+                                        info!(
+                                            "Authentication request sent for user: {}",
+                                            creds.username
+                                        );
                                         // Authentication response now handled by ReceiveMessage action handler
                                         // which detects server responses like "Welcome back" and "has joined"
                                         info!("Authentication request sent for user: {} - waiting for server response via message handler", creds.username);
                                     }
                                     Err(e) => {
-                                        error!("Failed to send authentication request for {}: {}", creds.username, e);
-                                        let _ = tx.send(Action::AuthenticationFailure(format!("Authentication failed: {}", e)));
+                                        error!(
+                                            "Failed to send authentication request for {}: {}",
+                                            creds.username, e
+                                        );
+                                        let _ = tx.send(Action::AuthenticationFailure(format!(
+                                            "Authentication failed: {}",
+                                            e
+                                        )));
                                     }
                                 }
                             }
@@ -1005,28 +1116,37 @@ impl App {
                         }
                     }
                     Err(_) => {
-                        let _ = tx.send(Action::AuthenticationFailure(format!("Invalid server address: {}", server_addr)));
+                        let _ = tx.send(Action::AuthenticationFailure(format!(
+                            "Invalid server address: {}",
+                            server_addr
+                        )));
                     }
                 }
             }
         });
     }
 
-    fn handle_register_with_server(&mut self, credentials: crate::auth::Credentials, server_address: String) {
+    fn handle_register_with_server(
+        &mut self,
+        credentials: crate::auth::Credentials,
+        server_address: String,
+    ) {
         self.auth_state = AuthState::Authenticating;
         self.auth_status.update_state(self.auth_state.clone());
-        
+
         tokio::spawn({
             let tx = self.action_tx.clone();
             let creds = credentials.clone();
             let server_addr = server_address.clone();
             async move {
-                use crate::transport::{CLIENT_STATUS, ConnectionStatus};
-                use crate::compatibility_layer::{connect_client_compat, register_connection_manager};
-                
+                use crate::compatibility_layer::{
+                    connect_client_compat, register_connection_manager,
+                };
+                use crate::transport::{ConnectionStatus, CLIENT_STATUS};
+
                 // Register ConnectionManager with compatibility layer for status sync
                 register_connection_manager().await;
-                
+
                 // Try to connect to the server first
                 let address: Result<std::net::SocketAddr, _> = server_addr.parse();
                 match address {
@@ -1035,22 +1155,39 @@ impl App {
                         match connect_client_compat(input, addr).await {
                             Ok(()) => {
                                 CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
-                                info!("Successfully connected to server at {} for registration", server_addr);
-                                
+                                info!(
+                                    "Successfully connected to server at {} for registration",
+                                    server_addr
+                                );
+
                                 // Add small delay to ensure connection is stable
                                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                                
+
                                 // Send registration request
-                                match register_compat(creds.username.clone(), creds.password.clone()).await {
+                                match register_compat(
+                                    creds.username.clone(),
+                                    creds.password.clone(),
+                                )
+                                .await
+                                {
                                     Ok(()) => {
-                                        info!("Registration request sent for user: {}", creds.username);
+                                        info!(
+                                            "Registration request sent for user: {}",
+                                            creds.username
+                                        );
                                         // Registration response now handled by ReceiveMessage action handler
                                         // which detects server responses like "Registration successful" and "has joined"
                                         info!("Registration request sent for user: {} - waiting for server response via message handler", creds.username);
                                     }
                                     Err(e) => {
-                                        error!("Failed to send registration request for {}: {}", creds.username, e);
-                                        let _ = tx.send(Action::AuthenticationFailure(format!("Registration failed: {}", e)));
+                                        error!(
+                                            "Failed to send registration request for {}: {}",
+                                            creds.username, e
+                                        );
+                                        let _ = tx.send(Action::AuthenticationFailure(format!(
+                                            "Registration failed: {}",
+                                            e
+                                        )));
                                     }
                                 }
                             }
@@ -1062,7 +1199,10 @@ impl App {
                         }
                     }
                     Err(_) => {
-                        let _ = tx.send(Action::AuthenticationFailure(format!("Invalid server address: {}", server_addr)));
+                        let _ = tx.send(Action::AuthenticationFailure(format!(
+                            "Invalid server address: {}",
+                            server_addr
+                        )));
                     }
                 }
             }
@@ -1071,18 +1211,139 @@ impl App {
 }
 
 /// Send registration request to server
-async fn register_compat(username: String, password: String) -> Result<(), crate::transport::TransportError> {
+async fn register_compat(
+    username: String,
+    password: String,
+) -> Result<(), crate::transport::TransportError> {
     use crate::transport::add_silent_outgoing_message;
-    
+
     let auth_request = serde_json::json!({
         "username": username,
         "password": password,
         "fingerprint": "client_device_fingerprint",
         "is_registration": true
     });
-    
+
     // Registration request message will be handled via action system
     add_silent_outgoing_message(auth_request.to_string());
-    
+
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::transport::{ConnectionStatus, MessageType};
+    use tokio::sync::mpsc;
+
+    #[test]
+    fn test_chat_message_observer_message_handling() {
+        // Set up message channel
+        let (tx, mut rx) = mpsc::unbounded_channel::<Action>();
+
+        // Create observer
+        let observer = ChatMessageObserver::new(tx);
+
+        // Test on_message
+        observer.on_message("Hello world".to_string());
+
+        // Verify message was stored in MessageStore
+        let message_store = observer.get_message_store();
+        let store = message_store.lock().unwrap();
+        assert_eq!(store.messages.len(), 1);
+        assert_eq!(store.messages[0].content, "Hello world");
+        assert_eq!(store.messages[0].message_type, MessageType::ReceivedMessage);
+
+        // Verify action was sent
+        if let Some(action) = rx.try_recv().ok() {
+            match action {
+                Action::ReceiveMessage(msg) => assert_eq!(msg, "Hello world"),
+                _ => panic!("Wrong action type received"),
+            }
+        } else {
+            panic!("No action received");
+        }
+    }
+
+    #[test]
+    fn test_chat_message_observer_error_handling() {
+        // Set up message channel
+        let (tx, mut rx) = mpsc::unbounded_channel::<Action>();
+
+        // Create observer
+        let observer = ChatMessageObserver::new(tx);
+
+        // Test on_error
+        observer.on_error("Connection lost".to_string());
+
+        // Verify error was stored in MessageStore
+        let message_store = observer.get_message_store();
+        let store = message_store.lock().unwrap();
+        assert_eq!(store.messages.len(), 1);
+        assert_eq!(store.messages[0].content, "Connection lost");
+        assert_eq!(store.messages[0].message_type, MessageType::ErrorMessage);
+
+        // Verify action was sent
+        if let Some(action) = rx.try_recv().ok() {
+            match action {
+                Action::Error(msg) => assert_eq!(msg, "Connection lost"),
+                _ => panic!("Wrong action type received"),
+            }
+        } else {
+            panic!("No action received");
+        }
+    }
+
+    #[test]
+    fn test_chat_message_observer_status_change() {
+        // Set up message channel
+        let (tx, mut rx) = mpsc::unbounded_channel::<Action>();
+
+        // Create observer
+        let observer = ChatMessageObserver::new(tx);
+
+        // Test on_status_change - connected
+        observer.on_status_change(true);
+
+        // Verify status message was stored in MessageStore
+        let message_store = observer.get_message_store();
+        let store = message_store.lock().unwrap();
+        assert_eq!(store.messages.len(), 1);
+        assert_eq!(store.messages[0].content, "Connected to server.");
+        assert_eq!(store.messages[0].message_type, MessageType::SystemMessage);
+
+        // Verify connection status action was sent
+        if let Some(action) = rx.try_recv().ok() {
+            match action {
+                Action::ConnectionStatusChanged(status) => {
+                    assert_eq!(status, ConnectionStatus::CONNECTED)
+                }
+                _ => panic!("Wrong action type received"),
+            }
+        } else {
+            panic!("No action received");
+        }
+
+        // Test on_status_change - disconnected
+        observer.on_status_change(false);
+
+        // Verify status message was stored
+        let message_store = observer.get_message_store();
+        let store = message_store.lock().unwrap();
+        assert_eq!(store.messages.len(), 2);
+        assert_eq!(store.messages[1].content, "Disconnected from server.");
+        assert_eq!(store.messages[1].message_type, MessageType::SystemMessage);
+
+        // Verify connection status action was sent
+        if let Some(action) = rx.try_recv().ok() {
+            match action {
+                Action::ConnectionStatusChanged(status) => {
+                    assert_eq!(status, ConnectionStatus::DISCONNECTED)
+                }
+                _ => panic!("Wrong action type received"),
+            }
+        } else {
+            panic!("No action received");
+        }
+    }
 }

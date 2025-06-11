@@ -1,0 +1,1090 @@
+   Compiling lair-chat v0.5.1 (/home/mberry/Lab/rust/lair-chat)
+warning: unused import: `MESSAGES`
+  --> src/client/compatibility_layer.rs:16:51
+   |
+16 |     TuiObserver, CLIENT_STATUS, add_text_message, MESSAGES
+   |                                                   ^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `AsyncReadExt`
+ --> src/client/tcp_transport.rs:3:60
+  |
+3 | use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, AsyncReadExt};
+  |                                                            ^^^^^^^^^^^^
+
+warning: ambiguous glob re-exports
+  --> src/lib.rs:65:13
+   |
+65 |       pub use super::{
+   |  _____________^
+66 | |         action::*,
+67 | |         aes_gcm_encryption::*,
+68 | |         app::*,
+...  |
+79 | |         logging::*,
+   | |         ---------- but the name `init` in the value namespace is also re-exported here
+...  |
+85 | |     };
+   | |_____^ the name `init` in the value namespace is first re-exported here
+   |
+   = note: `#[warn(ambiguous_glob_reexports)]` on by default
+
+warning: ambiguous glob re-exports
+  --> src/lib.rs:65:13
+   |
+65 |       pub use super::{
+   |  _____________^
+66 | |         action::*,
+67 | |         aes_gcm_encryption::*,
+68 | |         app::*,
+...  |
+82 | |         transport::*,
+   | |         ------------ but the name `connect_client` in the value namespace is also re-exported here
+...  |
+85 | |     };
+   | |_____^ the name `connect_client` in the value namespace is first re-exported here
+
+warning: ambiguous glob re-exports
+  --> src/lib.rs:65:13
+   |
+65 |       pub use super::{
+   |  _____________^
+66 | |         action::*,
+67 | |         aes_gcm_encryption::*,
+68 | |         app::*,
+...  |
+82 | |         transport::*,
+   | |         ------------ but the name `disconnect_client` in the value namespace is also re-exported here
+...  |
+85 | |     };
+   | |_____^ the name `disconnect_client` in the value namespace is first re-exported here
+
+warning: ambiguous glob re-exports
+  --> src/lib.rs:65:13
+   |
+65 |       pub use super::{
+   |  _____________^
+66 | |         action::*,
+67 | |         aes_gcm_encryption::*,
+68 | |         app::*,
+69 | |         auth::*,
+70 | |         chat::*,
+   | |         ------- but the name `MessageType` in the type namespace is also re-exported here
+...  |
+85 | |     };
+   | |_____^ the name `MessageType` in the type namespace is first re-exported here
+
+warning: use of deprecated function `compatibility_layer::connect_client_compat`: Use ConnectionManager.connect() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+    --> src/client/app.rs:1176:21
+     |
+1176 |                     connect_client_compat, register_connection_manager,
+     |                     ^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated function `compatibility_layer::register_connection_manager`: Use ConnectionManager directly instead. This compatibility function will be removed in v0.6.0.
+    --> src/client/app.rs:1176:44
+     |
+1176 |                     connect_client_compat, register_connection_manager,
+     |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+    --> src/client/app.rs:1178:58
+     |
+1178 |                 use crate::transport::{ConnectionStatus, CLIENT_STATUS};
+     |                                                          ^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_silent_outgoing_message`: Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+    --> src/client/app.rs:1261:5
+     |
+1261 |     add_silent_outgoing_message(auth_request.to_string());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_silent_outgoing_message`: Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+    --> src/client/app.rs:1251:27
+     |
+1251 |     use crate::transport::add_silent_outgoing_message;
+     |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::register_connection_manager`: Use ConnectionManager directly instead. This compatibility function will be removed in v0.6.0.
+    --> src/client/app.rs:1090:17
+     |
+1090 |                 register_connection_manager().await;
+     |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::register_connection_manager`: Use ConnectionManager directly instead. This compatibility function will be removed in v0.6.0.
+    --> src/client/app.rs:1181:17
+     |
+1181 |                 register_connection_manager().await;
+     |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::connect_client_compat`: Use ConnectionManager.connect() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+    --> src/client/app.rs:1188:31
+     |
+1188 |                         match connect_client_compat(input, addr).await {
+     |                               ^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+    --> src/client/app.rs:1190:33
+     |
+1190 | ...                   CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
+     |                       ^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/compatibility_layer.rs:16:18
+   |
+16 |     TuiObserver, CLIENT_STATUS, add_text_message, MESSAGES
+   |                  ^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/compatibility_layer.rs:16:33
+   |
+16 |     TuiObserver, CLIENT_STATUS, add_text_message, MESSAGES
+   |                                 ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::MESSAGES`: Use ConnectionManager with proper observers instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/compatibility_layer.rs:16:51
+   |
+16 |     TuiObserver, CLIENT_STATUS, add_text_message, MESSAGES
+   |                                                   ^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:122:5
+    |
+122 |     add_text_message(format!("Connecting to {} using legacy transport...", address));
+    |     ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::connect_client`: Use ConnectionManager.connect() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:129:13
+    |
+129 |             connect_client(input, address).await;
+    |             ^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:135:44
+    |
+135 |             let status = crate::transport::CLIENT_STATUS.lock().unwrap().status.clone();
+    |                                            ^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::connect_client`: Use ConnectionManager.connect() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:118:27
+    |
+118 |     use crate::transport::connect_client;
+    |                           ^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:183:5
+    |
+183 |     add_text_message("Sending authentication request...".to_string());
+    |     ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_silent_outgoing_message`: Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:184:5
+    |
+184 |     add_silent_outgoing_message(auth_request.to_string());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_silent_outgoing_message`: Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:173:27
+    |
+173 |     use crate::transport::add_silent_outgoing_message;
+    |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:218:9
+    |
+218 |         CLIENT_STATUS.lock().unwrap().status.clone()
+    |         ^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:217:31
+    |
+217 |         use crate::transport::CLIENT_STATUS;
+    |                               ^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::disconnect_client`: Use ConnectionManager.disconnect() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:244:5
+    |
+244 |     disconnect_client().await;
+    |     ^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::disconnect_client`: Use ConnectionManager.disconnect() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:242:27
+    |
+242 |     use crate::transport::disconnect_client;
+    |                           ^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:258:35
+    |
+258 |         if let Ok(status_guard) = CLIENT_STATUS.try_lock() {
+    |                                   ^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::register_connection_manager`: Use ConnectionManager directly instead. This compatibility function will be removed in v0.6.0.
+   --> src/client/compatibility_layer.rs:272:5
+    |
+272 |     register_connection_manager().await;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::sync_connection_status`: Use ConnectionManager directly instead. This compatibility function will be removed in v0.6.0.
+   --> src/client/compatibility_layer.rs:273:5
+    |
+273 |     sync_connection_status().await;
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:275:25
+    |
+275 |     let client_status = CLIENT_STATUS.lock().unwrap();
+    |                         ^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_outgoing_message`: Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:277:9
+    |
+277 |         add_outgoing_message(message);
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_outgoing_message`: Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:269:28
+    |
+269 |     use crate::transport::{add_outgoing_message, CLIENT_STATUS, ConnectionStatus};
+    |                            ^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/compatibility_layer.rs:269:50
+    |
+269 |     use crate::transport::{add_outgoing_message, CLIENT_STATUS, ConnectionStatus};
+    |                                                  ^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/compatibility_layer.rs:58:9
+   |
+58 |         add_text_message(format!("ERROR: {}", error));
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/compatibility_layer.rs:63:33
+   |
+63 |         if let Ok(mut status) = CLIENT_STATUS.try_lock() {
+   |                                 ^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/compatibility_layer.rs:73:13
+   |
+73 |             add_text_message("STATUS: Connected to server.".to_string());
+   |             ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/compatibility_layer.rs:75:13
+   |
+75 |             add_text_message("STATUS: Disconnected from server.".to_string());
+   |             ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/components/home.rs:256:17
+    |
+256 |                 add_text_message(clean_content);
+    |                 ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/components/home.rs:261:13
+    |
+261 |             add_text_message(clean_content);
+    |             ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/components/home.rs:334:13
+    |
+334 |             add_text_message(formatted_message);
+    |             ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/components/home.rs:697:24
+    |
+697 |                     if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::DISCONNECTED {
+    |                        ^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/components/home.rs:704:24
+    |
+704 |                     if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
+    |                        ^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/components/home.rs:712:24
+    |
+712 |                     if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
+    |                        ^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/components/home.rs:734:24
+    |
+734 |                     if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
+    |                        ^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/components/home.rs:754:41
+    |
+754 |                     let client_status = CLIENT_STATUS.lock().unwrap();
+    |                                         ^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+ --> src/client/errors/display.rs:4:23
+  |
+4 | use crate::transport::add_text_message;
+  |                       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:45:9
+   |
+45 |         add_text_message(" ".to_string());
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:46:9
+   |
+46 |         add_text_message(format!("❌ Connection: Unable to connect to the chat server"));
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:47:9
+   |
+47 |         add_text_message(format!("💡 Check your internet connection and try restarting the application"));
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:49:13
+   |
+49 |             add_text_message(format!("   Details: {}", reason));
+   |             ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:51:9
+   |
+51 |         add_text_message(" ".to_string());
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:56:9
+   |
+56 |         add_text_message(" ".to_string());
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:57:9
+   |
+57 |         add_text_message(format!("❌ Invalid {}: {}", field, reason));
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:58:9
+   |
+58 |         add_text_message("💡 Please check your input and try again".to_string());
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:59:9
+   |
+59 |         add_text_message(" ".to_string());
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:64:9
+   |
+64 |         add_text_message(" ".to_string());
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:65:9
+   |
+65 |         add_text_message(format!("ℹ️  {}", message));
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:66:9
+   |
+66 |         add_text_message(" ".to_string());
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:71:9
+   |
+71 |         add_text_message(" ".to_string());
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:72:9
+   |
+72 |         add_text_message(format!("✅ {}", message));
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:73:9
+   |
+73 |         add_text_message(" ".to_string());
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:78:9
+   |
+78 |         add_text_message(" ".to_string());
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:79:9
+   |
+79 |         add_text_message(format!("⚠️  {}", message));
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:80:9
+   |
+80 |         add_text_message(" ".to_string());
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:85:9
+   |
+85 |         add_text_message(" ".to_string());
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:86:9
+   |
+86 |         add_text_message("🔌 Connection lost! You are now disconnected from the chat server.".to_string());
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:87:9
+   |
+87 |         add_text_message("💡 Please restart the application to reconnect and re-authenticate.".to_string());
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:88:9
+   |
+88 |         add_text_message(" ".to_string());
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:93:9
+   |
+93 |         add_text_message(" ".to_string());
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:94:9
+   |
+94 |         add_text_message("🛠️  Connection Troubleshooting:".to_string());
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:95:9
+   |
+95 |         add_text_message("   • Check your internet connection".to_string());
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:96:9
+   |
+96 |         add_text_message("   • Verify the server is running".to_string());
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:97:9
+   |
+97 |         add_text_message("   • Try restarting the application".to_string());
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:98:9
+   |
+98 |         add_text_message("   • Contact your system administrator if problems persist".to_string());
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/errors/display.rs:99:9
+   |
+99 |         add_text_message(" ".to_string());
+   |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/errors/display.rs:104:9
+    |
+104 |         add_text_message(" ".to_string());
+    |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/errors/display.rs:105:9
+    |
+105 |         add_text_message("💬 Quick Start Guide:".to_string());
+    |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/errors/display.rs:106:9
+    |
+106 |         add_text_message("   • Press '/' to start typing a message".to_string());
+    |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/errors/display.rs:107:9
+    |
+107 |         add_text_message("   • Press Enter to send your message".to_string());
+    |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/errors/display.rs:108:9
+    |
+108 |         add_text_message("   • Use ↑/↓ arrows to navigate command history".to_string());
+    |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/errors/display.rs:109:9
+    |
+109 |         add_text_message("   • Press '?' for more help".to_string());
+    |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/errors/display.rs:110:9
+    |
+110 |         add_text_message("   • Press 'q' or Ctrl+C to quit".to_string());
+    |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/errors/display.rs:111:9
+    |
+111 |         add_text_message(" ".to_string());
+    |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::connect_client`: Use ConnectionManager.connect() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/migration_facade.rs:13:39
+   |
+13 |     ConnectionStatus, TransportError, connect_client as legacy_connect_client,
+   |                                       ^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::disconnect_client`: Use ConnectionManager.disconnect() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/migration_facade.rs:14:5
+   |
+14 |     disconnect_client as legacy_disconnect_client, CLIENT_STATUS,
+   |     ^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/migration_facade.rs:14:52
+   |
+14 |     disconnect_client as legacy_disconnect_client, CLIENT_STATUS,
+   |                                                    ^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::connect_client_compat`: Use ConnectionManager.connect() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/migration_facade.rs:17:5
+   |
+17 |     connect_client_compat, disconnect_client_compat, get_connection_status_compat,
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::disconnect_client_compat`: Use ConnectionManager.disconnect() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/migration_facade.rs:17:28
+   |
+17 |     connect_client_compat, disconnect_client_compat, get_connection_status_compat,
+   |                            ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::get_connection_status_compat`: Use ConnectionManager.get_status() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/migration_facade.rs:17:54
+   |
+17 |     connect_client_compat, disconnect_client_compat, get_connection_status_compat,
+   |                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::send_message_compat`: Use ConnectionManager.send_message() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/migration_facade.rs:18:5
+   |
+18 |     send_message_compat, is_using_new_architecture, migrate_to_new_architecture,
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::is_using_new_architecture`: This function will be removed when compatibility layer is eliminated in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/migration_facade.rs:18:26
+   |
+18 |     send_message_compat, is_using_new_architecture, migrate_to_new_architecture,
+   |                          ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::migrate_to_new_architecture`: This function will be removed when compatibility layer is eliminated in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/migration_facade.rs:18:53
+   |
+18 |     send_message_compat, is_using_new_architecture, migrate_to_new_architecture,
+   |                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::cleanup_compatibility_layer`: This cleanup function will no longer be needed when compatibility layer is removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+  --> src/client/migration_facade.rs:19:5
+   |
+19 |     cleanup_compatibility_layer,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::connect_client_compat`: Use ConnectionManager.connect() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:100:9
+    |
+100 |         connect_client_compat(input, address).await
+    |         ^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::connect_client`: Use ConnectionManager.connect() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:103:9
+    |
+103 |         legacy_connect_client(input, address).await;
+    |         ^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::disconnect_client_compat`: Use ConnectionManager.disconnect() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:112:9
+    |
+112 |         disconnect_client_compat().await
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::disconnect_client`: Use ConnectionManager.disconnect() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:115:9
+    |
+115 |         legacy_disconnect_client().await;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::get_connection_status_compat`: Use ConnectionManager.get_status() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:123:9
+    |
+123 |         get_connection_status_compat().await
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:126:35
+    |
+126 |         if let Ok(status_guard) = CLIENT_STATUS.try_lock() {
+    |                                   ^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::send_message_compat`: Use ConnectionManager.send_message() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:150:22
+    |
+150 |         let result = send_message_compat(message.clone()).await;
+    |                      ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_outgoing_message`: Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:168:9
+    |
+168 |         add_outgoing_message(message);
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_outgoing_message`: Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:166:32
+    |
+166 |         use crate::transport::{add_outgoing_message};
+    |                                ^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:185:35
+    |
+185 |         if let Ok(status_guard) = CLIENT_STATUS.try_lock() {
+    |                                   ^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::disconnect_client`: Use ConnectionManager.disconnect() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:194:9
+    |
+194 |         legacy_disconnect_client().await;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::migrate_to_new_architecture`: This function will be removed when compatibility layer is eliminated in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:201:5
+    |
+201 |     migrate_to_new_architecture(_address).await?;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::get_connection_status_compat`: Use ConnectionManager.get_status() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:221:25
+    |
+221 |     let was_connected = get_connection_status_compat().await == ConnectionStatus::CONNECTED;
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::disconnect_client_compat`: Use ConnectionManager.disconnect() directly instead. This compatibility function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:225:9
+    |
+225 |         disconnect_client_compat().await?;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::cleanup_compatibility_layer`: This cleanup function will no longer be needed when compatibility layer is removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:229:5
+    |
+229 |     cleanup_compatibility_layer().await;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `compatibility_layer::is_using_new_architecture`: This function will be removed when compatibility layer is eliminated in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/migration_facade.rs:245:9
+    |
+245 |         is_using_new_architecture().await
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::MESSAGES`: Use ConnectionManager with proper observers instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:369:23
+    |
+369 |     let queue_empty = MESSAGES.lock().unwrap().outgoing.is_empty();
+    |                       ^^^^^^^^
+
+warning: use of deprecated static `transport::MESSAGES`: Use ConnectionManager with proper observers instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:370:26
+    |
+370 |     let queue_contents = MESSAGES.lock().unwrap().outgoing.clone();
+    |                          ^^^^^^^^
+
+warning: use of deprecated static `transport::MESSAGES`: Use ConnectionManager with proper observers instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:375:46
+    |
+375 |         let outgoing_messages: Vec<String> = MESSAGES
+    |                                              ^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:414:25
+    |
+414 |                         add_text_message(format!("You: {}", actual_message));
+    |                         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:419:21
+    |
+419 |                     add_text_message(format!("Failed to encrypt message: {}", e));
+    |                     ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::MESSAGES`: Use ConnectionManager with proper observers instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:426:32
+    |
+426 |             let mut messages = MESSAGES.lock().unwrap();
+    |                                ^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:458:13
+    |
+458 |             add_text_message(formatted_message.clone());
+    |             ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::send_action`: Use ConnectionManager observer pattern instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:461:13
+    |
+461 |             send_action(crate::action::Action::ReceiveMessage(formatted_message.clone()));
+    |             ^^^^^^^^^^^
+
+warning: use of deprecated function `transport::send_action`: Use ConnectionManager observer pattern instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:462:13
+    |
+462 |             send_action(crate::action::Action::RecordReceivedMessage);
+    |             ^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:466:13
+    |
+466 |             add_text_message(format!("Error decrypting message: {}", e));
+    |             ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:480:13
+    |
+480 |             add_text_message(format!("You: {}", message));
+    |             ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:483:13
+    |
+483 |             add_text_message(format!("Failed to encrypt message: {}", e));
+    |             ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:492:5
+    |
+492 |     CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
+    |     ^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::MESSAGES`: Use ConnectionManager with proper observers instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:634:5
+    |
+634 |     MESSAGES.lock().unwrap().text.push(s.clone());
+    |     ^^^^^^^^
+
+warning: use of deprecated static `transport::MESSAGES`: Use ConnectionManager with proper observers instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:650:28
+    |
+650 |         let mut messages = MESSAGES.lock().unwrap();
+    |                            ^^^^^^^^
+
+warning: use of deprecated static `transport::ACTION_SENDER`: Use ConnectionManager with proper observer pattern instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:662:6
+    |
+662 |     *ACTION_SENDER.lock().unwrap() = Some(sender);
+    |      ^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::ACTION_SENDER`: Use ConnectionManager with proper observer pattern instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:688:27
+    |
+688 |     if let Some(sender) = ACTION_SENDER.lock().unwrap().as_ref() {
+    |                           ^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::MESSAGES`: Use ConnectionManager with proper observers instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:707:13
+    |
+707 |             MESSAGES.lock().unwrap().text.push(msg);
+    |             ^^^^^^^^
+
+warning: use of deprecated static `transport::MESSAGES`: Use ConnectionManager with proper observers instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:720:24
+    |
+720 |     let mut messages = MESSAGES.lock().unwrap();
+    |                        ^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:733:5
+    |
+733 |     add_text_message(format!("Connecting to {}", address.clone()));
+    |     ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:737:9
+    |
+737 |         add_text_message("Connected to server.".to_owned());
+    |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:738:9
+    |
+738 |         add_text_message("".to_owned());
+    |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:741:13
+    |
+741 |             CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
+    |             ^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:749:9
+    |
+749 |         add_text_message("Failed to connect to server.".to_owned());
+    |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:750:9
+    |
+750 |         add_text_message("".to_owned());
+    |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:783:5
+    |
+783 |     add_text_message("Performing encryption key exchange with server...".to_string());
+    |     ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:789:13
+    |
+789 |             add_text_message("Encryption key exchange completed successfully.".to_string());
+    |             ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:794:13
+    |
+794 |             add_text_message(format!("Key exchange failed: {}", e));
+    |             ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:830:21
+    |
+830 |                     add_text_message("The Lair has CLOSED.".to_string());
+    |                     ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:837:21
+    |
+837 |                     add_text_message(format!("Closed connection with error: {e}"));
+    |                     ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:856:8
+    |
+856 |     if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
+    |        ^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::MESSAGES`: Use ConnectionManager with proper observers instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:858:9
+    |
+858 |         MESSAGES.lock().unwrap().text.clear();
+    |         ^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:859:9
+    |
+859 |         add_text_message("Disconnected from server.".to_string());
+    |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::CLIENT_STATUS`: Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:860:9
+    |
+860 |         CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
+    |         ^^^^^^^^^^^^^
+
+warning: use of deprecated static `transport::MESSAGES`: Use ConnectionManager with proper observers instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:862:9
+    |
+862 |         MESSAGES.lock().unwrap().text.clear();
+    |         ^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:864:9
+    |
+864 |         add_text_message("Not connected to a server.".to_string());
+    |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:102:9
+    |
+102 |         add_text_message(format!("Error: {}", error));
+    |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:107:13
+    |
+107 |             add_text_message("Connected to server.".to_string());
+    |             ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:109:13
+    |
+109 |             add_text_message("Disconnected from server.".to_string());
+    |             ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:123:9
+    |
+123 |         add_text_message(format!("ERROR: {}", error));
+    |         ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:128:13
+    |
+128 |             add_text_message("STATUS: Connected to server.".to_string());
+    |             ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `transport::add_text_message`: Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance.
+   --> src/client/transport.rs:130:13
+    |
+130 |             add_text_message("STATUS: Disconnected from server.".to_string());
+    |             ^^^^^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> src/client/compatibility_layer.rs:144:33
+    |
+144 | ...                   let mut status = manager.get_status().await;
+    |                           ----^^^^^^
+    |                           |
+    |                           help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` on by default
+
+warning: unused variable: `transport`
+   --> src/client/connection_manager.rs:192:21
+    |
+192 |         if let Some(transport) = &self.transport {
+    |                     ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_transport`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+error[E0277]: the trait bound `transport::ConnectionStatus: std::cmp::Eq` is not satisfied
+   --> src/client/action.rs:44:29
+    |
+6   | #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
+    |                                   -- in this derive macro expansion
+...
+44  |     ConnectionStatusChanged(crate::transport::ConnectionStatus),
+    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `std::cmp::Eq` is not implemented for `transport::ConnectionStatus`
+    |
+note: required by a bound in `AssertParamIsEq`
+   --> /home/mberry/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/cmp.rs:363:31
+    |
+363 | pub struct AssertParamIsEq<T: Eq + ?Sized> {
+    |                               ^^ required by this bound in `AssertParamIsEq`
+    = note: this error originates in the derive macro `Eq` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: consider annotating `transport::ConnectionStatus` with `#[derive(Eq)]`
+   --> src/client/transport.rs:536:1
+    |
+536 + #[derive(Eq)]
+537 | pub enum ConnectionStatus {
+    |
+
+error[E0277]: the trait bound `transport::ConnectionStatus: Serialize` is not satisfied
+   --> src/client/action.rs:6:48
+    |
+6   | #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
+    |                                                ^^^^^^^^^ the trait `Serialize` is not implemented for `transport::ConnectionStatus`
+...
+44  |     ConnectionStatusChanged(crate::transport::ConnectionStatus),
+    |                             ----- required by a bound introduced by this call
+    |
+    = note: for local types consider adding `#[derive(serde::Serialize)]` to your `transport::ConnectionStatus` type
+    = note: for types from other crates check whether the crate offers a `serde` feature flag
+    = help: the following other types implement trait `Serialize`:
+              &'a T
+              &'a mut T
+              ()
+              (T,)
+              (T0, T1)
+              (T0, T1, T2)
+              (T0, T1, T2, T3)
+              (T0, T1, T2, T3, T4)
+            and 229 others
+note: required by a bound in `serialize_newtype_variant`
+   --> /home/mberry/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.219/src/ser/mod.rs:943:21
+    |
+935 |     fn serialize_newtype_variant<T>(
+    |        ------------------------- required by a bound in this associated function
+...
+943 |         T: ?Sized + Serialize;
+    |                     ^^^^^^^^^ required by this bound in `Serializer::serialize_newtype_variant`
+    = note: this error originates in the derive macro `Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `transport::ConnectionStatus: Deserialize<'_>` is not satisfied
+    --> src/client/action.rs:44:29
+     |
+44   |     ConnectionStatusChanged(crate::transport::ConnectionStatus),
+     |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Deserialize<'_>` is not implemented for `transport::ConnectionStatus`
+     |
+     = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `transport::ConnectionStatus` type
+     = note: for types from other crates check whether the crate offers a `serde` feature flag
+     = help: the following other types implement trait `Deserialize<'de>`:
+               &'a Path
+               &'a [u8]
+               &'a str
+               ()
+               (T,)
+               (T0, T1)
+               (T0, T1, T2)
+               (T0, T1, T2, T3)
+             and 244 others
+note: required by a bound in `newtype_variant`
+    --> /home/mberry/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.219/src/de/mod.rs:2125:12
+     |
+2123 |     fn newtype_variant<T>(self) -> Result<T, Self::Error>
+     |        --------------- required by a bound in this associated function
+2124 |     where
+2125 |         T: Deserialize<'de>,
+     |            ^^^^^^^^^^^^^^^^ required by this bound in `VariantAccess::newtype_variant`
+
+warning: unused variable: `cancel_token`
+   --> src/client/transport.rs:761:9
+    |
+761 |     let cancel_token = CANCEL_TOKEN.lock().unwrap().token.clone();
+    |         ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_cancel_token`
+
+warning: variable does not need to be mutable
+   --> src/client/transport.rs:759:9
+    |
+759 |     let mut stream = reader;
+    |         ----^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> src/client/transport.rs:760:9
+    |
+760 |     let mut sink = writer;
+    |         ----^^^^
+    |         |
+    |         help: remove this `mut`
+
+For more information about this error, try `rustc --explain E0277`.
+warning: `lair-chat` (lib) generated 159 warnings
+error: could not compile `lair-chat` (lib) due to 3 previous errors; 159 warnings emitted

@@ -1,7 +1,7 @@
+use crate::auth::{AuthState, Credentials};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use strum::Display;
-use crate::auth::{Credentials, AuthState};
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
 pub enum Action {
@@ -40,4 +40,6 @@ pub enum Action {
     ReceiveMessage(String),
     RecordReceivedMessage,
     MessageSent(String),
+    // Connection status actions
+    ConnectionStatusChanged(crate::transport::ConnectionStatus),
 }
