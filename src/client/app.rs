@@ -900,67 +900,26 @@ impl App {
         }
     }
 
-    /// Get current connection status using a combination of legacy and modern sources
-    /// Helper method to reduce code duplication
+    /// Get current connection status from ConnectionManager (async version)
+    async fn get_connection_status_async(&self) -> crate::transport::ConnectionStatus {
+        let manager = self.connection_manager.lock().await;
+        manager.get_status().await
+    }
+
+    /// Get current connection status from ConnectionManager (sync wrapper)
+    /// Helper method for use in sync contexts
     fn get_connection_status(&self) -> crate::transport::ConnectionStatus {
-        // Register and sync ConnectionManager with legacy transport before checking
-        #[allow(deprecated)]
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                use crate::compatibility_layer::{
-                    register_connection_manager, sync_connection_status,
-                };
-                register_connection_manager().await;
-                sync_connection_status().await;
-            })
-        });
-
-        // During transition period, get both statuses
-        #[allow(deprecated)]
-        let legacy_status = {
-            use crate::transport::CLIENT_STATUS;
-            CLIENT_STATUS.lock().unwrap().status.clone()
-        };
-
-        // Get ConnectionManager status
-        let cm_status = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                let manager = self.connection_manager.lock().await;
-                let status = manager.get_status().await;
-                tracing::info!(
-                    "Connection status check - Legacy: {:?}, ConnectionManager: {:?}",
-                    legacy_status,
-                    status
-                );
-                status
-            })
-        });
-
-        // If either system reports connected, we're connected
-        // This ensures messages can be sent whenever possible
-        if legacy_status == crate::transport::ConnectionStatus::CONNECTED
-            || cm_status == crate::transport::ConnectionStatus::CONNECTED
-        {
-            crate::transport::ConnectionStatus::CONNECTED
+        // Use try_lock to avoid blocking, fall back to sync status check
+        if let Ok(manager) = self.connection_manager.try_lock() {
+            manager.get_status_sync()
         } else {
+            // If lock is held, assume disconnected to be safe
             crate::transport::ConnectionStatus::DISCONNECTED
         }
     }
 
     fn draw(&mut self, tui: &mut Tui) -> Result<()> {
-        // Register and sync connection status before drawing to ensure UI is up-to-date
-        #[allow(deprecated)]
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                use crate::compatibility_layer::{
-                    register_connection_manager, sync_connection_status,
-                };
-                register_connection_manager().await;
-                sync_connection_status().await;
-            })
-        });
-
-        // Get combined connection status for UI display
+        // Get connection status for UI display
         let connection_status = self.get_connection_status();
         self.status_bar.set_connection_status(connection_status);
 

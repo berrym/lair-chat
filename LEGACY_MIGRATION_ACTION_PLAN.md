@@ -4,7 +4,7 @@
 
 This document provides a comprehensive, step-by-step action plan for completing the legacy code migration to the modern ConnectionManager architecture. Each step is designed to be completed, tested, and committed independently.
 
-**Current Status**: 15% Complete (6/41 steps)
+**Current Status**: 24% Complete (10/41 steps)
 **Target**: v0.6.0 release with full modern architecture
 **Timeline**: 2-4 weeks
 
@@ -100,7 +100,7 @@ This document provides a comprehensive, step-by-step action plan for completing 
 **Estimated Time**: 1 day
 **Files**: `src/client/app.rs`
 
-- [ ] **1.3.1** Replace `get_connection_status` function (lines 841-844)
+- [x] **1.3.1** Replace `get_connection_status` function (lines 841-844)
   ```rust
   async fn get_connection_status(&self) -> ConnectionStatus {
       if let Ok(manager) = self.connection_manager.lock() {
@@ -111,9 +111,9 @@ This document provides a comprehensive, step-by-step action plan for completing 
   }
   ```
 
-- [ ] **1.3.2** Update all status checks to use async version
-- [ ] **1.3.3** Test status checking
-- [ ] **1.3.4** Commit: "Replace legacy status checking with ConnectionManager"
+- [x] **1.3.2** Update all status checks to use async version
+- [x] **1.3.3** Test status checking
+- [x] **1.3.4** Commit: "Replace legacy status checking with ConnectionManager"
 
 ### Phase 2: Authentication Migration (Week 2)
 
@@ -384,7 +384,7 @@ Use this checklist to track progress:
 ### Phase 1 Progress: Core App Integration
 - [x] Step 1.1: Enhance ConnectionManager Observer Integration (3/3 substeps)
 - [x] Step 1.2: Replace Legacy Message Sending (3/3 substeps)  
-- [ ] Step 1.3: Replace Legacy Status Checking (0/4 substeps)
+- [x] Step 1.3: Replace Legacy Status Checking (4/4 substeps)
 
 ### Phase 2 Progress: Authentication Migration  
 - [ ] Step 2.1: Create Modern Authentication Flow (0/4 substeps)
@@ -403,7 +403,7 @@ Use this checklist to track progress:
 - [ ] Step 5.1: End-to-End Testing (0/7 substeps)
 - [ ] Step 5.2: Documentation and Release Preparation (0/4 substeps)
 
-**Overall Progress: 6/41 steps completed (15%)**
+**Overall Progress: 10/41 steps completed (24%)**
 
 ---
 
