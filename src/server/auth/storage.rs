@@ -1,9 +1,7 @@
 //! User storage interface and implementations for Lair-Chat
 //! Provides persistent storage for user data and sessions.
 
-use serde_json;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
@@ -240,7 +238,6 @@ impl SessionStorage for MemorySessionStorage {
 
 #[cfg(test)]
 mod tests {
-    use super::types::User;
     use super::*;
 
     #[tokio::test]

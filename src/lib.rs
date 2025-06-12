@@ -49,9 +49,6 @@ pub mod logging;
 #[path = "client/server_compatible_encryption.rs"]
 pub mod server_compatible_encryption;
 
-#[path = "client/simple_transport.rs"]
-pub mod simple_transport;
-
 #[path = "client/tcp_transport.rs"]
 pub mod tcp_transport;
 
@@ -66,7 +63,7 @@ pub mod client {
     pub use super::{
         action::*, aes_gcm_encryption::*, app::*, auth::*, chat::*, cli::*, components::*,
         config::*, connection_manager::*, encrypted_transport::*, encryption::*, errors::*,
-        history::*, logging::*, server_compatible_encryption::*, simple_transport::*,
-        tcp_transport::*, transport::*, tui::*,
+        history::*, logging::*, server_compatible_encryption::*, tcp_transport::*, transport::*,
+        tui::*,
     };
 }

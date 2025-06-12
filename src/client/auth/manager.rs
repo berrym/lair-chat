@@ -325,7 +325,7 @@ impl AuthManager {
     /// Logout and clear session
     pub async fn logout(&self) -> AuthResult<()> {
         // Get current session token
-        let token = match self.get_session().await {
+        let _token = match self.get_session().await {
             Some(session) => session.token,
             None => return Ok(()),
         };

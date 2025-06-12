@@ -649,7 +649,7 @@ mod tests {
             }
         }
 
-        fn with_auth_success(mut self, username: &str) -> Self {
+        fn with_auth_success(self, username: &str) -> Self {
             let success_response = format!(
                 r#"{{"type":"success","user_id":"123e4567-e89b-12d3-a456-426614174000","username":"{}","roles":["user"],"token":"test_token","expires_at":9999999999}}"#,
                 username
@@ -659,16 +659,6 @@ mod tests {
                 .unwrap()
                 .push_back(Ok(Some(success_response)));
             self
-        }
-
-        async fn add_receive_data(&self, data: String) {
-            let mut queue = self.receive_queue.lock().await;
-            queue.push_back(Ok(Some(data)));
-        }
-
-        async fn add_receive_error(&self, error: TransportError) {
-            let mut queue = self.receive_queue.lock().await;
-            queue.push_back(Err(error));
         }
     }
 
@@ -722,49 +712,6 @@ mod tests {
         ) -> Result<(), TransportError> {
             // Mock implementation - no handshake performed
             Ok(())
-        }
-    }
-
-    #[derive(Debug)]
-    struct MockObserver {
-        messages: Arc<Mutex<Vec<String>>>,
-        errors: Arc<Mutex<Vec<String>>>,
-        status_changes: Arc<Mutex<Vec<bool>>>,
-    }
-
-    impl MockObserver {
-        fn new() -> Self {
-            Self {
-                messages: Arc::new(Mutex::new(Vec::new())),
-                errors: Arc::new(Mutex::new(Vec::new())),
-                status_changes: Arc::new(Mutex::new(Vec::new())),
-            }
-        }
-    }
-
-    impl ConnectionObserver for MockObserver {
-        fn on_message(&self, message: String) {
-            let messages = self.messages.clone();
-            tokio::spawn(async move {
-                let mut messages_guard = messages.lock().await;
-                messages_guard.push(message);
-            });
-        }
-
-        fn on_error(&self, error: String) {
-            let errors = self.errors.clone();
-            tokio::spawn(async move {
-                let mut errors_guard = errors.lock().await;
-                errors_guard.push(error);
-            });
-        }
-
-        fn on_status_change(&self, connected: bool) {
-            let status_changes = self.status_changes.clone();
-            tokio::spawn(async move {
-                let mut status_guard = status_changes.lock().await;
-                status_guard.push(connected);
-            });
         }
     }
 
@@ -925,35 +872,6 @@ mod tests {
         } else {
             panic!("Auth manager not configured");
         }
-    }
-
-    async fn test_connection_manager_with_aes_gcm_encryption() {
-        let config = ConnectionConfig::new("127.0.0.1:8080".parse().unwrap());
-        let mut manager = ConnectionManager::new_for_test(config);
-
-        // Create AES-GCM encryption service
-        let aes_encryption = AesGcmEncryption::new("test_password_for_connection");
-
-        // Create mock transport
-        let transport = MockTransport::new();
-
-        // Configure the manager with both transport and encryption
-        manager
-            .with_transport(Box::new(transport))
-            .with_encryption(Box::new(aes_encryption));
-
-        // Send a message that should be encrypted
-        let test_message = "This message should be encrypted with AES-GCM";
-        let result = manager.send_message(test_message.to_string()).await;
-
-        // Should succeed even though we're not connected (mock transport allows it)
-        assert!(result.is_ok());
-
-        // Verify message was stored in the message store
-        let message_store = manager.get_message_store();
-        let messages = message_store.lock().await;
-        assert_eq!(messages.messages.len(), 1);
-        assert_eq!(messages.messages[0].content, test_message);
     }
 
     #[tokio::test]

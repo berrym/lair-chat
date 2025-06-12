@@ -2,8 +2,8 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use super::encryption::EncryptionError;
 use super::transport::{EncryptionService, Transport, TransportError};
+use crate::encryption::EncryptionError;
 
 /// Transport wrapper that automatically encrypts outgoing data and decrypts incoming data
 /// using the established encryption service from the handshake

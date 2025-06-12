@@ -1,43 +1,22 @@
 //! Authentication module for Lair-Chat
 //! Provides user authentication, session management, and rate limiting functionality.
 
-mod types;
-mod storage;
-mod service;
 mod protocol;
+mod service;
+mod storage;
+mod types;
 
-pub use types::{
-    AuthError,
-    AuthResult,
-    AuthRequest,
-    AuthResponse,
-    Role,
-    Session,
-    User,
-    UserStatus,
-};
+pub use types::{AuthError, AuthRequest, Session, User};
 
-pub use storage::{
-    UserStorage,
-    SessionStorage,
-    MemoryUserStorage,
-    MemorySessionStorage,
-};
+pub use storage::{MemorySessionStorage, MemoryUserStorage, UserStorage};
 
-pub use service::{
-    AuthService,
-    RateLimitConfig,
-};
+pub use service::{AuthService, RateLimitConfig};
 
-pub use protocol::{
-    AuthenticationMessage,
-    AuthenticationResponse,
-    error_codes,
-};
+pub use protocol::AuthenticationMessage;
 
 /// Default rate limiting configuration
 pub const DEFAULT_RATE_LIMIT: RateLimitConfig = RateLimitConfig {
     max_attempts: 5,
-    window_seconds: 300,  // 5 minutes
+    window_seconds: 300,   // 5 minutes
     lockout_duration: 900, // 15 minutes
 };

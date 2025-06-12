@@ -750,18 +750,6 @@ impl App {
         }
     }
 
-    /// Helper function to detect system messages
-    fn is_system_message(&self, message: &str) -> bool {
-        message.contains("has joined")
-            || message.contains("has left")
-            || message.contains("Welcome back")
-            || message.contains("Authentication")
-            || message.contains("Connected to")
-            || message.contains("Disconnected from")
-            || message.contains("ERROR:")
-            || message.contains("Error:")
-    }
-
     /// Modern authentication flow using ConnectionManager with server-compatible encryption
     fn handle_connection_manager_login(&mut self, credentials: Credentials) {
         let action_tx = self.action_tx.clone();
@@ -1325,14 +1313,6 @@ impl App {
             warn!("{}: {}", error_msg, message);
             let _ = self.action_tx.send(Action::Error(error_msg));
         }
-    }
-
-    /// Get current connection status from ConnectionManager (async version)
-    async fn get_connection_status_async(&self) -> crate::transport::ConnectionStatus {
-        let manager = self.connection_manager.lock().await;
-        let status = manager.get_status().await;
-        tracing::info!("DEBUG: get_connection_status_async returning: {:?}", status);
-        status
     }
 
     /// Get current connection status from ConnectionManager (sync wrapper)

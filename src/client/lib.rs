@@ -15,7 +15,7 @@ pub mod errors;
 pub mod history;
 pub mod logging;
 pub mod server_compatible_encryption;
-pub mod simple_transport;
+
 pub mod tcp_transport;
 pub mod transport;
 pub mod tui;

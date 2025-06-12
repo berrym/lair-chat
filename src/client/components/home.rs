@@ -481,10 +481,6 @@ impl Home {
     }
 
     // Connection dialog methods
-    fn show_dialog(&mut self) {
-        self.dialog_visible = true;
-        self.dialog_cursor_position = 0;
-    }
 
     fn hide_dialog(&mut self) {
         self.dialog_visible = false;
@@ -520,7 +516,7 @@ impl Home {
             // Try to parse the socket address
             let addr_str = format!("{}:{}", host, port);
             match addr_str.parse::<SocketAddr>() {
-                Ok(addr) => {
+                Ok(_addr) => {
                     // Schedule connection
                     self.hide_dialog();
 
@@ -1026,7 +1022,7 @@ impl Component for Home {
                     );
                     return Ok(Some(Action::Update));
                 }
-                let address: SocketAddr = match user_input.parse() {
+                let _address: SocketAddr = match user_input.parse() {
                     Ok(address) => address,
                     Err(_) => {
                         show_validation_error("Server address", "invalid format - use host:port");
@@ -1160,7 +1156,7 @@ impl Component for Home {
                         let content_width = message_max_width.saturating_sub(4); // -4 for padding
                         let wrapped_lines = wrap_text(content, content_width.max(10));
 
-                        for (line_index, wrapped_line) in wrapped_lines.iter().enumerate() {
+                        for (_line_index, wrapped_line) in wrapped_lines.iter().enumerate() {
                             let bubble_content = format!("  {}  ", wrapped_line);
                             let content_len = bubble_content.len();
 
@@ -1370,7 +1366,7 @@ impl Component for Home {
                 .wrap(Wrap { trim: false })
                 .block(
                     Block::default()
-                        .title_top(Line::from("v0.5.9".white()).left_aligned())
+                        .title_top(Line::from("v0.6.0".white()).left_aligned())
                         .title_top(
                             Line::from(vec![Span::styled(
                                 "THE LAIR",

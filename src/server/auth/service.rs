@@ -1,16 +1,11 @@
 //! Authentication service for Lair-Chat
 //! Coordinates user authentication, session management, and rate limiting.
 
+use super::storage::{SessionStorage, UserStorage};
+use super::types::{AuthError, AuthRequest, AuthResponse, AuthResult, Session, User, UserStatus};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
-use uuid::Uuid;
-
-use super::storage::{UserStorage, SessionStorage};
-use super::types::{
-    AuthError, AuthRequest, AuthResponse, AuthResult,
-    Role, Session, User, UserStatus,
-};
 
 /// Rate limiting configuration
 #[derive(Debug, Clone)]
@@ -27,7 +22,7 @@ impl Default for RateLimitConfig {
     fn default() -> Self {
         Self {
             max_attempts: 5,
-            window_seconds: 300, // 5 minutes
+            window_seconds: 300,   // 5 minutes
             lockout_duration: 900, // 15 minutes
         }
     }
@@ -130,7 +125,11 @@ impl AuthService {
         self.check_rate_limit(&request.username).await?;
 
         // Get user
-        let mut user = match self.user_storage.get_user_by_username(&request.username).await {
+        let mut user = match self
+            .user_storage
+            .get_user_by_username(&request.username)
+            .await
+        {
             Ok(user) => user,
             Err(e) => {
                 self.record_failed_attempt(&request.username).await;
@@ -181,7 +180,7 @@ impl AuthService {
     /// Refresh a session
     pub async fn refresh_session(&self, token: &str) -> AuthResult<Session> {
         let mut session = self.validate_session(token).await?;
-        
+
         // Extend session by 24 hours
         session.extend(86400);
         self.session_storage.update_session(&session).await?;
@@ -232,8 +231,8 @@ impl AuthService {
 
 #[cfg(test)]
 mod tests {
+    use super::super::storage::{MemorySessionStorage, MemoryUserStorage};
     use super::*;
-    use super::super::storage::{MemoryUserStorage, MemorySessionStorage};
 
     async fn create_test_service() -> AuthService {
         AuthService::new(
@@ -246,12 +245,12 @@ mod tests {
     #[tokio::test]
     async fn test_user_registration_and_login() {
         let service = create_test_service().await;
-        
+
         // Register user
         let username = "testuser".to_string();
         let password = "password123";
         let user = service.register(username.clone(), password).await.unwrap();
-        
+
         // Login
         let request = AuthRequest {
             username: username.clone(),
@@ -259,7 +258,7 @@ mod tests {
             fingerprint: "test_device".to_string(),
             is_registration: false,
         };
-        
+
         let response = service.login(request).await.unwrap();
         assert_eq!(response.user.id, user.id);
         assert!(!response.session.is_expired());
@@ -268,12 +267,12 @@ mod tests {
     #[tokio::test]
     async fn test_failed_login_rate_limiting() {
         let service = create_test_service().await;
-        
+
         // Register user
         let username = "testuser".to_string();
         let password = "password123";
         service.register(username.clone(), password).await.unwrap();
-        
+
         // Attempt multiple failed logins
         let request = AuthRequest {
             username: username.clone(),
@@ -281,11 +280,11 @@ mod tests {
             fingerprint: "test_device".to_string(),
             is_registration: false,
         };
-        
+
         for _ in 0..5 {
             assert!(service.login(request.clone()).await.is_err());
         }
-        
+
         // Next attempt should be rate limited
         assert!(matches!(
             service.login(request.clone()).await,
@@ -296,31 +295,31 @@ mod tests {
     #[tokio::test]
     async fn test_session_management() {
         let service = create_test_service().await;
-        
+
         // Create user and login
         let username = "testuser".to_string();
         let password = "password123";
         service.register(username.clone(), password).await.unwrap();
-        
+
         let request = AuthRequest {
             username,
             password: password.to_string(),
             fingerprint: "test_device".to_string(),
             is_registration: false,
         };
-        
+
         let response = service.login(request).await.unwrap();
         let token = response.session.token;
-        
+
         // Validate session
         let session = service.validate_session(&token).await.unwrap();
         assert_eq!(session.id, response.session.id);
-        
+
         // Refresh session
         let refreshed = service.refresh_session(&token).await.unwrap();
         assert_eq!(refreshed.id, session.id);
         assert!(refreshed.expires_at > session.expires_at);
-        
+
         // Logout
         service.logout(&token).await.unwrap();
         assert!(service.validate_session(&token).await.is_err());

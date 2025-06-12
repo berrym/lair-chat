@@ -16,10 +16,7 @@ use tracing_subscriber::fmt::format::FmtSpan;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
 mod auth;
-use auth::{
-    AuthError, AuthRequest, AuthService, MemorySessionStorage, MemoryUserStorage, Session, User,
-    UserStorage,
-};
+use auth::{AuthRequest, AuthService, MemorySessionStorage, MemoryUserStorage, User, UserStorage};
 
 /// Shorthand for the transmit half of the message channel.
 pub type Tx<T> = mpsc::UnboundedSender<T>;

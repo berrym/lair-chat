@@ -15,8 +15,6 @@ use crate::auth::AuthState;
 #[cfg(test)]
 use crate::auth::{Session, UserProfile};
 use crate::{components::Component, transport::ConnectionStatus};
-#[cfg(test)]
-use uuid::Uuid;
 
 /// Network statistics
 #[derive(Debug, Default, Clone)]
@@ -149,22 +147,6 @@ impl StatusBar {
                 self.error_message = None;
                 self.error_timeout = None;
             }
-        }
-    }
-
-    /// Get the connection status style and text
-    fn connection_status_style(&self) -> (Style, &'static str) {
-        match self.connection_status {
-            ConnectionStatus::CONNECTED => (
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
-                "Connected",
-            ),
-            ConnectionStatus::DISCONNECTED => (
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                "Disconnected",
-            ),
         }
     }
 

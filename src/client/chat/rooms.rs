@@ -1,13 +1,13 @@
 //! Room management structures for Lair-Chat
 //! Handles room creation, settings, and lifecycle management.
 
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
-use serde::{Deserialize, Serialize};
 
-use super::{RoomId, UserId, MessageId, RoomEvent, ChatError, ChatResult, TypingIndicators};
-use super::users::{RoomUser, UserRole};
 use super::messages::ChatMessage;
+use super::users::{RoomUser, UserRole};
+use super::{ChatError, ChatResult, MessageId, RoomEvent, RoomId, TypingIndicators, UserId};
 
 /// Room type enumeration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -127,7 +127,9 @@ impl RoomSettings {
     /// Validate room settings
     pub fn validate(&self) -> ChatResult<()> {
         if self.name.trim().is_empty() {
-            return Err(ChatError::InvalidRoomName("Room name cannot be empty".to_string()));
+            return Err(ChatError::InvalidRoomName(
+                "Room name cannot be empty".to_string(),
+            ));
         }
 
         if self.name.len() > 100 {
@@ -136,7 +138,9 @@ impl RoomSettings {
 
         if let Some(max) = self.max_users {
             if max == 0 {
-                return Err(ChatError::InvalidRoomName("Max users must be greater than 0".to_string()));
+                return Err(ChatError::InvalidRoomName(
+                    "Max users must be greater than 0".to_string(),
+                ));
             }
         }
 
@@ -277,7 +281,8 @@ impl Room {
 
         // Record event
         if let Some(user) = self.get_user(&message.sender_id) {
-            let event = RoomEvent::message_sent(message.id, message.sender_id, user.username.clone());
+            let event =
+                RoomEvent::message_sent(message.id, message.sender_id, user.username.clone());
             self.events.push(event);
         }
 
@@ -362,8 +367,8 @@ impl Room {
             "send_message" => true, // All users can send messages
             "edit_message" => self.settings.message_editing,
             "delete_message" => {
-                self.settings.message_deletion && 
-                (user.role == UserRole::Admin || user.role == UserRole::Moderator)
+                self.settings.message_deletion
+                    && (user.role == UserRole::Admin || user.role == UserRole::Moderator)
             }
             "kick_user" => user.role == UserRole::Admin || user.role == UserRole::Moderator,
             "change_settings" => user.role == UserRole::Admin,
@@ -435,10 +440,14 @@ impl RoomManager {
     }
 
     /// Create a new room
-    pub fn create_room(&mut self, settings: RoomSettings, created_by: UserId) -> ChatResult<RoomId> {
+    pub fn create_room(
+        &mut self,
+        settings: RoomSettings,
+        created_by: UserId,
+    ) -> ChatResult<RoomId> {
         let room_id = uuid::Uuid::new_v4();
         let room = Room::new(room_id, settings, created_by)?;
-        
+
         self.rooms.insert(room_id, room);
         Ok(room_id)
     }
@@ -455,7 +464,10 @@ impl RoomManager {
 
     /// Delete a room
     pub fn delete_room(&mut self, room_id: &RoomId) -> ChatResult<Room> {
-        let room = self.rooms.remove(room_id).ok_or(ChatError::RoomNotFound(*room_id))?;
+        let room = self
+            .rooms
+            .remove(room_id)
+            .ok_or(ChatError::RoomNotFound(*room_id))?;
 
         // Remove room from all user mappings
         for user_id in room.users.keys() {
@@ -472,8 +484,11 @@ impl RoomManager {
 
     /// Join a user to a room
     pub fn join_room(&mut self, room_id: &RoomId, user: RoomUser) -> ChatResult<()> {
-        let room = self.rooms.get_mut(room_id).ok_or(ChatError::RoomNotFound(*room_id))?;
-        
+        let room = self
+            .rooms
+            .get_mut(room_id)
+            .ok_or(ChatError::RoomNotFound(*room_id))?;
+
         // Check room type permissions
         match room.settings.room_type {
             RoomType::Private => {
@@ -482,7 +497,9 @@ impl RoomManager {
             }
             RoomType::DirectMessage | RoomType::GroupMessage => {
                 // These are typically invitation-only
-                return Err(ChatError::PermissionDenied("Cannot join this type of room".to_string()));
+                return Err(ChatError::PermissionDenied(
+                    "Cannot join this type of room".to_string(),
+                ));
             }
             RoomType::Public => {
                 // Anyone can join public rooms
@@ -500,7 +517,10 @@ impl RoomManager {
 
     /// Remove a user from a room
     pub fn leave_room(&mut self, room_id: &RoomId, user_id: &UserId) -> ChatResult<()> {
-        let room = self.rooms.get_mut(room_id).ok_or(ChatError::RoomNotFound(*room_id))?;
+        let room = self
+            .rooms
+            .get_mut(room_id)
+            .ok_or(ChatError::RoomNotFound(*room_id))?;
         room.remove_user(user_id)?;
 
         // Update user-room mapping
@@ -512,7 +532,12 @@ impl RoomManager {
         }
 
         // Delete room if empty and it's a DM or group message
-        if room.is_empty() && matches!(room.settings.room_type, RoomType::DirectMessage | RoomType::GroupMessage) {
+        if room.is_empty()
+            && matches!(
+                room.settings.room_type,
+                RoomType::DirectMessage | RoomType::GroupMessage
+            )
+        {
             self.rooms.remove(room_id);
         }
 
@@ -522,7 +547,8 @@ impl RoomManager {
     /// Get all rooms a user is in
     pub fn get_user_rooms(&self, user_id: &UserId) -> Vec<&Room> {
         if let Some(room_ids) = self.user_rooms.get(user_id) {
-            room_ids.iter()
+            room_ids
+                .iter()
                 .filter_map(|id| self.rooms.get(id))
                 .collect()
         } else {
@@ -532,7 +558,8 @@ impl RoomManager {
 
     /// Get all public rooms
     pub fn get_public_rooms(&self) -> Vec<&Room> {
-        self.rooms.values()
+        self.rooms
+            .values()
             .filter(|room| room.settings.room_type == RoomType::Public)
             .collect()
     }
@@ -545,12 +572,16 @@ impl RoomManager {
     /// Find rooms by name pattern
     pub fn find_rooms(&self, pattern: &str) -> Vec<&Room> {
         let pattern = pattern.to_lowercase();
-        self.rooms.values()
+        self.rooms
+            .values()
             .filter(|room| {
-                room.settings.name.to_lowercase().contains(&pattern) ||
-                room.settings.description.as_ref()
-                    .map(|d| d.to_lowercase().contains(&pattern))
-                    .unwrap_or(false)
+                room.settings.name.to_lowercase().contains(&pattern)
+                    || room
+                        .settings
+                        .description
+                        .as_ref()
+                        .map(|d| d.to_lowercase().contains(&pattern))
+                        .unwrap_or(false)
             })
             .collect()
     }
@@ -574,17 +605,17 @@ impl Default for RoomManager {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::users::{RoomUser, UserRole, UserStatus};
+    use super::*;
 
     #[test]
     fn test_room_creation() {
         let room_id = uuid::Uuid::new_v4();
         let user_id = uuid::Uuid::new_v4();
         let settings = RoomSettings::public("Test Room".to_string());
-        
+
         let room = Room::new(room_id, settings, user_id).unwrap();
-        
+
         assert_eq!(room.id, room_id);
         assert_eq!(room.settings.name, "Test Room");
         assert_eq!(room.created_by, user_id);
@@ -598,15 +629,15 @@ mod tests {
         let creator_id = uuid::Uuid::new_v4();
         let user_id = uuid::Uuid::new_v4();
         let settings = RoomSettings::public("Test Room".to_string());
-        
+
         let mut room = Room::new(room_id, settings, creator_id).unwrap();
-        
+
         let user = RoomUser::new(user_id, "testuser".to_string(), UserRole::User);
         room.add_user(user).unwrap();
-        
+
         assert_eq!(room.user_count(), 1);
         assert!(room.has_user(&user_id));
-        
+
         let removed_user = room.remove_user(&user_id).unwrap();
         assert_eq!(removed_user.user_id, user_id);
         assert_eq!(room.user_count(), 0);
@@ -617,16 +648,16 @@ mod tests {
         let mut manager = RoomManager::new();
         let creator_id = uuid::Uuid::new_v4();
         let user_id = uuid::Uuid::new_v4();
-        
+
         let settings = RoomSettings::public("Test Room".to_string());
         let room_id = manager.create_room(settings, creator_id).unwrap();
-        
+
         assert_eq!(manager.room_count(), 1);
         assert!(manager.get_room(&room_id).is_some());
-        
+
         let user = RoomUser::new(user_id, "testuser".to_string(), UserRole::User);
         manager.join_room(&room_id, user).unwrap();
-        
+
         let user_rooms = manager.get_user_rooms(&user_id);
         assert_eq!(user_rooms.len(), 1);
         assert_eq!(user_rooms[0].id, room_id);

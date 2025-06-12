@@ -1,6 +1,6 @@
 [package]
 name = "lair-chat"
-version = "0.5.9"
+version = "0.6.0"
 edition = "2021"
 description = "Simple terminal client/server chat application with encryption written in Rust"
 license = "MIT"

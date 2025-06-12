@@ -2,6 +2,7 @@
 //! Provides centralized error handling and user messaging.
 
 use crate::action::Action;
+use std::sync::{OnceLock, RwLock};
 use tokio::sync::mpsc::UnboundedSender;
 
 /// Error display configuration
@@ -144,13 +145,12 @@ impl ErrorDisplay {
 }
 
 /// Global error display instance with modern action support
-static mut GLOBAL_ERROR_DISPLAY: Option<ErrorDisplay> = None;
+static GLOBAL_ERROR_DISPLAY: OnceLock<RwLock<ErrorDisplay>> = OnceLock::new();
 
 /// Initialize the global error display system
 pub fn init_error_display(config: ErrorDisplayConfig) {
-    unsafe {
-        GLOBAL_ERROR_DISPLAY = Some(ErrorDisplay::new(config));
-    }
+    let display = ErrorDisplay::new(config);
+    let _ = GLOBAL_ERROR_DISPLAY.set(RwLock::new(display));
 }
 
 /// Initialize the global error display system with action sender
@@ -158,76 +158,66 @@ pub fn init_error_display_with_action_sender(
     config: ErrorDisplayConfig,
     sender: UnboundedSender<Action>,
 ) {
-    unsafe {
-        let mut display = ErrorDisplay::new(config);
-        display.with_action_sender(sender);
-        GLOBAL_ERROR_DISPLAY = Some(display);
-    }
+    let mut display = ErrorDisplay::new(config);
+    display.with_action_sender(sender);
+    let _ = GLOBAL_ERROR_DISPLAY.set(RwLock::new(display));
 }
 
 /// Get the global error display instance
-pub fn get_error_display() -> &'static ErrorDisplay {
-    unsafe {
-        GLOBAL_ERROR_DISPLAY.as_ref().unwrap_or_else(|| {
-            // Initialize with default config if not already initialized
-            GLOBAL_ERROR_DISPLAY = Some(ErrorDisplay::default());
-            GLOBAL_ERROR_DISPLAY.as_ref().unwrap()
-        })
-    }
+fn with_error_display<F, R>(f: F) -> R
+where
+    F: FnOnce(&ErrorDisplay) -> R,
+{
+    let display_lock = GLOBAL_ERROR_DISPLAY.get_or_init(|| RwLock::new(ErrorDisplay::default()));
+    let display = display_lock.read().unwrap();
+    f(&display)
 }
 
 /// Set action sender for existing global error display
 pub fn set_global_error_display_action_sender(sender: UnboundedSender<Action>) {
-    unsafe {
-        if let Some(display) = GLOBAL_ERROR_DISPLAY.as_mut() {
-            display.with_action_sender(sender);
-        } else {
-            // Initialize with default config and action sender
-            let mut display = ErrorDisplay::default();
-            display.with_action_sender(sender);
-            GLOBAL_ERROR_DISPLAY = Some(display);
-        }
-    }
+    let display_lock = GLOBAL_ERROR_DISPLAY.get_or_init(|| RwLock::new(ErrorDisplay::default()));
+    let mut display = display_lock.write().unwrap();
+    display.with_action_sender(sender);
 }
 
 /// Convenience functions for common error scenarios
 
 /// Show a connection error
 pub fn show_connection_error(reason: &str) {
-    get_error_display().show_connection_error(reason);
+    with_error_display(|display| display.show_connection_error(reason));
 }
 
 /// Show a validation error
 pub fn show_validation_error(field: &str, reason: &str) {
-    get_error_display().show_validation_error(field, reason);
+    with_error_display(|display| display.show_validation_error(field, reason));
 }
 
 /// Show an info message
 pub fn show_info(message: &str) {
-    get_error_display().show_info(message);
+    with_error_display(|display| display.show_info(message));
 }
 
 /// Show a success message
 pub fn show_success(message: &str) {
-    get_error_display().show_success(message);
+    with_error_display(|display| display.show_success(message));
 }
 
 /// Show a warning message
 pub fn show_warning(message: &str) {
-    get_error_display().show_warning(message);
+    with_error_display(|display| display.show_warning(message));
 }
 
 /// Show disconnection message
 pub fn show_disconnection() {
-    get_error_display().show_disconnection_message();
+    with_error_display(|display| display.show_disconnection_message());
 }
 
 /// Show connection help
 pub fn show_connection_help() {
-    get_error_display().show_connection_help();
+    with_error_display(|display| display.show_connection_help());
 }
 
 /// Show usage help
 pub fn show_usage_help() {
-    get_error_display().show_usage_help();
+    with_error_display(|display| display.show_usage_help());
 }

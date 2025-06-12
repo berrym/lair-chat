@@ -221,7 +221,7 @@ mod tests {
         // Generate what the welcome message should be
         // We need to simulate what the server would send
         let client_secret = EphemeralSecret::random_from_rng(OsRng);
-        let client_public = PublicKey::from(&client_secret);
+        let _client_public = PublicKey::from(&client_secret);
         let shared_secret = client_secret.diffie_hellman(&server_public);
         let shared_key = format!("{:x}", md5::compute(BASE64_STANDARD.encode(shared_secret)));
 

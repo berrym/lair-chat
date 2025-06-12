@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 
@@ -135,7 +135,7 @@ pub fn create_boxed_tcp_transport(addr: SocketAddr) -> Box<dyn Transport> {
 mod tests {
     use super::*;
     use std::time::Duration;
-    use tokio::io::AsyncWriteExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
     // Helper function to create an echo server for testing
