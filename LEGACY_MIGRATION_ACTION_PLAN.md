@@ -255,12 +255,12 @@ This document provides a comprehensive, step-by-step action plan for completing 
 **Estimated Time**: 2 days
 **Files**: Multiple
 
-- [ ] **4.2.1** Remove all `CLIENT_STATUS` direct access
-- [ ] **4.2.2** Remove all `add_text_message` direct calls
-- [ ] **4.2.3** Remove all `add_outgoing_message` direct calls
-- [ ] **4.2.4** Update imports to remove legacy transport functions
-- [ ] **4.2.5** Test application functionality
-- [ ] **4.2.6** Commit: "Remove global state dependencies"
+- [x] **4.2.1** Remove all `CLIENT_STATUS` direct access
+- [x] **4.2.2** Remove all `add_text_message` direct calls
+- [x] **4.2.3** Remove all `add_outgoing_message` direct calls
+- [x] **4.2.4** Update imports to remove legacy transport functions
+- [x] **4.2.5** Test application functionality
+- [x] **4.2.6** Commit: "Remove global state dependencies"
 
 #### Step 4.3: Clean Up Legacy Code
 **Estimated Time**: 1 day
@@ -407,14 +407,14 @@ Use this checklist to track progress:
 
 ### Phase 4 Progress: Remove Legacy Dependencies
 - [x] Step 4.1: Remove Compatibility Layer Usage (5/5 substeps) - COMPLETED
-- [ ] Step 4.2: Remove Global State Access (0/6 substeps)
+- [x] Step 4.2: Remove Global State Access (6/6 substeps) - COMPLETED
 - [ ] Step 4.3: Clean Up Legacy Code (0/5 substeps)
 
 ### Phase 5 Progress: Final Integration and Testing
 - [ ] Step 5.1: End-to-End Testing (0/7 substeps)
 - [ ] Step 5.2: Documentation and Release Preparation (0/4 substeps)
 
-**Overall Progress: 30/41 steps completed (73%)**
+**Overall Progress: 36/41 steps completed (88%)**
 
 ---
 

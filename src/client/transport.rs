@@ -1,35 +1,13 @@
+//! Modern transport layer for Lair-Chat
+//! Contains only the core types, traits, and enums needed by the modern architecture.
+//! All deprecated global state and legacy functions have been removed.
+
 use async_trait::async_trait;
-use base64::prelude::*;
-use color_eyre::eyre::Result;
-use futures::{select, FutureExt, SinkExt};
-use md5;
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use std::{net::SocketAddr, pin::Pin, sync::Mutex};
-use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    net::{
-        tcp::{OwnedReadHalf, OwnedWriteHalf},
-        TcpStream,
-    },
-    sync::mpsc,
-    time::{sleep, Duration},
-};
-use tokio_stream::{wrappers::LinesStream, Stream, StreamExt};
-use tokio_util::{
-    codec::{FramedWrite, LinesCodec},
-    sync::CancellationToken,
-};
-use tui_input::Input;
-use x25519_dalek::{EphemeralSecret, PublicKey};
+use std::net::SocketAddr;
+use std::time::SystemTime;
 
-use super::encryption::{decrypt, encrypt, EncryptionError};
-use crate::action::Action;
-use crate::components::home::get_user_input;
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-// Global counter to track transport instances for debugging
-static TRANSPORT_INSTANCE_COUNTER: AtomicUsize = AtomicUsize::new(0);
+use super::encryption::EncryptionError;
 
 /// Trait abstraction for encryption operations
 #[async_trait]
@@ -75,101 +53,63 @@ pub trait ConnectionObserver: Send + Sync {
     fn on_status_change(&self, connected: bool);
 }
 
-/// Default implementation of EncryptionService using our existing functions
-pub struct DefaultEncryptionService;
+/// Transport layer error types
+#[derive(Debug, thiserror::Error)]
+pub enum TransportError {
+    #[error("Connection error: {0}")]
+    ConnectionError(#[from] std::io::Error),
 
-#[async_trait]
-impl EncryptionService for DefaultEncryptionService {
-    fn encrypt(&self, key: &str, plaintext: &str) -> Result<String, EncryptionError> {
-        encrypt(key.to_string(), plaintext.to_string())
-    }
+    #[error("Encryption error: {0}")]
+    EncryptionError(#[from] EncryptionError),
 
-    fn decrypt(&self, key: &str, ciphertext: &str) -> Result<String, EncryptionError> {
-        decrypt(key.to_string(), ciphertext.to_string())
-    }
+    #[error("Key exchange error: {0}")]
+    KeyExchangeError(String),
 
-    async fn perform_handshake(
-        &mut self,
-        _transport: &mut dyn Transport,
-    ) -> Result<(), TransportError> {
-        // Default implementation - no handshake performed
-        Ok(())
-    }
+    #[error("Authentication error: {0}")]
+    AuthenticationError(String),
+
+    #[error("Protocol error: {0}")]
+    ProtocolError(String),
+
+    #[error("Timeout error: {0}")]
+    TimeoutError(String),
+
+    #[error("Invalid configuration: {0}")]
+    ConfigurationError(String),
 }
 
-/// Default implementation of ConnectionObserver using existing global functions
-pub struct DefaultConnectionObserver;
-
-impl ConnectionObserver for DefaultConnectionObserver {
-    fn on_message(&self, _message: String) {
-        // Disabled to prevent duplication - messages now handled via action system
-    }
-
-    fn on_error(&self, error: String) {
-        add_text_message(format!("Error: {}", error));
-    }
-
-    fn on_status_change(&self, connected: bool) {
-        if connected {
-            add_text_message("Connected to server.".to_string());
-        } else {
-            add_text_message("Disconnected from server.".to_string());
-        }
-    }
+/// Connection status enumeration
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ConnectionStatus {
+    CONNECTED,
+    DISCONNECTED,
 }
 
-/// TUI-specific implementation of ConnectionObserver for better UI integration
-pub struct TuiObserver;
-
-impl ConnectionObserver for TuiObserver {
-    fn on_message(&self, _message: String) {
-        // Disabled to prevent duplication - messages now handled via action system
-    }
-
-    fn on_error(&self, error: String) {
-        add_text_message(format!("ERROR: {}", error));
-    }
-
-    fn on_status_change(&self, connected: bool) {
-        if connected {
-            add_text_message("STATUS: Connected to server.".to_string());
-        } else {
-            add_text_message("STATUS: Disconnected from server.".to_string());
-        }
-    }
-}
-
-/// Configuration for establishing a connection
+/// Connection configuration
 #[derive(Debug, Clone)]
 pub struct ConnectionConfig {
-    pub address: std::net::SocketAddr,
+    pub address: SocketAddr,
     pub timeout_ms: u64,
 }
 
 impl ConnectionConfig {
-    pub fn new(address: std::net::SocketAddr) -> Self {
+    /// Create a new connection configuration
+    pub fn new(address: SocketAddr) -> Self {
         Self {
             address,
-            timeout_ms: 5000, // 5 second default timeout
+            timeout_ms: 5000,
         }
     }
 
+    /// Set the timeout in milliseconds
     pub fn with_timeout(mut self, timeout_ms: u64) -> Self {
         self.timeout_ms = timeout_ms;
         self
     }
 }
 
-/// Represents a chat message with metadata
-#[derive(Debug, Clone)]
-pub struct Message {
-    pub content: String,
-    pub timestamp: std::time::SystemTime,
-    pub message_type: MessageType,
-}
-
-/// Type of message for display purposes
-#[derive(Debug, Clone, PartialEq)]
+/// Message types for different kinds of chat messages
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MessageType {
     UserMessage,
     ReceivedMessage,
@@ -177,40 +117,52 @@ pub enum MessageType {
     ErrorMessage,
 }
 
+/// A message in the chat system
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Message {
+    pub content: String,
+    pub message_type: MessageType,
+    pub timestamp: SystemTime,
+}
+
 impl Message {
+    /// Create a new user message
     pub fn user_message(content: String) -> Self {
         Self {
             content,
-            timestamp: std::time::SystemTime::now(),
             message_type: MessageType::UserMessage,
+            timestamp: SystemTime::now(),
         }
     }
 
+    /// Create a new received message
     pub fn received_message(content: String) -> Self {
         Self {
             content,
-            timestamp: std::time::SystemTime::now(),
             message_type: MessageType::ReceivedMessage,
+            timestamp: SystemTime::now(),
         }
     }
 
+    /// Create a new system message
     pub fn system_message(content: String) -> Self {
         Self {
             content,
-            timestamp: std::time::SystemTime::now(),
             message_type: MessageType::SystemMessage,
+            timestamp: SystemTime::now(),
         }
     }
 
+    /// Create a new error message
     pub fn error_message(content: String) -> Self {
         Self {
             content,
-            timestamp: std::time::SystemTime::now(),
             message_type: MessageType::ErrorMessage,
+            timestamp: SystemTime::now(),
         }
     }
 
-    /// Format message for display
+    /// Format the message for display in the UI
     pub fn format_for_display(&self) -> String {
         match self.message_type {
             MessageType::UserMessage => format!("You: {}", self.content),
@@ -221,25 +173,26 @@ impl Message {
     }
 }
 
-/// Container for storing messages with better organization
+/// Store for managing chat messages
 #[derive(Debug, Clone)]
 pub struct MessageStore {
     pub messages: Vec<Message>,
-    pub outgoing: Vec<String>, // Keep for backward compatibility
 }
 
 impl MessageStore {
+    /// Create a new message store
     pub fn new() -> Self {
         Self {
             messages: Vec::new(),
-            outgoing: Vec::new(),
         }
     }
 
+    /// Add a message to the store
     pub fn add_message(&mut self, message: Message) {
         self.messages.push(message);
     }
 
+    /// Get all messages formatted for display
     pub fn get_display_messages(&self) -> Vec<String> {
         self.messages
             .iter()
@@ -247,779 +200,48 @@ impl MessageStore {
             .collect()
     }
 
+    /// Clear all messages
     pub fn clear_messages(&mut self) {
         self.messages.clear();
     }
 
-    pub fn clear_outgoing(&mut self) {
-        self.outgoing.clear();
+    /// Get the number of messages
+    pub fn len(&self) -> usize {
+        self.messages.len()
+    }
+
+    /// Check if the store is empty
+    pub fn is_empty(&self) -> bool {
+        self.messages.is_empty()
     }
 }
 
-/// Create a connection configuration from an address string
-pub fn create_connection_config(address: std::net::SocketAddr) -> ConnectionConfig {
+impl Default for MessageStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// Helper functions for creating common types
+pub fn create_connection_config(address: SocketAddr) -> ConnectionConfig {
     ConnectionConfig::new(address)
 }
 
-/// Helper function to create a formatted message for display
 pub fn create_user_message(content: String) -> Message {
     Message::user_message(content)
 }
 
-/// Helper function to create system messages
 pub fn create_system_message(content: String) -> Message {
     Message::system_message(content)
 }
 
-/// Helper function to create error messages
 pub fn create_error_message(content: String) -> Message {
     Message::error_message(content)
-}
-
-/// Create a default encryption service instance
-pub fn create_encryption_service() -> DefaultEncryptionService {
-    DefaultEncryptionService
-}
-
-/// Create a default connection observer instance
-pub fn create_connection_observer() -> DefaultConnectionObserver {
-    DefaultConnectionObserver
-}
-
-/// Factory function to create a boxed encryption service trait object
-pub fn create_boxed_encryption_service() -> Box<dyn EncryptionService> {
-    Box::new(DefaultEncryptionService)
-}
-
-/// Factory function to create a boxed connection observer trait object
-pub fn create_boxed_connection_observer() -> Box<dyn ConnectionObserver> {
-    Box::new(DefaultConnectionObserver)
-}
-
-/// Create a TUI observer instance
-pub fn create_tui_observer() -> TuiObserver {
-    TuiObserver
-}
-
-/// Factory function to create a boxed TUI observer trait object
-pub fn create_boxed_tui_observer() -> Box<dyn ConnectionObserver> {
-    Box::new(TuiObserver)
-}
-
-/// Perform key exchange with the server and return the shared AES key
-async fn perform_key_exchange(
-    sink: &mut ClientSink,
-    stream: &mut ClientStream,
-) -> Result<String, TransportError> {
-    // create private/public keys
-    let client_secret_key = EphemeralSecret::random();
-    let client_public_key = PublicKey::from(&client_secret_key);
-
-    // receive server public key first (server sends first)
-    let server_public_key_string = match stream.rx.next().await {
-        Some(key_string) => key_string,
-        None => {
-            return Err(TransportError::KeyExchangeError(
-                "Failed to get server public key".to_string(),
-            ));
-        }
-    };
-
-    // then send our public key to server
-    sink.tx
-        .send(BASE64_STANDARD.encode(client_public_key))
-        .await
-        .map_err(|e| {
-            TransportError::KeyExchangeError(format!("Failed to send public key: {}", e))
-        })?;
-
-    // keep converting until key is a 32 byte u8 array
-    let server_public_key_vec = match server_public_key_string {
-        Ok(key_vec) => BASE64_STANDARD.decode(key_vec).map_err(|e| {
-            TransportError::KeyExchangeError(format!("Failed to decode server public key: {}", e))
-        })?,
-        Err(_) => {
-            return Err(TransportError::KeyExchangeError(
-                "Failed to receive server public key".to_string(),
-            ));
-        }
-    };
-
-    let server_public_key_slice: &[u8] =
-        server_public_key_vec.as_slice().try_into().map_err(|_| {
-            TransportError::KeyExchangeError(
-                "Failed to convert server public key to byte slice".to_string(),
-            )
-        })?;
-
-    let server_public_key_array: [u8; 32] = server_public_key_slice.try_into().map_err(|_| {
-        TransportError::KeyExchangeError(
-            "Failed to convert public key to 32-byte array".to_string(),
-        )
-    })?;
-
-    // create shared keys
-    let shared_secret = client_secret_key.diffie_hellman(&PublicKey::from(server_public_key_array));
-    let shared_aes256_key = format!("{:x}", md5::compute(BASE64_STANDARD.encode(shared_secret)));
-
-    Ok(shared_aes256_key)
-}
-
-/// Process and send any pending outgoing messages
-async fn process_outgoing_messages(
-    sink: &mut ClientSink,
-    shared_key: &str,
-) -> Result<(), TransportError> {
-    // Get current thread info for debugging
-    let thread_id = std::thread::current().id();
-    tracing::debug!(
-        "DEBUG: process_outgoing_messages called on thread: {:?}",
-        thread_id
-    );
-
-    let queue_empty = MESSAGES.lock().unwrap().outgoing.is_empty();
-    let queue_contents = MESSAGES.lock().unwrap().outgoing.clone();
-
-    tracing::debug!(
-        "DEBUG: Queue check - empty: {}, contents: {:?}",
-        queue_empty,
-        queue_contents
-    );
-
-    if !queue_empty {
-        let outgoing_messages: Vec<String> = MESSAGES.lock().unwrap().outgoing.clone();
-
-        tracing::info!(
-            "DEBUG: process_outgoing_messages found {} queued messages: {:?}",
-            outgoing_messages.len(),
-            outgoing_messages
-        );
-
-        for original_message in outgoing_messages {
-            tracing::info!("DEBUG: Processing outgoing message: '{}'", original_message);
-
-            // Check if this is a "silent" message (used for auth, etc.)
-            let (is_silent, actual_message) = if original_message.starts_with("SILENT:") {
-                (
-                    true,
-                    original_message
-                        .strip_prefix("SILENT:")
-                        .unwrap_or(&original_message)
-                        .to_string(),
-                )
-            } else {
-                (false, original_message.clone())
-            };
-
-            tracing::info!(
-                "DEBUG: Message type - is_silent: {}, actual_message: '{}'",
-                is_silent,
-                actual_message
-            );
-
-            match encrypt(shared_key.to_string(), actual_message.clone()) {
-                Ok(encrypted_message) => {
-                    tracing::info!("DEBUG: Message encrypted successfully, sending via sink.tx");
-                    let result = sink.tx.send(encrypted_message).await;
-                    match result {
-                        Ok(_) => {
-                            tracing::info!("DEBUG: Message sent successfully via sink.tx");
-                        }
-                        Err(e) => {
-                            tracing::error!("DEBUG: Failed to send message via sink.tx: {}", e);
-                        }
-                    }
-
-                    // Add small delay to ensure proper message ordering
-                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-
-                    // Only show non-silent messages in chat after sending
-                    if !is_silent {
-                        tracing::info!(
-                            "DEBUG: Adding sent message to legacy display: 'You: {}'",
-                            actual_message
-                        );
-                        add_text_message(format!("You: {}", actual_message));
-                    }
-                }
-                Err(e) => {
-                    tracing::error!(
-                        "DEBUG: Failed to encrypt message '{}': {}",
-                        actual_message,
-                        e
-                    );
-                    add_text_message(format!("Failed to encrypt message: {}", e));
-                }
-            }
-        }
-
-        // Clear the queue and log what we're clearing
-        {
-            let mut messages = MESSAGES.lock().unwrap();
-            let cleared_count = messages.outgoing.len();
-            messages.outgoing.clear();
-            tracing::info!(
-                "DEBUG: Cleared {} messages from outgoing queue",
-                cleared_count
-            );
-        }
-    } else {
-        tracing::debug!("DEBUG: No outgoing messages to process (queue empty or inaccessible)");
-    }
-    Ok(())
-}
-
-/// Handle incoming message by decrypting and displaying it
-fn handle_incoming_message(message: String, shared_key: &str) {
-    tracing::info!("DEBUG: handle_incoming_message called with encrypted message");
-    match decrypt(shared_key.to_string(), message) {
-        Ok(decrypted_message) => {
-            tracing::info!(
-                "DEBUG: Message decrypted successfully: '{}'",
-                decrypted_message
-            );
-
-            // Message might be from server or another client
-            let formatted_message = if decrypted_message.contains(":") {
-                // Already formatted message from client (e.g., "username: message")
-                decrypted_message.clone()
-            } else if decrypted_message.contains("has joined")
-                || decrypted_message.contains("Welcome back")
-            {
-                // System message or authentication confirmation
-                decrypted_message.clone()
-            } else {
-                // Unformatted message from server, add formatting
-                format!("Server: {}", decrypted_message)
-            };
-
-            // Just display the message directly in the UI once
-            // Avoid potential recursion with multiple action dispatches
-            add_text_message(formatted_message.clone());
-
-            // Also update status bar for received message and forward to app
-            send_action(crate::action::Action::ReceiveMessage(
-                formatted_message.clone(),
-            ));
-            send_action(crate::action::Action::RecordReceivedMessage);
-        }
-        Err(e) => {
-            tracing::error!("DEBUG: Failed to decrypt message: {}", e);
-            add_text_message(format!("Error decrypting message: {}", e));
-        }
-    }
-}
-
-/// Handle user input by encrypting and sending the message
-async fn handle_user_input(
-    sink: &mut ClientSink,
-    message: String,
-    shared_key: &str,
-) -> Result<(), TransportError> {
-    match encrypt(shared_key.to_string(), message.clone()) {
-        Ok(encrypted_message) => {
-            let _ = sink.tx.send(encrypted_message).await;
-            add_text_message(format!("You: {}", message));
-        }
-        Err(e) => {
-            add_text_message(format!("Failed to encrypt message: {}", e));
-        }
-    }
-    Ok(())
-}
-
-/// Handle connection closure and cleanup
-fn handle_connection_closed() {
-    CANCEL_TOKEN.lock().unwrap().token.cancel();
-    CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
-    CANCEL_TOKEN.lock().unwrap().token = CancellationToken::new();
-}
-
-/// Transport-specific error types
-#[derive(Debug)]
-pub enum TransportError {
-    ConnectionError(std::io::Error),
-    EncryptionError(EncryptionError),
-    KeyExchangeError(String),
-}
-
-impl std::fmt::Display for TransportError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TransportError::ConnectionError(e) => write!(f, "Connection error: {}", e),
-            TransportError::EncryptionError(e) => write!(f, "Encryption error: {}", e),
-            TransportError::KeyExchangeError(msg) => write!(f, "Key exchange error: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for TransportError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            TransportError::ConnectionError(e) => Some(e),
-            TransportError::EncryptionError(e) => Some(e),
-            _ => None,
-        }
-    }
-}
-
-impl From<EncryptionError> for TransportError {
-    fn from(err: EncryptionError) -> Self {
-        TransportError::EncryptionError(err)
-    }
-}
-
-/// Shorthand for a pinned boxed stream
-pub type BoxedStream<Item> = Pin<Box<dyn Stream<Item = Item> + Send>>;
-/// Shorthand for a lines framed BoxedStream type we will use
-pub type ClientTcpStream = BoxedStream<Result<String, std::io::Error>>;
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ConnectionStatus {
-    CONNECTED,
-    DISCONNECTED,
-}
-
-/// Client connection status
-pub struct ClientStatus {
-    pub status: ConnectionStatus,
-}
-
-impl ClientStatus {
-    pub fn new() -> Self {
-        let status = ConnectionStatus::DISCONNECTED;
-        Self { status }
-    }
-}
-
-/// Lazy Mutex wrapped global client connection status
-#[deprecated(
-    since = "0.5.1",
-    note = "Use ConnectionManager instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance."
-)]
-pub static CLIENT_STATUS: Lazy<Mutex<ClientStatus>> = Lazy::new(|| {
-    let m = ClientStatus::new();
-    Mutex::new(m)
-});
-
-/// Task cancellation token
-pub struct CancelClient {
-    pub token: CancellationToken,
-}
-
-impl CancelClient {
-    pub fn new() -> Self {
-        let token = CancellationToken::new();
-        Self { token }
-    }
-}
-
-/// Lazy Mutex wrapped global cancellation token
-pub static CANCEL_TOKEN: Lazy<Mutex<CancelClient>> = Lazy::new(|| {
-    let m = CancelClient::new();
-    Mutex::new(m)
-});
-
-/// Wrapped read half of a TcpStream
-pub struct ClientStream {
-    pub rx: ClientTcpStream,
-}
-
-impl ClientStream {
-    pub fn new(reader: OwnedReadHalf) -> Self {
-        let rx = Box::pin(LinesStream::new(BufReader::new(reader).lines()));
-        Self { rx }
-    }
-}
-
-/// Wrapped write half of a TcpStream
-pub struct ClientSink {
-    pub tx: FramedWrite<OwnedWriteHalf, LinesCodec>,
-}
-
-impl ClientSink {
-    pub fn new(writer: OwnedWriteHalf) -> Self {
-        let tx = FramedWrite::new(writer, LinesCodec::new());
-        Self { tx }
-    }
-}
-
-/// Messages buffers
-pub struct Messages {
-    pub outgoing: Vec<String>,
-    pub text: Vec<String>,
-}
-
-impl Messages {
-    pub fn new() -> Self {
-        let outgoing = Vec::new();
-        let text = Vec::new();
-        Self { outgoing, text }
-    }
-}
-
-/// Lazy Mutex wrapped global message buffers
-#[deprecated(
-    since = "0.5.1",
-    note = "Use ConnectionManager with proper observers instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance."
-)]
-pub static MESSAGES: Lazy<Mutex<Messages>> = Lazy::new(|| {
-    let m = Messages::new();
-    Mutex::new(m)
-});
-
-/// Global action sender for transport layer to communicate with app
-#[deprecated(
-    since = "0.5.1",
-    note = "Use ConnectionManager with proper observer pattern instead. This global state will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance."
-)]
-pub static ACTION_SENDER: Lazy<Mutex<Option<mpsc::UnboundedSender<Action>>>> =
-    Lazy::new(|| Mutex::new(None));
-
-/// Add a message to displayed in the main window
-#[deprecated(
-    since = "0.5.1",
-    note = "Use ConnectionManager with observer pattern for message handling instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance."
-)]
-pub fn add_text_message(s: String) {
-    tracing::info!("DEBUG: add_text_message: '{}'", s);
-    // Add message to global text buffer
-    MESSAGES.lock().unwrap().text.push(s.clone());
-
-    // We don't need to send additional actions from here anymore
-    // The message is already in the UI, and we explicitly send actions when needed
-}
-
-/// Add a message to the outgoing buffer
-#[deprecated(
-    since = "0.5.1",
-    note = "Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance."
-)]
-pub fn add_outgoing_message(s: String) {
-    tracing::info!("DEBUG: add_outgoing_message called with: '{}'", s);
-
-    // Get current thread info for debugging
-    let thread_id = std::thread::current().id();
-    tracing::info!(
-        "DEBUG: add_outgoing_message running on thread: {:?}",
-        thread_id
-    );
-
-    {
-        let mut messages = MESSAGES.lock().unwrap();
-        tracing::info!(
-            "DEBUG: Before insert - outgoing queue contents: {:?}",
-            messages.outgoing
-        );
-        messages.outgoing.insert(0, s.clone());
-        tracing::info!(
-            "DEBUG: After insert - outgoing queue contents: {:?}",
-            messages.outgoing
-        );
-        let queue_size = messages.outgoing.len();
-        tracing::info!(
-            "DEBUG: Message '{}' added to outgoing queue, new queue size: {}",
-            s,
-            queue_size
-        );
-    }
-}
-
-/// Set the action sender for transport layer to communicate with app
-#[deprecated(
-    since = "0.5.1",
-    note = "Use ConnectionManager with proper observer registration instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance."
-)]
-pub fn set_action_sender(sender: mpsc::UnboundedSender<Action>) {
-    *ACTION_SENDER.lock().unwrap() = Some(sender);
-}
-
-/// Send an action to the app if sender is available
-#[deprecated(
-    since = "0.5.1",
-    note = "Use ConnectionManager observer pattern instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance."
-)]
-pub fn send_action(action: Action) {
-    // Thread-local flag to prevent infinite recursion
-    thread_local! {
-        static SENDING_ACTION: std::cell::RefCell<bool> = std::cell::RefCell::new(false);
-    }
-
-    // If we're already sending an action, don't recursively send another one
-    let should_send = SENDING_ACTION.with(|flag| {
-        if *flag.borrow() {
-            false
-        } else {
-            *flag.borrow_mut() = true;
-            true
-        }
-    });
-
-    if !should_send {
-        return;
-    }
-
-    tracing::info!("DEBUG: send_action called with action: {:?}", action);
-    if let Some(sender) = ACTION_SENDER.lock().unwrap().as_ref() {
-        match sender.send(action.clone()) {
-            Ok(_) => {
-                tracing::info!("DEBUG: Action sent successfully");
-            }
-            Err(e) => {
-                tracing::error!("DEBUG: Failed to send action: {}", e);
-                // Fallback to direct message display if action send fails
-                if let Action::ReceiveMessage(msg) = action {
-                    // Skip add_text_message to avoid recursion
-                    tracing::warn!("DEBUG: Action send failed - message not displayed: {}", msg);
-                }
-            }
-        }
-    } else {
-        tracing::error!("DEBUG: Cannot send action - action sender not initialized");
-        // Fallback to direct message storage without recursion
-        if let Action::ReceiveMessage(msg) = action {
-            // Add directly to messages list to avoid recursion
-            MESSAGES.lock().unwrap().text.push(msg);
-        }
-    }
-
-    // Reset flag
-    SENDING_ACTION.with(|flag| {
-        *flag.borrow_mut() = false;
-    });
-}
-
-#[deprecated(
-    since = "0.5.1",
-    note = "Use ConnectionManager.send_message() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance."
-)]
-pub fn add_silent_outgoing_message(s: String) {
-    // Add message to outgoing queue but mark it as silent (auth request)
-    let mut messages = MESSAGES.lock().unwrap();
-    // Insert with special prefix to indicate silent message
-    messages.outgoing.insert(0, format!("SILENT:{}", s));
-}
-
-pub fn split_tcp_stream(stream: TcpStream) -> Result<(ClientStream, ClientSink)> {
-    let (reader, writer) = stream.into_split();
-    Ok((ClientStream::new(reader), ClientSink::new(writer)))
-}
-
-#[deprecated(
-    since = "0.5.1",
-    note = "Use ConnectionManager.connect() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance."
-)]
-pub async fn connect_client(input: Input, address: SocketAddr) {
-    tracing::info!("DEBUG: connect_client called for address: {}", address);
-    add_text_message(format!("Connecting to {}", address.clone()));
-    let stream = TcpStream::connect(address).await;
-    if stream.is_ok() {
-        tracing::info!("DEBUG: TCP connection established successfully");
-        add_text_message("Connected to server.".to_owned());
-        add_text_message("".to_owned());
-        tokio::spawn(async move {
-            tracing::info!("DEBUG: Setting client status to CONNECTED and starting message loop");
-            CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
-            let (reader, writer) = split_tcp_stream(stream.unwrap()).unwrap();
-            tracing::info!("DEBUG: TCP stream split, calling client_io_select_loop_async");
-            client_io_select_loop_async(input, reader, writer).await;
-            tracing::info!("DEBUG: client_io_select_loop_async has exited");
-        });
-    } else {
-        tracing::error!("DEBUG: Failed to establish TCP connection to {}", address);
-        add_text_message("Failed to connect to server.".to_owned());
-        add_text_message("".to_owned());
-    }
-}
-
-pub fn client_io_select_loop(input: Input, reader: ClientStream, writer: ClientSink) {
-    // create a sink and stream for transport
-    let mut stream = reader;
-    let mut sink = writer;
-    let cancel_token = CANCEL_TOKEN.lock().unwrap().token.clone();
-    tokio::spawn(async move {
-        client_io_select_loop_async(input, stream, sink).await;
-    });
-}
-
-async fn client_io_select_loop_async(input: Input, mut stream: ClientStream, mut sink: ClientSink) {
-    let instance_id = TRANSPORT_INSTANCE_COUNTER.fetch_add(1, Ordering::SeqCst);
-    tracing::info!(
-        "DEBUG: client_io_select_loop_async STARTED - Instance #{}",
-        instance_id
-    );
-
-    // Check if there are other instances running
-    let active_instances = TRANSPORT_INSTANCE_COUNTER.load(Ordering::SeqCst);
-    if active_instances > 1 {
-        tracing::warn!(
-            "DEBUG: WARNING - Multiple transport instances detected! Total: {}",
-            active_instances
-        );
-    }
-
-    let cancel_token = CANCEL_TOKEN.lock().unwrap().token.clone();
-
-    // Notify status change to CONNECTING before key exchange
-    add_text_message("Performing encryption key exchange with server...".to_string());
-
-    // Clear any pending outgoing messages to prevent interference with key exchange
-    MESSAGES.lock().unwrap().outgoing.clear();
-    tracing::info!("DEBUG: Cleared outgoing message queue before key exchange");
-
-    // perform key exchange with server
-    let shared_aes256_key = match perform_key_exchange(&mut sink, &mut stream).await {
-        Ok(key) => {
-            tracing::info!("DEBUG: Key exchange completed successfully");
-            add_text_message("Encryption key exchange completed successfully.".to_string());
-            key
-        }
-        Err(e) => {
-            tracing::error!("DEBUG: Key exchange failed: {}", e);
-            add_text_message(format!("Key exchange failed: {}", e));
-            return;
-        }
-    };
-    // main client loop
-    tracing::info!("DEBUG: Entering main client message processing loop");
-    let mut loop_count = 0;
-    loop {
-        loop_count += 1;
-        // process any outgoing messages
-        tracing::debug!(
-            "DEBUG: Loop iteration #{} - checking for outgoing messages",
-            loop_count
-        );
-
-        // Add small delay to prevent excessive logging
-        if loop_count % 100 == 1 {
-            tracing::info!("DEBUG: Main loop still running (iteration #{})", loop_count);
-        }
-
-        let _ = process_outgoing_messages(&mut sink, &shared_aes256_key).await;
-
-        // select on futures
-        select! {
-            _ = cancel_token.cancelled().fuse() => {
-                tracing::info!("DEBUG: client_io_select_loop_async Instance #{} cancelled, shutting down", instance_id);
-                TRANSPORT_INSTANCE_COUNTER.fetch_sub(1, Ordering::SeqCst);
-                let mut writer = sink.tx.into_inner();
-                let _ = writer.shutdown().await;
-                return;
-            },
-            message = stream.rx.next().fuse() => match message {
-                Some(Ok(message)) => {
-                    handle_incoming_message(message, &shared_aes256_key);
-                    continue;
-                },
-                None => {
-                    tracing::info!("DEBUG: Connection closed by server - Instance #{}", instance_id);
-                    TRANSPORT_INSTANCE_COUNTER.fetch_sub(1, Ordering::SeqCst);
-                    add_text_message("The Lair has CLOSED.".to_string());
-                    handle_connection_closed();
-                    return;
-                },
-                Some(Err(e)) => {
-                    tracing::error!("DEBUG: Connection closed with error on Instance #{}: {}", instance_id, e);
-                    TRANSPORT_INSTANCE_COUNTER.fetch_sub(1, Ordering::SeqCst);
-                    add_text_message(format!("Closed connection with error: {e}"));
-                    handle_connection_closed();
-                    return;
-                }
-            },
-            message = get_user_input(input.clone()).fuse() => match message {
-                Some(message) => {
-                    let _ = handle_user_input(&mut sink, message, &shared_aes256_key).await;
-                },
-                None => {
-                    sleep(Duration::from_millis(250)).await;
-                },
-            }
-        }
-    }
-}
-
-#[deprecated(
-    since = "0.5.1",
-    note = "Use ConnectionManager.disconnect() instead. This function will be removed in v0.6.0. See LEGACY_CODE_AUDIT_AND_DEPRECATION_PLAN.md for migration guidance."
-)]
-pub async fn disconnect_client() {
-    if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
-        CANCEL_TOKEN.lock().unwrap().token.cancel();
-        MESSAGES.lock().unwrap().text.clear();
-        add_text_message("Disconnected from server.".to_string());
-        CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::DISCONNECTED;
-        sleep(Duration::from_secs(2)).await;
-        MESSAGES.lock().unwrap().text.clear();
-    } else {
-        add_text_message("Not connected to a server.".to_string());
-    }
-    CANCEL_TOKEN.lock().unwrap().token = CancellationToken::new();
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::encryption::EncryptionError;
-
-    #[test]
-    fn test_transport_error_display() {
-        let conn_error = TransportError::ConnectionError(std::io::Error::new(
-            std::io::ErrorKind::ConnectionRefused,
-            "test",
-        ));
-        let enc_error =
-            TransportError::EncryptionError(EncryptionError::EncryptionError("test".to_string()));
-        let key_error = TransportError::KeyExchangeError("test key exchange error".to_string());
-
-        assert!(conn_error.to_string().contains("Connection error"));
-        assert!(enc_error.to_string().contains("Encryption error"));
-        assert!(key_error.to_string().contains("Key exchange error"));
-    }
-
-    #[test]
-    fn test_error_conversion() {
-        let encryption_error = EncryptionError::EncryptionError("test".to_string());
-        let transport_error: TransportError = encryption_error.into();
-
-        match transport_error {
-            TransportError::EncryptionError(_) => {
-                // This is expected
-            }
-            _ => panic!("Expected EncryptionError variant"),
-        }
-    }
-
-    #[test]
-    fn test_handle_incoming_message() {
-        // Test successful decryption
-        let key = "test_key_32_bytes_exactly_here!!";
-        let original_message = "Hello, World!";
-
-        // First encrypt a message
-        let encrypted =
-            crate::encryption::encrypt(key.to_string(), original_message.to_string()).unwrap();
-
-        // Then test decryption through handle_incoming_message
-        // Note: This function adds to global MESSAGES, so we can't easily test the output
-        // without affecting global state, but we can verify it doesn't panic
-        handle_incoming_message(encrypted, key);
-
-        // Test with invalid message - should not panic
-        handle_incoming_message("invalid_base64!@#".to_string(), key);
-    }
-
-    #[test]
-    fn test_handle_connection_closed() {
-        // Test that connection cleanup doesn't panic
-        handle_connection_closed();
-
-        // Verify the status was set to disconnected
-        assert_eq!(
-            CLIENT_STATUS.lock().unwrap().status,
-            ConnectionStatus::DISCONNECTED
-        );
-    }
 
     #[test]
     fn test_connection_config() {
@@ -1089,108 +311,30 @@ mod tests {
     }
 
     #[test]
-    fn test_encryption_service_trait() {
-        let service = DefaultEncryptionService;
-        let key = "test_key_32_bytes_exactly_here!!";
-        let message = "Hello, World!";
+    fn test_transport_error_display() {
+        let conn_error = TransportError::ConnectionError(std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            "test",
+        ));
+        let enc_error =
+            TransportError::EncryptionError(EncryptionError::EncryptionError("test".to_string()));
+        let key_error = TransportError::KeyExchangeError("test key exchange error".to_string());
 
-        let encrypted = service
-            .encrypt(key, message)
-            .expect("Encryption should succeed");
-        let decrypted = service
-            .decrypt(key, &encrypted)
-            .expect("Decryption should succeed");
-
-        assert_eq!(message, decrypted);
+        assert!(conn_error.to_string().contains("Connection error"));
+        assert!(enc_error.to_string().contains("Encryption error"));
+        assert!(key_error.to_string().contains("Key exchange error"));
     }
 
     #[test]
-    fn test_connection_observer_trait() {
-        let observer = DefaultConnectionObserver;
+    fn test_error_conversion() {
+        let encryption_error = EncryptionError::EncryptionError("test".to_string());
+        let transport_error: TransportError = encryption_error.into();
 
-        // Test that these don't panic - they modify global state
-        observer.on_message("Test message".to_string());
-        observer.on_error("Test error".to_string());
-        observer.on_status_change(true);
-        observer.on_status_change(false);
-    }
-
-    #[test]
-    fn test_tui_observer() {
-        let observer = TuiObserver;
-
-        // Test that these don't panic - they modify global state
-        observer.on_message("Test TUI message".to_string());
-        observer.on_error("Test TUI error".to_string());
-        observer.on_status_change(true);
-        observer.on_status_change(false);
-    }
-
-    #[test]
-    fn test_tui_observer_helper_functions() {
-        // Test factory functions
-        let observer = create_tui_observer();
-        observer.on_message("Factory test message".to_string());
-
-        let boxed_observer = create_boxed_tui_observer();
-        boxed_observer.on_message("Boxed factory test message".to_string());
-    }
-
-    #[test]
-    fn test_observer_message_formatting() {
-        // Clear messages first to ensure clean test state
-        MESSAGES.lock().unwrap().text.clear();
-
-        let tui_observer = TuiObserver;
-        let default_observer = DefaultConnectionObserver;
-
-        // Test error message formatting differences
-        tui_observer.on_error("Test error".to_string());
-        default_observer.on_error("Test error".to_string());
-
-        let messages = MESSAGES.lock().unwrap();
-        let tui_error = &messages.text[messages.text.len() - 2]; // Second to last
-        let default_error = &messages.text[messages.text.len() - 1]; // Last
-
-        assert!(tui_error.contains("ERROR: Test error"));
-        assert!(default_error.contains("Error: Test error"));
-        assert!(!default_error.contains("ERROR:"));
-    }
-
-    #[test]
-    fn test_status_change_formatting() {
-        // Clear messages first to ensure clean test state
-        MESSAGES.lock().unwrap().text.clear();
-
-        let tui_observer = TuiObserver;
-        let default_observer = DefaultConnectionObserver;
-
-        // Test connected status formatting
-        tui_observer.on_status_change(true);
-        default_observer.on_status_change(true);
-
-        let messages = MESSAGES.lock().unwrap();
-        let tui_connected = &messages.text[messages.text.len() - 2]; // Second to last
-        let default_connected = &messages.text[messages.text.len() - 1]; // Last
-
-        assert!(tui_connected.contains("STATUS: Connected to server."));
-        assert!(default_connected.contains("Connected to server."));
-        assert!(!default_connected.contains("STATUS:"));
-
-        // Clear for disconnected test
-        drop(messages);
-        MESSAGES.lock().unwrap().text.clear();
-
-        // Test disconnected status formatting
-        tui_observer.on_status_change(false);
-        default_observer.on_status_change(false);
-
-        let messages = MESSAGES.lock().unwrap();
-        let tui_disconnected = &messages.text[messages.text.len() - 2]; // Second to last
-        let default_disconnected = &messages.text[messages.text.len() - 1]; // Last
-
-        assert!(tui_disconnected.contains("STATUS: Disconnected from server."));
-        assert!(default_disconnected.contains("Disconnected from server."));
-        assert!(!default_disconnected.contains("STATUS:"));
+        match transport_error {
+            TransportError::EncryptionError(_) => {
+                // This is expected
+            }
+            _ => panic!("Expected EncryptionError variant"),
+        }
     }
 }

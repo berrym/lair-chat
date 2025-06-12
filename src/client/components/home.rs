@@ -21,7 +21,7 @@ use crate::{
     config::Config,
     errors::display::{set_global_error_display_action_sender, show_info, show_validation_error},
     history::CommandHistory,
-    transport::{ConnectionStatus, *},
+    transport::ConnectionStatus,
 };
 
 /// Get any text in the input box

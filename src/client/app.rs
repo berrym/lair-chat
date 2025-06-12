@@ -18,9 +18,7 @@ use crate::{
     connection_manager::ConnectionManager,
     server_compatible_encryption::create_server_compatible_encryption,
     tcp_transport::TcpTransport,
-    transport::{
-        ConnectionConfig, ConnectionObserver, ConnectionStatus, Message, MessageStore, TuiObserver,
-    },
+    transport::{ConnectionConfig, ConnectionObserver, ConnectionStatus, Message, MessageStore},
     tui::{Event, Tui},
 };
 use std::sync::Arc;
