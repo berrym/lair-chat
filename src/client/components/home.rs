@@ -11,7 +11,10 @@ use crate::{
     app::Mode,
     chat::{ChatMessage, MessageType, RoomManager, RoomSettings, RoomUser, UserRole},
     config::Config,
-    errors::display::{show_disconnection, show_info, show_validation_error, show_warning},
+    errors::display::{
+        set_global_error_display_action_sender, show_disconnection, show_info,
+        show_validation_error, show_warning,
+    },
     history::CommandHistory,
     migration_facade,
     transport::*,
@@ -476,7 +479,11 @@ impl Home {
 
 impl Component for Home {
     fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> Result<()> {
-        self.command_tx = Some(tx);
+        self.command_tx = Some(tx.clone());
+
+        // Set up error display system with action sender for modern message handling
+        set_global_error_display_action_sender(tx);
+
         Ok(())
     }
 

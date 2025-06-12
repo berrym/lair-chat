@@ -91,14 +91,16 @@ This plan details the step-by-step modernization of the message handling system,
 
 ### Phase 3B: Legacy Message Function Elimination (Week 2)
 
-#### Step 3B.1: Replace add_text_message in Home Component
+#### Step 3B.1: Replace add_text_message in Home Component ✅ COMPLETED
 **Duration**: 1 day  
 **Files**: `src/client/components/home.rs`
-- [ ] **3B.1.1** Replace `add_text_message` calls with action dispatch
-- [ ] **3B.1.2** Add Action::DisplayMessage for UI updates
-- [ ] **3B.1.3** Update message display logic to use action system
-- [ ] **3B.1.4** Test message display functionality
-- [ ] **3B.1.5** Commit: "Replace legacy add_text_message in home component"
+- [x] **3B.1.1** Replace `add_text_message` calls with action dispatch
+- [x] **3B.1.2** Use existing Action::ReceiveMessage instead of creating new action
+- [x] **3B.1.3** Update message display logic to use action system
+- [x] **3B.1.4** Test message display functionality
+- [x] **3B.1.5** Commit: "Replace legacy add_text_message in home component"
+
+**IMPLEMENTATION**: Successfully replaced all `add_text_message` fallback calls with `Action::ReceiveMessage` dispatch. Reused existing action instead of creating new DisplayMessage action. All deprecation warnings for home component eliminated.
 
 #### Step 3B.2: Modernize Error Display System  
 **Duration**: 1 day  
@@ -240,7 +242,7 @@ This plan details the step-by-step modernization of the message handling system,
 **TEST RESULTS**: Message sending now works correctly without client disconnection. Ready to proceed to Phase 3B.
 
 ### Phase 3B Progress: Legacy Function Elimination
-- [ ] Step 3B.1: Replace add_text_message in Home Component (0/5 substeps)
+- [x] Step 3B.1: Replace add_text_message in Home Component (5/5 substeps) ✅ COMPLETED
 - [ ] Step 3B.2: Modernize Error Display System (0/5 substeps)
 - [ ] Step 3B.3: Remove Global State Access in Components (0/6 substeps)
 
@@ -254,10 +256,11 @@ This plan details the step-by-step modernization of the message handling system,
 - [ ] Step 3D.2: Documentation and Release Preparation (0/5 substeps)
 
 **Total Steps**: 13 major steps, 75 substeps  
-**Current Progress**: 27% (20/75 substeps completed)  
+**Current Progress**: 33% (25/75 substeps completed)  
 **Target Completion**: 3 weeks
 
 **Phase 3A Complete**: Message sending modernization is now working correctly. Enter key successfully sends messages through ConnectionManager without client disconnection.
+**Phase 3B In Progress**: Legacy function elimination started. Home component add_text_message calls successfully replaced with modern action system.
 
 ## Communication Plan
 
