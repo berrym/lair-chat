@@ -18,7 +18,7 @@ use crate::{
     connection_manager::ConnectionManager,
     server_compatible_encryption::create_server_compatible_encryption,
     tcp_transport::TcpTransport,
-    transport::{ConnectionConfig, ConnectionObserver, ConnectionStatus, Message, MessageStore},
+    transport::{ConnectionConfig, ConnectionObserver, Message, MessageStore},
     tui::{Event, Tui},
 };
 use std::sync::Arc;
@@ -300,17 +300,28 @@ impl App {
     }
 
     fn update(&mut self, action: &Action) -> Result<Option<Action>> {
+        // Log action for debugging
+        if !matches!(action, Action::Tick | Action::Render | Action::Update) {
+            tracing::debug!("Handling action: {:?}", action);
+        }
+
         match action {
             Action::RecordReceivedMessage => {
                 // Update the status bar message count for received messages
                 self.status_bar.record_received_message();
-                tracing::info!("DEBUG: App processed RecordReceivedMessage action");
+                tracing::info!(
+                    "DEBUG: App processed RecordReceivedMessage action - count now: {}",
+                    self.status_bar.get_received_count()
+                );
                 Ok(None)
             }
             Action::RecordSentMessage => {
                 // Update the status bar message count for sent messages
                 self.status_bar.record_sent_message();
-                tracing::info!("DEBUG: App processed RecordSentMessage action");
+                tracing::info!(
+                    "DEBUG: App processed RecordSentMessage action - count now: {}",
+                    self.status_bar.get_sent_count()
+                );
                 Ok(None)
             }
             Action::Quit => {
@@ -393,11 +404,16 @@ impl App {
             Action::Reconnect => {
                 info!("User requested reconnection - transitioning to authentication");
 
-                // Disconnect current connection if any
+                // Use modern ConnectionManager to disconnect
                 let connection_manager = Arc::clone(&self.connection_manager);
                 tokio::spawn(async move {
                     let mut manager = connection_manager.lock().await;
-                    let _ = manager.disconnect().await;
+                    let disconnect_result = manager.disconnect().await;
+                    if let Err(e) = disconnect_result {
+                        tracing::error!("Error during disconnect: {}", e);
+                    } else {
+                        tracing::info!("Successfully disconnected");
+                    }
                 });
 
                 // Clean up authentication state and return to login
@@ -460,6 +476,7 @@ impl App {
                     // Use modern ConnectionManager to get status
                     let connection_status = self.get_connection_status();
                     self.status_bar.set_connection_status(connection_status);
+                    self.home_component.set_connection_status(connection_status);
 
                     // Initialize chat system for authenticated user
                     if let Err(e) = self
@@ -642,13 +659,20 @@ impl App {
                 self.home_component
                     .add_message_to_room(message.to_string(), true);
 
-                // Only automatically count messages from server/system
-                // User-initiated messages should use explicit RecordReceivedMessage action
-                if message.starts_with("You:") || self.is_system_message(&message) {
-                    info!("Message added to room: {}", message);
+                // Handle message counting:
+                // 1. Don't count messages from the current user (starting with "You:")
+                // 2. Count all received messages (including system messages)
+                // 3. User-initiated outgoing messages use explicit RecordSentMessage action
+                if message.starts_with("You:") {
+                    info!("User message added to room: {}", message);
                 } else {
+                    // Count all received messages (including system messages)
                     self.status_bar.record_received_message();
-                    info!("Message added to room and status updated: {}", message);
+                    info!(
+                        "Received message counted: {} - Total now: {}",
+                        message,
+                        self.status_bar.get_received_count()
+                    );
                 }
                 Ok(None)
             }
@@ -664,6 +688,10 @@ impl App {
 
                 // Record sent message for status bar
                 self.status_bar.record_sent_message();
+                info!(
+                    "Sent message counted - Total now: {}",
+                    self.status_bar.get_sent_count()
+                );
                 tracing::info!("DEBUG: Recorded sent message in status bar");
 
                 Ok(None)
@@ -695,6 +723,9 @@ impl App {
                 self.auth_state = AuthState::Unauthenticated;
                 self.auth_status.update_state(self.auth_state.clone());
                 self.mode = Mode::Authentication;
+
+                // Reset chat state in home component to ensure clean reconnection
+                self.home_component.reset_chat_state();
 
                 // Reset login screen state to ensure proper functionality
                 self.login_screen.handle_auth_state(&self.auth_state);
@@ -1171,12 +1202,41 @@ impl App {
             crate::transport::ConnectionStatus::DISCONNECTED
         };
 
+        // Check if user is authenticated
+        let is_authenticated = match &self.auth_state {
+            AuthState::Authenticated { .. } => true,
+            _ => false,
+        };
+
+        if !is_authenticated {
+            info!("Attempted to send message while not authenticated");
+            // Show error message to user
+            let tx = &self.action_tx;
+            let _ = tx.send(Action::ReceiveMessage(
+                "Cannot send message: Not logged in. Please log in first.".to_string(),
+            ));
+            return;
+        }
+
         if connection_status == crate::transport::ConnectionStatus::CONNECTED {
             info!(
                 "Sending message via ConnectionManager (status: {:?}): '{}'",
                 connection_status, message
             );
             debug!("DEBUG: Connection verified as CONNECTED before sending message");
+
+            // Verify that home component has been initialized
+            if !self.home_component.is_chat_initialized() {
+                // Try to initialize with current username
+                if let AuthState::Authenticated { profile, .. } = &self.auth_state {
+                    if let Err(e) = self
+                        .home_component
+                        .initialize_chat(profile.username.clone())
+                    {
+                        error!("Failed to initialize chat: {}", e);
+                    }
+                }
+            }
 
             // Queue the message sending as an async task
             let connection_manager = Arc::clone(&self.connection_manager);
@@ -1296,6 +1356,7 @@ impl App {
         // Get connection status for UI display
         let connection_status = self.get_connection_status();
         self.status_bar.set_connection_status(connection_status);
+        self.home_component.set_connection_status(connection_status);
 
         tui.draw(|frame| {
             let area = frame.area();

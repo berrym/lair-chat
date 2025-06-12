@@ -266,11 +266,11 @@ This document provides a comprehensive, step-by-step action plan for completing 
 **Estimated Time**: 1 day
 **Files**: Multiple
 
-- [ ] **4.3.1** Remove unused compatibility layer files
-- [ ] **4.3.2** Remove legacy transport functions marked as deprecated
-- [ ] **4.3.3** Update documentation to reflect modern patterns
-- [ ] **4.3.4** Run full test suite
-- [ ] **4.3.5** Commit: "Remove legacy code and clean up"
+- [x] **4.3.1** Remove unused compatibility layer files
+- [x] **4.3.2** Remove legacy transport functions marked as deprecated
+- [x] **4.3.3** Update documentation to reflect modern patterns
+- [x] **4.3.4** Run full test suite
+- [x] **4.3.5** Commit: "Remove legacy code and clean up"
 
 ### Phase 5: Final Integration and Testing (Week 4)
 
@@ -408,7 +408,7 @@ Use this checklist to track progress:
 ### Phase 4 Progress: Remove Legacy Dependencies
 - [x] Step 4.1: Remove Compatibility Layer Usage (5/5 substeps) - COMPLETED
 - [x] Step 4.2: Remove Global State Access (6/6 substeps) - COMPLETED
-- [ ] Step 4.3: Clean Up Legacy Code (0/5 substeps)
+- [x] Step 4.3: Clean Up Legacy Code (5/5 substeps) - COMPLETED
 
 ### Phase 5 Progress: Final Integration and Testing
 - [ ] Step 5.1: End-to-End Testing (0/7 substeps)

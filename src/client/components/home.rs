@@ -121,6 +121,9 @@ impl Home {
 
     /// Initialize default room and user for chat
     pub fn initialize_chat(&mut self, username: String) -> Result<(), Box<dyn std::error::Error>> {
+        // Reset the room manager to clean up any existing state
+        self.reset_chat_state();
+
         // Create a default public room
         let room_settings = RoomSettings::public("General".to_string());
         let room_id = self
@@ -130,7 +133,7 @@ impl Home {
         // Create user - ensure username doesn't have a '!' character
         let clean_username = username.replace("!", "");
         let user_id = uuid::Uuid::new_v4();
-        let user = RoomUser::new(user_id, clean_username, UserRole::User);
+        let user = RoomUser::new(user_id, clean_username.clone(), UserRole::User);
 
         // Add user to room
         self.room_manager.join_room(&room_id, user)?;
@@ -139,7 +142,41 @@ impl Home {
         self.current_room_id = Some(room_id);
         self.current_user_id = Some(user_id);
 
+        // Add a system message to indicate successful initialization
+        let welcome_msg = format!(
+            "Welcome, {}! You are now connected to the chat.",
+            clean_username
+        );
+        if let Some(room) = self.room_manager.get_room_mut(&room_id) {
+            let system_msg = ChatMessage::new_system(room_id, welcome_msg);
+            let _ = room.add_message(system_msg);
+        }
+
+        tracing::info!(
+            "DEBUG: Chat initialized with room_id: {:?}, user_id: {:?}, username: {}",
+            room_id,
+            user_id,
+            clean_username
+        );
+
         Ok(())
+    }
+
+    /// Reset the chat state when logging out or reinitializing
+    pub fn reset_chat_state(&mut self) {
+        // Clear room manager
+        self.room_manager = RoomManager::new();
+
+        // Clear context
+        self.current_room_id = None;
+        self.current_user_id = None;
+
+        tracing::info!("DEBUG: Chat state reset");
+
+        // Also reset the scroll position to default
+        self.scroll_offset = 0;
+        self.prev_text_len = 0;
+        self.manual_scroll = false;
     }
 
     /// Get current room messages for display with styling information
@@ -215,12 +252,23 @@ impl Home {
     /// Add a message to current room
     pub fn add_message_to_room(&mut self, content: String, is_system: bool) {
         tracing::info!(
-            "DEBUG: add_message_to_room called with: '{}', is_system: {}",
+            "DEBUG: add_message_to_room called with: '{}', is_system: {}, room_id: {:?}, user_id: {:?}",
             content,
-            is_system
+            is_system,
+            self.current_room_id,
+            self.current_user_id
         );
+
+        // First verify we have a valid room and user - if not, try to recreate them
+        if self.current_room_id.is_none() || self.current_user_id.is_none() {
+            tracing::warn!("DEBUG: Missing room or user context, attempting to recreate");
+            if let Err(e) = self.initialize_chat("ReconnectedUser".to_string()) {
+                tracing::error!("DEBUG: Failed to recreate chat context: {}", e);
+            }
+        }
+
         tracing::info!(
-            "DEBUG: current_room_id: {:?}, current_user_id: {:?}",
+            "DEBUG: After context check - room_id: {:?}, user_id: {:?}",
             self.current_room_id,
             self.current_user_id
         );
@@ -272,23 +320,48 @@ impl Home {
         }
 
         if let (Some(room_id), Some(user_id)) = (self.current_room_id, self.current_user_id) {
+            // First, check if user exists in the room - if not, add them
+            let user_in_room = if let Some(room) = self.room_manager.get_room(&room_id) {
+                room.get_user(&user_id).is_some()
+            } else {
+                false
+            };
+
+            // If user not in room, add them before proceeding (avoids borrow checker issues)
+            if !user_in_room {
+                tracing::warn!("DEBUG: User not found in room, adding reconnected user");
+                let reconnected_user =
+                    RoomUser::new(user_id, "Reconnected User".to_string(), UserRole::User);
+
+                if let Err(e) = self.room_manager.join_room(&room_id, reconnected_user) {
+                    tracing::error!("DEBUG: Failed to add user to room: {}", e);
+                }
+            }
+
             if let Some(room) = self.room_manager.get_room_mut(&room_id) {
                 let message = if is_system {
                     ChatMessage::new_system(room_id, clean_content.clone())
                 } else {
+                    // Now we can safely get the user's username as we've ensured they're in the room
                     let username = room
                         .get_user(&user_id)
                         .map(|u| u.username.clone().replace("!", ""))
-                        .unwrap_or_else(|| "Unknown".to_string());
+                        .unwrap_or_else(|| "Reconnected User".to_string());
+
+                    // Create the message with username we have
                     ChatMessage::new_text(room_id, user_id, username, clean_content.clone())
                 };
 
                 tracing::info!("DEBUG: Adding message to room system: {:?}", message);
                 let _ = room.add_message(message);
 
-                // Increment received message count in status bar if this is an incoming message
-                // that's not from the current user and not a system message
-                if !is_system && !clean_content.starts_with("You: ") {
+                // Count messages based on their type:
+                // 1. Count system messages as received (important notifications)
+                // 2. Don't count outgoing messages (starting with "You: ")
+                // 3. Count all other messages as received
+                let should_count = is_system || !clean_content.starts_with("You: ");
+
+                if should_count {
                     // Send an action to increment the received message count
                     if let Some(tx) = &self.command_tx {
                         match tx.send(Action::RecordReceivedMessage) {
@@ -301,19 +374,25 @@ impl Home {
                         );
                     }
                 }
-
-                tracing::info!("DEBUG: Message added to room successfully");
             } else {
-                tracing::warn!("DEBUG: Room not found for room_id: {:?}", room_id);
-                if let Some(tx) = &self.command_tx {
-                    let _ = tx.send(Action::ReceiveMessage(clean_content));
-                }
+                tracing::warn!(
+                    "DEBUG: Room not found in add_message_to_room for room_id: {:?}",
+                    room_id
+                );
             }
         } else {
-            tracing::warn!("DEBUG: Fallback to modern action system - room_id or user_id missing");
-            // Use modern action system instead of legacy
+            tracing::error!("DEBUG: No room or user context to add message to room - room_id: {:?}, user_id: {:?}",
+                self.current_room_id, self.current_user_id);
+
+            // We already tried to recreate the context at the beginning of this method,
+            // so if we still don't have a room/user, we should log and return
+            tracing::error!("DEBUG: Unable to add message - missing room/user context even after recreation attempt");
+
+            // Display an error to the user via action channel if available
             if let Some(tx) = &self.command_tx {
-                let _ = tx.send(Action::ReceiveMessage(clean_content));
+                let _ = tx.send(Action::ReceiveMessage(
+                    "Error: Unable to send message due to connection issues. Please try disconnecting and logging in again.".to_string()
+                ));
             }
         }
     }
@@ -1291,28 +1370,14 @@ impl Component for Home {
                 .wrap(Wrap { trim: false })
                 .block(
                     Block::default()
-                        .title_top(Line::from("v0.5.3".white()).left_aligned())
+                        .title_top(Line::from("v0.5.9".white()).left_aligned())
                         .title_top(
-                            Line::from(vec![
-                                Span::styled(
-                                    "THE LAIR ",
-                                    Style::default()
-                                        .fg(Color::Yellow)
-                                        .add_modifier(Modifier::BOLD),
-                                ),
-                                Span::styled(
-                                    match self.connection_status {
-                                        ConnectionStatus::CONNECTED => "🟢 ONLINE",
-                                        ConnectionStatus::DISCONNECTED => "🔴 OFFLINE",
-                                    },
-                                    Style::default()
-                                        .fg(match self.connection_status {
-                                            ConnectionStatus::CONNECTED => Color::Green,
-                                            ConnectionStatus::DISCONNECTED => Color::Red,
-                                        })
-                                        .add_modifier(Modifier::BOLD),
-                                ),
-                            ])
+                            Line::from(vec![Span::styled(
+                                "THE LAIR",
+                                Style::default()
+                                    .fg(Color::Yellow)
+                                    .add_modifier(Modifier::BOLD),
+                            )])
                             .centered(),
                         )
                         .title_top(Line::from("(C) 2025".white()).right_aligned())

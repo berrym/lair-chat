@@ -4,6 +4,7 @@
 use ratatui::Frame;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
+    prelude::Alignment,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
@@ -119,9 +120,20 @@ impl StatusBar {
         self.network_stats.messages_received += 1;
         self.network_stats.last_message_time = Some(Instant::now());
         tracing::info!(
-            "DEBUG: Status bar received message count updated to: {}",
-            self.network_stats.messages_received
+            "DEBUG: Status bar received message count updated to: {} at {:?}",
+            self.network_stats.messages_received,
+            Instant::now()
         );
+    }
+
+    /// Get the received message count
+    pub fn get_received_count(&self) -> u64 {
+        self.network_stats.messages_received
+    }
+
+    /// Get the sent message count
+    pub fn get_sent_count(&self) -> u64 {
+        self.network_stats.messages_sent
     }
 
     /// Show an error message for a duration
@@ -163,11 +175,11 @@ impl StatusBar {
                 Style::default()
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD),
-                "● ONLINE",
+                "●ONLINE",
             ),
             ConnectionStatus::DISCONNECTED => (
                 Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                "● OFFLINE",
+                "●OFFLINE",
             ),
         }
     }
@@ -203,11 +215,11 @@ impl Component for StatusBar {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Length(12), // Connection indicator (shorter)
-                Constraint::Min(20),    // Auth status (flexible)
-                Constraint::Min(15),    // Room (flexible)
-                Constraint::Length(30), // Stats (consistent width)
-                Constraint::Min(15),    // Error/message area (flexible)
+                Constraint::Length(10),     // Connection indicator (more compact)
+                Constraint::Length(20),     // Auth status (reduced width)
+                Constraint::Percentage(15), // Room (percentage-based)
+                Constraint::Percentage(40), // Stats (percentage-based, larger)
+                Constraint::Min(10),        // Error/message area (flexible)
             ])
             .split(area);
 
@@ -216,9 +228,14 @@ impl Component for StatusBar {
         let connection = Paragraph::new(Line::from(vec![Span::styled(conn_indicator, conn_style)]));
         f.render_widget(connection, chunks[0]);
 
-        // Draw auth status
+        // Draw auth status with explicit truncation if needed
         let (auth_style, auth_text) = self.auth_status_style();
-        let auth = Paragraph::new(Line::from(vec![Span::styled(&auth_text, auth_style)]));
+        let auth_display = if auth_text.len() > 23 {
+            format!("{}…", &auth_text[..22])
+        } else {
+            auth_text.clone()
+        };
+        let auth = Paragraph::new(Line::from(vec![Span::styled(&auth_display, auth_style)]));
         f.render_widget(auth, chunks[1]);
 
         // Draw room info with truncation to prevent overflow
@@ -237,14 +254,34 @@ impl Component for StatusBar {
         let room = Paragraph::new(room_text).style(Style::default().fg(Color::Cyan));
         f.render_widget(room, chunks[2]);
 
-        // Draw stats
-        let stats_text = format!(
-            "Sent: {} | Recv: {} | Up: {}",
+        // Draw stats with clear message counts and bold numbers
+        let stats_text = Line::from(vec![
+            Span::raw("Sent: "),
+            Span::styled(
+                self.network_stats.messages_sent.to_string(),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" | Recv: "),
+            Span::styled(
+                self.network_stats.messages_received.to_string(),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" | Up: "),
+            Span::raw(self.network_stats.format_uptime()),
+        ]);
+
+        tracing::info!(
+            "Status bar stats - Sent: {}, Recv: {}, Uptime: {}",
             self.network_stats.messages_sent,
             self.network_stats.messages_received,
-            self.network_stats.format_uptime(),
+            self.network_stats.format_uptime()
         );
-        let stats = Paragraph::new(stats_text).style(Style::default().fg(Color::Yellow));
+
+        let stats = Paragraph::new(stats_text).alignment(Alignment::Left);
         f.render_widget(stats, chunks[3]);
 
         // Draw error message if any

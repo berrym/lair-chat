@@ -1,34 +1,49 @@
 # The Lair Chat
 
 ## Current Version
-0.4.4
+0.5.9
 
 ## Description
 
 An asynchronous encrypted chat app written in the Rust programming language.
 It is both a terminal based server and TUI client.
 
-## Transport Refactoring Progress
+## Modern Architecture Implementation
 
 **Completed:**
-- Error handling infrastructure with comprehensive error enums
-- Eliminated application crashes by replacing `.expect()` calls with proper error propagation
-- Added graceful error handling with user-friendly messages
-- Established testing foundation for error conditions
-- Extracted encryption functionality into separate module for better code organization
-- Extracted key exchange logic into separate function with proper error handling
-- Extracted message processing logic into focused helper functions for better maintainability
-- Fixed scrolling functionality and text rendering issues in the TUI interface
-- Created foundational data structures for connection configuration and message handling
+- Implemented ConnectionManager with async/await pattern
+- Created robust observer pattern for event handling
+- Established comprehensive error handling with error type hierarchy
+- Developed encryption abstraction with secure implementation
+- Implemented proper dependency injection pattern
+- Created transport abstraction layer with TCP implementation
+- Built comprehensive testing infrastructure with mocks
+- Eliminated global state throughout the application
+- Added concurrent connection support with proper resource management
+- Implemented proper authentication flow with error handling
 
 **In Progress:**
-- Modular architecture redesign to improve testability and maintainability
+- End-to-end testing of complete message flow
+- Performance optimization and benchmarking
+- Documentation updates for v0.6.0 release
 
-See `TRANSPORT_REFACTORING_PLAN.md` for full details.
+See `LEGACY_MIGRATION_ACTION_PLAN.md` for migration progress and `NEXT_STEPS.md` for future plans.
 
 ## Getting started
 
 Install the mose recent version of Rust using your OS distributions package manager or Rust's own preferred rustup.  For details check with your OS distribution or visit https://rust-lang.org for more information.
+
+## Architecture Overview
+
+The application now uses a modern, modular architecture with the following key components:
+
+- **ConnectionManager**: Central coordinator that manages the lifecycle of connections
+- **Transport Interface**: Abstraction for network communication
+- **EncryptionService**: Interface for secure message encryption
+- **ConnectionObserver**: Pattern for UI notifications and updates
+- **MessageStore**: Structured message handling and formatting
+
+This architecture provides improved testability, maintainability, and performance while eliminating global state.
 
 ### Building and Executing The Lair
 
