@@ -277,12 +277,16 @@ impl Home {
                 tracing::info!("DEBUG: Message added to room successfully");
             } else {
                 tracing::warn!("DEBUG: Room not found for room_id: {:?}", room_id);
-                add_text_message(clean_content);
+                if let Some(tx) = &self.command_tx {
+                    let _ = tx.send(Action::ReceiveMessage(clean_content));
+                }
             }
         } else {
-            tracing::warn!("DEBUG: Fallback to legacy system - room_id or user_id missing");
-            // Fallback to legacy system
-            add_text_message(clean_content);
+            tracing::warn!("DEBUG: Fallback to modern action system - room_id or user_id missing");
+            // Use modern action system instead of legacy
+            if let Some(tx) = &self.command_tx {
+                let _ = tx.send(Action::ReceiveMessage(clean_content));
+            }
         }
     }
 
@@ -362,8 +366,10 @@ impl Home {
                 let _ = room.add_message(message);
             }
         } else {
-            // Fallback to legacy system
-            add_text_message(formatted_message);
+            // Use modern action system instead of legacy
+            if let Some(tx) = &self.command_tx {
+                let _ = tx.send(Action::ReceiveMessage(formatted_message));
+            }
         }
     }
 
