@@ -309,6 +309,12 @@ impl App {
                 tracing::info!("DEBUG: App processed RecordReceivedMessage action");
                 Ok(None)
             }
+            Action::RecordSentMessage => {
+                // Update the status bar message count for sent messages
+                self.status_bar.record_sent_message();
+                tracing::info!("DEBUG: App processed RecordSentMessage action");
+                Ok(None)
+            }
             Action::Quit => {
                 self.should_quit = true;
                 Ok(None)
@@ -384,9 +390,28 @@ impl App {
                     .add_message_to_room("Logged out successfully".to_string(), false);
 
                 Ok(None)
+            }
 
-                // Future: Add ConnectionManager.disconnect() call here
-                // when full ConnectionManager integration is complete
+            Action::Reconnect => {
+                info!("User requested reconnection - transitioning to authentication");
+
+                // Disconnect current connection if any
+                let connection_manager = Arc::clone(&self.connection_manager);
+                tokio::spawn(async move {
+                    let mut manager = connection_manager.lock().await;
+                    let _ = manager.disconnect().await;
+                });
+
+                // Clean up authentication state and return to login
+                self.auth_state = AuthState::Unauthenticated;
+                self.auth_status.update_state(self.auth_state.clone());
+                self.mode = Mode::Authentication;
+
+                // Add informational message
+                self.home_component
+                    .add_message_to_room("Disconnected. Please log in again.".to_string(), true);
+
+                Ok(None)
             }
 
             // New action for handling registration success
@@ -638,6 +663,11 @@ impl App {
                 self.home_component
                     .add_message_to_room(message.to_string(), false);
                 info!("Sent message added to room: {}", message);
+
+                // Record sent message for status bar
+                self.status_bar.record_sent_message();
+                tracing::info!("DEBUG: Recorded sent message in status bar");
+
                 Ok(None)
             }
 
@@ -646,6 +676,35 @@ impl App {
                 self.home_component
                     .add_message_to_room(format!("Error: {}", error), false);
                 warn!("Error received via action system: {}", error);
+                Ok(None)
+            }
+
+            Action::DisconnectClient => {
+                info!("User requested disconnect - using modern ConnectionManager");
+
+                // Use modern ConnectionManager for disconnection
+                let connection_manager = Arc::clone(&self.connection_manager);
+                tokio::spawn(async move {
+                    let mut manager = connection_manager.lock().await;
+                    if let Err(e) = manager.disconnect().await {
+                        error!("Failed to disconnect: {}", e);
+                    } else {
+                        info!("Successfully disconnected from server");
+                    }
+                });
+
+                // Clean up authentication state and return to login
+                self.auth_state = AuthState::Unauthenticated;
+                self.auth_status.update_state(self.auth_state.clone());
+                self.mode = Mode::Authentication;
+
+                // Reset login screen state to ensure proper functionality
+                self.login_screen.handle_auth_state(&self.auth_state);
+
+                // Add informational message
+                self.home_component
+                    .add_message_to_room("Disconnected from server.".to_string(), false);
+
                 Ok(None)
             }
 
@@ -744,6 +803,9 @@ impl App {
                             },
                         };
 
+                        // Add stabilization delay to ensure server-side login is complete
+                        // This prevents the first message sending issue after authentication
+                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
                         let _ = action_tx.send(Action::AuthenticationSuccess(auth_state));
                     }
                     Err(e) => {
@@ -816,6 +878,10 @@ impl App {
                         // Send registration success notification
                         let _ = action_tx
                             .send(Action::RegistrationSuccess(credentials.username.clone()));
+
+                        // Add stabilization delay to ensure server-side registration is complete
+                        // This prevents the first message sending issue after registration
+                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
                         // Create a successful auth state for auto-login after registration
                         let auth_state = AuthState::Authenticated {
@@ -946,6 +1012,9 @@ impl App {
                             },
                         };
 
+                        // Add stabilization delay to ensure server-side login is complete
+                        // This prevents the first message sending issue after authentication
+                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
                         let _ = action_tx.send(Action::AuthenticationSuccess(auth_state));
                     }
                     Err(e) => {
@@ -1064,7 +1133,21 @@ impl App {
                             },
                         };
 
-                        let _ = action_tx.send(Action::AuthenticationSuccess(auth_state));
+                        // Verify connection is ready for messaging before completing registration
+                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+                        // Double-check connection status
+                        if manager.get_status_sync()
+                            == crate::transport::ConnectionStatus::CONNECTED
+                        {
+                            info!("Connection verified ready for messaging after registration");
+                            let _ = action_tx.send(Action::AuthenticationSuccess(auth_state));
+                        } else {
+                            warn!("Connection not ready after registration, retrying...");
+                            // Give it a bit more time and try once more
+                            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+                            let _ = action_tx.send(Action::AuthenticationSuccess(auth_state));
+                        }
                     }
                     Err(e) => {
                         error!("Registration failed for {}: {}", credentials.username, e);
@@ -1095,6 +1178,7 @@ impl App {
                 "Sending message via ConnectionManager (status: {:?}): '{}'",
                 connection_status, message
             );
+            debug!("DEBUG: Connection verified as CONNECTED before sending message");
 
             // Queue the message sending as an async task
             let connection_manager = Arc::clone(&self.connection_manager);
@@ -1136,6 +1220,13 @@ impl App {
                     "DEBUG: ConnectionManager.send_message returned: {:?}",
                     send_result
                 );
+
+                // Add additional debugging for first message issues
+                if send_result.is_err() {
+                    tracing::error!(
+                        "DEBUG: Message send failed - this might be the first message issue"
+                    );
+                }
 
                 // Check final status after lock is released
                 let final_status = {
@@ -1256,6 +1347,7 @@ impl App {
                     // Use modern ConnectionManager to get status
                     let connection_status = self.get_connection_status();
                     self.status_bar.set_connection_status(connection_status);
+                    self.home_component.set_connection_status(connection_status);
 
                     // Draw status bar
                     if let Err(e) = self.status_bar.draw(frame, chunks[0]) {

@@ -1,24 +1,21 @@
 //! Status bar component for Lair-Chat
 //! Provides comprehensive status information display.
 
-use std::time::{Duration, Instant};
+use ratatui::Frame;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
 };
-use ratatui::Frame;
+use std::time::{Duration, Instant};
 
 use crate::auth::AuthState;
 #[cfg(test)]
-use crate::auth::{UserProfile, Session};
+use crate::auth::{Session, UserProfile};
+use crate::{components::Component, transport::ConnectionStatus};
 #[cfg(test)]
 use uuid::Uuid;
-use crate::{
-    components::Component,
-    transport::ConnectionStatus,
-};
 
 /// Network statistics
 #[derive(Debug, Default, Clone)]
@@ -121,7 +118,10 @@ impl StatusBar {
     pub fn record_received_message(&mut self) {
         self.network_stats.messages_received += 1;
         self.network_stats.last_message_time = Some(Instant::now());
-        tracing::info!("DEBUG: Status bar received message count updated to: {}", self.network_stats.messages_received);
+        tracing::info!(
+            "DEBUG: Status bar received message count updated to: {}",
+            self.network_stats.messages_received
+        );
     }
 
     /// Show an error message for a duration
@@ -150,10 +150,24 @@ impl StatusBar {
                 "Connected",
             ),
             ConnectionStatus::DISCONNECTED => (
-                Style::default()
-                    .fg(Color::Red)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
                 "Disconnected",
+            ),
+        }
+    }
+
+    /// Get the connection indicator style and symbol
+    fn connection_indicator_style(&self) -> (Style, &'static str) {
+        match self.connection_status {
+            ConnectionStatus::CONNECTED => (
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+                "● ONLINE",
+            ),
+            ConnectionStatus::DISCONNECTED => (
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                "● OFFLINE",
             ),
         }
     }
@@ -171,11 +185,11 @@ impl StatusBar {
             ),
             AuthState::Authenticated { profile, .. } => (
                 Style::default().fg(Color::Green),
-                format!("Logged in as {}", profile.username),
+                format!("👤 {}", profile.username),
             ),
             AuthState::Failed { reason } => (
                 Style::default().fg(Color::Red),
-                format!("Auth failed: {}", reason),
+                format!("❌ Auth failed: {}", reason),
             ),
         }
     }
@@ -185,38 +199,42 @@ impl Component for StatusBar {
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> color_eyre::Result<()> {
         self.check_error_timeout();
 
-        // Create layout
+        // Create layout with better spacing to prevent overlapping
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Length(15),  // Connection status
-                Constraint::Length(25),  // Auth status
-                Constraint::Length(15),  // Room
-                Constraint::Length(25),  // Stats
-                Constraint::Min(20),     // Error/message area
+                Constraint::Length(12), // Connection indicator (shorter)
+                Constraint::Min(20),    // Auth status (flexible)
+                Constraint::Min(15),    // Room (flexible)
+                Constraint::Length(30), // Stats (consistent width)
+                Constraint::Min(15),    // Error/message area (flexible)
             ])
             .split(area);
 
-        // Draw connection status
-        let (conn_style, conn_text) = self.connection_status_style();
-        let connection = Paragraph::new(Line::from(vec![
-            Span::styled(conn_text, conn_style),
-        ]));
+        // Draw connection status with clear indicator
+        let (conn_style, conn_indicator) = self.connection_indicator_style();
+        let connection = Paragraph::new(Line::from(vec![Span::styled(conn_indicator, conn_style)]));
         f.render_widget(connection, chunks[0]);
 
         // Draw auth status
         let (auth_style, auth_text) = self.auth_status_style();
-        let auth = Paragraph::new(Line::from(vec![
-            Span::styled(&auth_text, auth_style),
-        ]));
+        let auth = Paragraph::new(Line::from(vec![Span::styled(&auth_text, auth_style)]));
         f.render_widget(auth, chunks[1]);
 
-        // Draw room info
-        let room_text = self.current_room
+        // Draw room info with truncation to prevent overflow
+        let room_text = self
+            .current_room
             .as_ref()
-            .map(|r| format!("Room: {}", r))
+            .map(|r| {
+                let max_len = chunks[2].width.saturating_sub(2) as usize;
+                if r.len() > max_len.saturating_sub(2) {
+                    format!("{}…", &r[..max_len.saturating_sub(3)])
+                } else {
+                    r.clone()
+                }
+            })
             .unwrap_or_else(|| "No room".to_string());
-        let room = Paragraph::new(room_text);
+        let room = Paragraph::new(room_text).style(Style::default().fg(Color::Cyan));
         f.render_widget(room, chunks[2]);
 
         // Draw stats
@@ -226,14 +244,12 @@ impl Component for StatusBar {
             self.network_stats.messages_received,
             self.network_stats.format_uptime(),
         );
-        let stats = Paragraph::new(stats_text)
-            .style(Style::default().fg(Color::Yellow));
+        let stats = Paragraph::new(stats_text).style(Style::default().fg(Color::Yellow));
         f.render_widget(stats, chunks[3]);
 
         // Draw error message if any
         if let Some(error) = &self.error_message {
-            let error_msg = Paragraph::new(error.clone())
-                .style(Style::default().fg(Color::Red));
+            let error_msg = Paragraph::new(error.clone()).style(Style::default().fg(Color::Red));
             f.render_widget(error_msg, chunks[4]);
         }
 
@@ -252,7 +268,7 @@ mod tests {
         assert_eq!(stats.messages_sent, 0);
         assert_eq!(stats.messages_received, 0);
         assert!(stats.connected_since.is_none());
-        
+
         // Test uptime formatting
         assert_eq!(stats.format_uptime(), "Not connected");
         stats.connected_since = Some(Instant::now());
@@ -262,18 +278,18 @@ mod tests {
     #[test]
     fn test_status_bar_updates() {
         let mut status_bar = StatusBar::new();
-        
+
         // Test connection status
         status_bar.set_connection_status(ConnectionStatus::CONNECTED);
         assert_eq!(status_bar.connection_status, ConnectionStatus::CONNECTED);
         assert!(status_bar.network_stats.connected_since.is_some());
-        
+
         // Test message recording
         status_bar.record_sent_message();
         status_bar.record_received_message();
         assert_eq!(status_bar.network_stats.messages_sent, 1);
         assert_eq!(status_bar.network_stats.messages_received, 1);
-        
+
         // Test error handling
         status_bar.show_error("Test error".to_string(), Duration::from_secs(1));
         assert!(status_bar.error_message.is_some());
@@ -283,11 +299,11 @@ mod tests {
     #[test]
     fn test_auth_state_display() {
         let mut status_bar = StatusBar::new();
-        
+
         // Test unauthenticated
         let (_style, text) = status_bar.auth_status_style();
         assert_eq!(text, "Not logged in");
-        
+
         // Test authenticated
         let profile = UserProfile {
             id: Uuid::new_v4(),
@@ -300,11 +316,8 @@ mod tests {
             created_at: 0,
             expires_at: u64::MAX,
         };
-        status_bar.set_auth_state(AuthState::Authenticated {
-            profile,
-            session,
-        });
-        
+        status_bar.set_auth_state(AuthState::Authenticated { profile, session });
+
         let (_, text) = status_bar.auth_status_style();
         assert!(text.contains("testuser"));
     }

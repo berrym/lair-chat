@@ -155,6 +155,15 @@ impl LoginScreen {
                 self.processing = true;
                 self.error_message = None;
             }
+            AuthState::Unauthenticated => {
+                // Reset login screen to clean state
+                self.processing = false;
+                self.error_message = None;
+                self.show_help = false;
+                self.show_error = false;
+                self.help_scroll = 0;
+                self.error_scroll = 0;
+            }
             _ => {}
         }
     }

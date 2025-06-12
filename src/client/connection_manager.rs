@@ -244,6 +244,9 @@ impl ConnectionManager {
             }
         }
 
+        // Create a new cancel token for this connection
+        self.cancel_token = CancellationToken::new();
+
         // Set status to connected
         *self.status.write().await = ConnectionStatus::CONNECTED;
         self.notify_status_change(ConnectionStatus::CONNECTED);
@@ -276,6 +279,10 @@ impl ConnectionManager {
             let mut transport_guard = transport.lock().await;
             transport_guard.close().await?;
         }
+
+        // Clear auth manager and token storage to ensure clean state for next connection
+        self.auth_manager = None;
+        self.token_storage = None;
 
         // Update status
         self.notify_status_change(ConnectionStatus::DISCONNECTED);

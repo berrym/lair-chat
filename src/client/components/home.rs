@@ -5,6 +5,14 @@ use std::net::SocketAddr;
 use tokio::{sync::mpsc::UnboundedSender, time::Duration};
 use tui_input::{backend::crossterm::EventHandler, Input};
 
+/// Enum to distinguish different message types for styling
+#[derive(Debug, Clone, PartialEq)]
+enum MessageStyle {
+    Sent,     // Messages from the current user
+    Received, // Messages from other users
+    System,   // System messages
+}
+
 use super::Component;
 use crate::{
     action::Action,
@@ -17,7 +25,7 @@ use crate::{
     },
     history::CommandHistory,
     migration_facade,
-    transport::*,
+    transport::{ConnectionStatus, *},
 };
 
 /// Get any text in the input box
@@ -60,6 +68,9 @@ pub struct Home {
     scroll_offset: usize,
     prev_text_len: usize,
     manual_scroll: bool,
+
+    // Connection status for UI display
+    connection_status: ConnectionStatus,
 }
 
 // Static state variables for scrolling
@@ -101,6 +112,8 @@ impl Default for Home {
             scroll_offset: 0,
             prev_text_len: 0,
             manual_scroll: false,
+
+            connection_status: ConnectionStatus::DISCONNECTED,
         }
     }
 }
@@ -133,8 +146,8 @@ impl Home {
         Ok(())
     }
 
-    /// Get current room messages for display
-    fn get_display_messages(&self) -> Vec<String> {
+    /// Get current room messages for display with styling information
+    fn get_display_messages_with_style(&self) -> Vec<(String, MessageStyle)> {
         if let Some(room_id) = self.current_room_id {
             if let Some(room) = self.room_manager.get_room(&room_id) {
                 let messages = room
@@ -142,49 +155,65 @@ impl Home {
                     .iter()
                     .map(|msg| {
                         if msg.message_type == MessageType::System {
-                            msg.content.clone()
+                            (msg.content.clone(), MessageStyle::System)
                         } else {
                             // Check if the content already has a username prefix
                             if msg.content.starts_with("You: ") {
                                 // Don't add another prefix for outgoing messages
-                                msg.content.clone()
+                                (msg.content.clone(), MessageStyle::Sent)
                             } else if msg.content.contains(": ")
                                 && !msg
                                     .content
                                     .starts_with(&format!("{}: ", msg.sender_username))
                             {
                                 // Message already has some prefix, but not the correct one
-                                msg.content.clone()
+                                (msg.content.clone(), MessageStyle::Received)
                             } else {
                                 // Add username prefix for normal messages - remove any '!' characters
                                 let clean_username = msg.sender_username.replace("!", "");
-                                format!("{}: {}", clean_username, msg.content)
+                                (
+                                    format!("{}: {}", clean_username, msg.content),
+                                    MessageStyle::Received,
+                                )
                             }
                         }
                     })
-                    .collect::<Vec<String>>();
+                    .collect::<Vec<(String, MessageStyle)>>();
                 tracing::info!(
-                    "DEBUG: get_display_messages returning {} messages",
+                    "DEBUG: get_display_messages_with_style returning {} messages",
                     messages.len()
                 );
                 return messages;
             } else {
                 tracing::warn!(
-                    "DEBUG: Room not found in get_display_messages for room_id: {:?}",
+                    "DEBUG: Room not found in get_display_messages_with_style for room_id: {:?}",
                     room_id
                 );
             }
         } else {
-            tracing::warn!("DEBUG: No current_room_id in get_display_messages");
+            tracing::warn!("DEBUG: No current_room_id in get_display_messages_with_style");
         }
 
-        tracing::info!("DEBUG: get_display_messages returning empty vector");
+        tracing::info!("DEBUG: get_display_messages_with_style returning empty vector");
         Vec::new()
+    }
+
+    /// Get current room messages for display (backwards compatibility)
+    fn get_display_messages(&self) -> Vec<String> {
+        self.get_display_messages_with_style()
+            .into_iter()
+            .map(|(content, _)| content)
+            .collect()
     }
 
     /// Check if chat system is initialized (has current room and user)
     pub fn is_chat_initialized(&self) -> bool {
         self.current_room_id.is_some() && self.current_user_id.is_some()
+    }
+
+    /// Update connection status for UI display
+    pub fn set_connection_status(&mut self, status: ConnectionStatus) {
+        self.connection_status = status;
     }
 
     /// Add a message to current room
@@ -744,19 +773,34 @@ impl Component for Home {
                         Action::EnterInsert
                     }
                     KeyCode::F(2) => {
-                        if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
-                            show_warning("Already connected to a server");
+                        // F2 key: Connect/Reconnect behavior
+                        // - When CONNECTED: Show message that user is already connected, need to disconnect first
+                        // - When DISCONNECTED: Go back to login screen (no restart required)
+                        if self.connection_status == ConnectionStatus::CONNECTED {
+                            show_info("Already connected to server. To start a new connection, you need to disconnect first (press 'd').");
                             return Ok(Some(Action::Update));
                         }
-                        show_info("Please use the authentication system to connect (restart the application)");
-                        Action::Update
+                        // If disconnected, trigger reconnection which goes back to login
+                        Action::Reconnect
                     }
                     KeyCode::Char('c') => {
-                        show_info("Please use the authentication system to connect (restart the application)");
-                        Action::Update
+                        // 'c' key: Connect/Reconnect behavior (same as F2)
+                        // - When CONNECTED: Show message that user is already connected, need to disconnect first
+                        // - When DISCONNECTED: Go back to login screen (no restart required)
+                        if self.connection_status == ConnectionStatus::CONNECTED {
+                            show_info("Already connected to server. To start a new connection, you need to disconnect first (press 'd').");
+                            return Ok(Some(Action::Update));
+                        }
+                        // If disconnected, trigger reconnection which goes back to login
+                        Action::Reconnect
                     }
                     KeyCode::Char('d') => {
-                        self.schedule_disconnect_client();
+                        if self.connection_status == ConnectionStatus::CONNECTED {
+                            show_info("Disconnecting from server...");
+                            self.schedule_disconnect_client();
+                        } else {
+                            show_info("Not connected to any server.");
+                        }
                         Action::Update
                     }
                     KeyCode::Esc => {
@@ -772,12 +816,15 @@ impl Component for Home {
             Mode::Insert => {
                 match key.code {
                     KeyCode::F(2) => {
-                        if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
-                            show_warning("Already connected to a server");
+                        // F2 key: Connect/Reconnect behavior (same in Insert mode)
+                        // - When CONNECTED: Show message that user is already connected, need to disconnect first
+                        // - When DISCONNECTED: Go back to login screen (no restart required)
+                        if self.connection_status == ConnectionStatus::CONNECTED {
+                            show_info("Already connected to server. To start a new connection, you need to disconnect first (press 'd').");
                             return Ok(Some(Action::Update));
                         }
-                        show_info("Please use the authentication system to connect (restart the application)");
-                        Action::Update
+                        // If disconnected, trigger reconnection which goes back to login
+                        Action::Reconnect
                     }
                     KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         self.schedule_disconnect_client();
@@ -923,11 +970,8 @@ impl Component for Home {
                     "Please use the authentication system to connect (restart the application)",
                 );
             }
-            Action::DisconnectClient => {
-                tokio::spawn(async move {
-                    let _ = migration_facade::disconnect_client().await;
-                });
-            }
+            // DisconnectClient is now handled by the main app using modern ConnectionManager
+            // No need to handle it here anymore
             _ => {}
         }
         Ok(None)
@@ -963,10 +1007,146 @@ impl Component for Home {
         // Prepare text content
         let mut text: Vec<Line> = Vec::<Line>::new();
         text.push("".into());
+        // Calculate available width for proper alignment (subtract borders)
+        let available_width = content_area.width.saturating_sub(4) as usize; // -4 for borders and padding
+        let message_max_width = (available_width * 75) / 100; // 75% of available width for messages
+
+        // Helper function to wrap text to a specified width
+        let wrap_text = |text: &str, max_width: usize| -> Vec<String> {
+            if max_width == 0 {
+                return vec![text.to_string()];
+            }
+
+            let mut lines = Vec::new();
+            let mut current_line = String::new();
+            let words: Vec<&str> = text.split_whitespace().collect();
+
+            for word in words {
+                // If adding this word would exceed the max width, start a new line
+                if !current_line.is_empty() && current_line.len() + 1 + word.len() > max_width {
+                    lines.push(current_line.clone());
+                    current_line.clear();
+                }
+
+                // If the word itself is longer than max_width, we need to break it
+                if word.len() > max_width {
+                    // First, push any existing content
+                    if !current_line.is_empty() {
+                        lines.push(current_line.clone());
+                        current_line.clear();
+                    }
+
+                    // Break the long word into chunks
+                    let mut word_chars: Vec<char> = word.chars().collect();
+                    while !word_chars.is_empty() {
+                        let chunk_size = max_width.min(word_chars.len());
+                        let chunk: String = word_chars.drain(..chunk_size).collect();
+                        lines.push(chunk);
+                    }
+                } else {
+                    // Add word to current line
+                    if !current_line.is_empty() {
+                        current_line.push(' ');
+                    }
+                    current_line.push_str(word);
+                }
+            }
+
+            // Don't forget the last line
+            if !current_line.is_empty() {
+                lines.push(current_line);
+            }
+
+            // If no lines were created, return the original text
+            if lines.is_empty() {
+                lines.push(text.to_string());
+            }
+
+            lines
+        };
+
         let messages: Vec<Line> = self
-            .get_display_messages()
+            .get_display_messages_with_style()
             .iter()
-            .map(|l| Line::from(l.clone()))
+            .enumerate()
+            .flat_map(|(index, (content, style))| {
+                let mut lines = Vec::new();
+
+                // Add spacing between messages (except for the first one)
+                if index > 0 {
+                    lines.push(Line::from(""));
+                }
+
+                match style {
+                    MessageStyle::Sent => {
+                        // Sent messages: Clean blue bubble, right-aligned with width limit
+                        let style = Style::default()
+                            .fg(Color::Rgb(255, 255, 255)) // Pure white text
+                            .bg(Color::Rgb(59, 130, 246)) // Vibrant blue (#3B82F6)
+                            .add_modifier(Modifier::BOLD);
+
+                        // Wrap text to fit within message_max_width minus padding
+                        let content_width = message_max_width.saturating_sub(4); // -4 for padding
+                        let wrapped_lines = wrap_text(content, content_width.max(10));
+
+                        for (line_index, wrapped_line) in wrapped_lines.iter().enumerate() {
+                            let bubble_content = format!("  {}  ", wrapped_line);
+                            let content_len = bubble_content.len();
+
+                            // Right-align the bubble
+                            let padding = if content_len < available_width {
+                                available_width.saturating_sub(content_len)
+                            } else {
+                                0
+                            };
+
+                            // Create line with mixed styling: transparent padding + colored content
+                            let line = Line::from(vec![
+                                Span::raw(" ".repeat(padding)),      // Transparent padding
+                                Span::styled(bubble_content, style), // Colored content only
+                            ]);
+                            lines.push(line);
+                        }
+                    }
+                    MessageStyle::Received => {
+                        // Received messages: Clean light bubble with width limit
+                        let style = Style::default()
+                            .fg(Color::Rgb(55, 65, 81)) // Slate-700 (#374151)
+                            .bg(Color::Rgb(249, 250, 251)); // Gray-50 (#F9FAFB)
+
+                        // Wrap text to fit within message_max_width minus padding
+                        let content_width = message_max_width.saturating_sub(4); // -4 for padding
+                        let wrapped_lines = wrap_text(content, content_width.max(10));
+
+                        for wrapped_line in wrapped_lines.iter() {
+                            let bubble_content = format!("  {}  ", wrapped_line);
+                            // Create line with colored content only (no full-width background)
+                            let line = Line::from(vec![
+                                Span::styled(bubble_content, style), // Colored content only
+                            ]);
+                            lines.push(line);
+                        }
+                    }
+                    MessageStyle::System => {
+                        // System messages: Subtle centered notification style
+                        let style = Style::default()
+                            .fg(Color::Rgb(156, 163, 175)) // Gray-400 (#9CA3AF)
+                            .add_modifier(Modifier::ITALIC);
+
+                        let system_content = format!("• {} •", content);
+                        let content_len = system_content.len();
+                        let padding = if content_len < available_width {
+                            (available_width.saturating_sub(content_len)) / 2
+                        } else {
+                            0
+                        };
+                        let centered_content = format!("{}{}", " ".repeat(padding), system_content);
+                        lines.push(Line::from(centered_content).style(style));
+                    }
+                };
+
+                lines
+            })
             .collect();
         if messages.is_empty() {
             text.push("".into());
@@ -1119,14 +1299,28 @@ impl Component for Home {
                 .wrap(Wrap { trim: false })
                 .block(
                     Block::default()
-                        .title_top(Line::from("v0.5.2".white()).left_aligned())
+                        .title_top(Line::from("v0.5.3".white()).left_aligned())
                         .title_top(
-                            Line::from(vec![Span::styled(
-                                "THE LAIR",
-                                Style::default()
-                                    .fg(Color::Yellow)
-                                    .add_modifier(Modifier::BOLD),
-                            )])
+                            Line::from(vec![
+                                Span::styled(
+                                    "THE LAIR ",
+                                    Style::default()
+                                        .fg(Color::Yellow)
+                                        .add_modifier(Modifier::BOLD),
+                                ),
+                                Span::styled(
+                                    match self.connection_status {
+                                        ConnectionStatus::CONNECTED => "🟢 ONLINE",
+                                        ConnectionStatus::DISCONNECTED => "🔴 OFFLINE",
+                                    },
+                                    Style::default()
+                                        .fg(match self.connection_status {
+                                            ConnectionStatus::CONNECTED => Color::Green,
+                                            ConnectionStatus::DISCONNECTED => Color::Red,
+                                        })
+                                        .add_modifier(Modifier::BOLD),
+                                ),
+                            ])
                             .centered(),
                         )
                         .title_top(Line::from("(C) 2025".white()).right_aligned())
@@ -1137,7 +1331,11 @@ impl Component for Home {
                         })
                         .border_type(BorderType::Rounded),
                 )
-                .style(Style::default().bg(Color::Black).fg(Color::Green))
+                .style(
+                    Style::default()
+                        .bg(Color::Rgb(17, 24, 39)) // Gray-900 (#111827)
+                        .fg(Color::Rgb(229, 231, 235)), // Gray-200 (#E5E7EB)
+                )
                 .alignment(Alignment::Left)
                 .wrap(Wrap { trim: false }),
             content_area,

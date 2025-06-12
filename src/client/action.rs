@@ -25,6 +25,7 @@ pub enum Action {
     Update,
     ShowConnectionDialog,
     Connect(SocketAddr),
+    Reconnect,
     // Authentication actions
     Login(Credentials),
     Register(Credentials),
@@ -39,6 +40,7 @@ pub enum Action {
     SendMessage(String),
     ReceiveMessage(String),
     RecordReceivedMessage,
+    RecordSentMessage,
     MessageSent(String),
     // Connection status actions
     ConnectionStatusChanged(crate::transport::ConnectionStatus),
