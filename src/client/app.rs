@@ -187,8 +187,8 @@ impl App {
 
         // Set up action sender for transport layer to update status bar (legacy compatibility)
         // This is needed because authentication still uses legacy transport
-        #[allow(deprecated)]
-        crate::transport::set_action_sender(self.action_tx.clone());
+        // TODO: Remove this once legacy transport is fully eliminated
+        // crate::transport::set_action_sender(self.action_tx.clone());
 
         // Register observer with ConnectionManager for message handling
         {
