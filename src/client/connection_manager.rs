@@ -500,19 +500,20 @@ impl ConnectionManager {
                 break;
             }
 
-            // We need to hold the lock for the entire operation
-            let mut transport_guard = transport.lock().await;
-            let receive_result = transport_guard.receive().await;
-            drop(transport_guard); // Explicitly drop the guard to release the mutex
-
-            // Process the result with timeout
-            match tokio::time::timeout(
+            // Apply timeout to the actual receive operation
+            let receive_result = tokio::time::timeout(
                 Duration::from_millis(100), // Small timeout to check cancel frequently
-                async { receive_result },
+                async {
+                    let mut transport_guard = transport.lock().await;
+                    let result = transport_guard.receive().await;
+                    drop(transport_guard); // Explicitly drop the guard to release the mutex
+                    result
+                },
             )
-            .await
-            {
-                // Timeout occurred, just loop again
+            .await;
+
+            match receive_result {
+                // Timeout occurred, just loop again to check cancel token
                 Err(_) => continue,
 
                 // Got a result from transport
