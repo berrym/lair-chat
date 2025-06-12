@@ -64,14 +64,16 @@ This plan details the step-by-step modernization of the message handling system,
 
 **BUG FIXED**: ReceiveMessage handler was excluding messages starting with "You:" but sent messages are formatted as "You: {message}", causing sent messages to never display.
 
-#### Step 3A.3: Update Home Component Message Input
-**Duration**: 1 day  
+#### Step 3A.3: Fix Legacy CLIENT_STATUS Check in Enter Handler ✅ COMPLETED
+**Duration**: 0.5 days  
 **Files**: `src/client/components/home.rs`
-- [ ] **3A.3.1** Replace legacy `add_outgoing_message` with action dispatch
-- [ ] **3A.3.2** Update Enter key handler to send Action::SendMessage
-- [ ] **3A.3.3** Remove direct transport function calls
-- [ ] **3A.3.4** Test compilation and input handling
-- [ ] **3A.3.5** Commit: "Modernize home component message input"
+- [x] **3A.3.1** Identify issue: Enter handler checks legacy CLIENT_STATUS
+- [x] **3A.3.2** Replace CLIENT_STATUS check with proper connection validation
+- [x] **3A.3.3** Remove dependency on legacy transport status
+- [x] **3A.3.4** Test compilation and input handling
+- [x] **3A.3.5** Commit: "Fix legacy CLIENT_STATUS check in Enter handler"
+
+**ROOT CAUSE FOUND**: Home component Enter handler checks legacy CLIENT_STATUS.status which remains DISCONNECTED even when ConnectionManager is CONNECTED, causing Enter key to do nothing.
 
 #### Step 3A.4: Fix Message Display Observer Integration
 **Duration**: 1 day  
@@ -218,7 +220,7 @@ This plan details the step-by-step modernization of the message handling system,
 ### Phase 3A Progress: Message Sending Modernization
 - [x] Step 3A.1: Analyze Current Message Flow (4/4 substeps) ✅ COMPLETED
 - [x] Step 3A.2: Fix Message Display Logic (5/5 substeps) ✅ COMPLETED
-- [ ] Step 3A.3: Update Home Component Message Input (0/5 substeps)  
+- [x] Step 3A.3: Fix Legacy CLIENT_STATUS Check in Enter Handler (5/5 substeps) ✅ COMPLETED
 - [ ] Step 3A.4: Fix Message Display Observer Integration (0/6 substeps)
 
 ### Phase 3B Progress: Legacy Function Elimination
@@ -236,7 +238,7 @@ This plan details the step-by-step modernization of the message handling system,
 - [ ] Step 3D.2: Documentation and Release Preparation (0/5 substeps)
 
 **Total Steps**: 12 major steps, 69 substeps  
-**Current Progress**: 13% (9/69 substeps completed)  
+**Current Progress**: 20% (14/69 substeps completed)  
 **Target Completion**: 3 weeks
 
 ## Communication Plan
