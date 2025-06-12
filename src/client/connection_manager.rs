@@ -288,41 +288,138 @@ impl ConnectionManager {
 
     /// Send a message to the remote endpoint
     pub async fn send_message(&mut self, content: String) -> Result<(), TransportError> {
+        tracing::info!(
+            "DEBUG: ConnectionManager.send_message called with: '{}'",
+            content
+        );
+
+        // Check initial connection status
+        let initial_status = self.get_status().await;
+        tracing::info!("DEBUG: Initial connection status: {:?}", initial_status);
+
         // Check authentication if enabled
         if let Some(auth_manager) = &self.auth_manager {
-            if !auth_manager.is_authenticated().await {
+            let is_auth = auth_manager.is_authenticated().await;
+            tracing::info!("DEBUG: Auth manager exists, is_authenticated: {}", is_auth);
+            if !is_auth {
+                tracing::error!("DEBUG: Authentication check failed in send_message");
                 return Err(TransportError::ConnectionError(std::io::Error::new(
                     std::io::ErrorKind::PermissionDenied,
                     "Not authenticated",
                 )));
             }
+        } else {
+            tracing::info!("DEBUG: No auth manager, skipping auth check");
         }
 
         if self.transport.is_none() {
+            tracing::error!("DEBUG: No transport available in send_message");
             return Err(TransportError::ConnectionError(std::io::Error::new(
                 std::io::ErrorKind::NotConnected,
                 "Not connected",
             )));
         }
 
+        // Check status after auth check
+        let post_auth_status = self.get_status().await;
+        tracing::info!("DEBUG: Post-auth connection status: {:?}", post_auth_status);
+
+        tracing::info!("DEBUG: Creating and storing user message");
         // Create and store user message
         let message = Message::user_message(content.clone());
         self.store_message(message.clone()).await;
 
+        // Check status after message storage
+        let post_storage_status = self.get_status().await;
+        tracing::info!(
+            "DEBUG: Post-storage connection status: {:?}",
+            post_storage_status
+        );
+
+        tracing::info!("DEBUG: Checking encryption");
         // Encrypt the message if encryption is available
         let data = if let Some(encryption) = &self.encryption {
+            tracing::info!("DEBUG: Encrypting message with available encryption");
             let encryption_guard = encryption.lock().await;
-            encryption_guard.encrypt("key", &content)?
+
+            // Check status after getting encryption lock
+            let post_encryption_lock_status = self.get_status().await;
+            tracing::info!(
+                "DEBUG: Post-encryption-lock connection status: {:?}",
+                post_encryption_lock_status
+            );
+
+            match encryption_guard.encrypt("key", &content) {
+                Ok(encrypted) => {
+                    tracing::info!("DEBUG: Message encrypted successfully");
+
+                    // Check status after encryption
+                    let post_encryption_status = self.get_status().await;
+                    tracing::info!(
+                        "DEBUG: Post-encryption connection status: {:?}",
+                        post_encryption_status
+                    );
+
+                    encrypted
+                }
+                Err(e) => {
+                    tracing::error!("DEBUG: Encryption failed: {}", e);
+                    return Err(TransportError::EncryptionError(e));
+                }
+            }
         } else {
+            tracing::info!("DEBUG: No encryption, using plain text");
             content
         };
 
+        // Check status before transport send
+        let pre_send_status = self.get_status().await;
+        tracing::info!("DEBUG: Pre-send connection status: {:?}", pre_send_status);
+
+        tracing::info!("DEBUG: Sending data via transport: '{}'", data);
         // Get a reference to the transport and send the data
         if let Some(transport) = &self.transport {
+            tracing::info!("DEBUG: Getting transport lock...");
             let mut transport_guard = transport.lock().await;
-            transport_guard.send(&data).await?;
+            tracing::info!("DEBUG: Got transport lock, calling send...");
+
+            // Check status after getting transport lock
+            let post_transport_lock_status = self.get_status().await;
+            tracing::info!(
+                "DEBUG: Post-transport-lock connection status: {:?}",
+                post_transport_lock_status
+            );
+
+            match transport_guard.send(&data).await {
+                Ok(()) => {
+                    tracing::info!("DEBUG: Transport.send() completed successfully");
+
+                    // Check status immediately after successful send
+                    let post_send_status = self.get_status().await;
+                    tracing::info!("DEBUG: Post-send connection status: {:?}", post_send_status);
+                }
+                Err(e) => {
+                    tracing::error!("DEBUG: Transport.send() failed: {}", e);
+
+                    // Check status after send failure
+                    let post_send_error_status = self.get_status().await;
+                    tracing::info!(
+                        "DEBUG: Post-send-error connection status: {:?}",
+                        post_send_error_status
+                    );
+
+                    return Err(e);
+                }
+            }
+
+            tracing::info!("DEBUG: Dropping transport lock...");
         }
 
+        // Check final status
+        let final_status = self.get_status().await;
+        tracing::info!("DEBUG: Final connection status: {:?}", final_status);
+
+        tracing::info!("DEBUG: ConnectionManager.send_message completed successfully");
         Ok(())
     }
 

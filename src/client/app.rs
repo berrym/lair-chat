@@ -1111,10 +1111,49 @@ impl App {
             let formatted_message_clone = formatted_message.clone();
 
             tokio::spawn(async move {
-                let send_result = {
-                    let mut manager = connection_manager.lock().await;
-                    manager.send_message(formatted_message_clone).await
+                tracing::info!("DEBUG: Starting async message send task");
+
+                // Check connection status before attempting send
+                let pre_lock_status = {
+                    if let Ok(manager) = connection_manager.try_lock() {
+                        manager.get_status_sync()
+                    } else {
+                        crate::transport::ConnectionStatus::DISCONNECTED
+                    }
                 };
+                tracing::info!("DEBUG: Pre-lock connection status: {:?}", pre_lock_status);
+
+                let send_result = {
+                    tracing::info!("DEBUG: Attempting to acquire ConnectionManager lock...");
+                    let mut manager = connection_manager.lock().await;
+                    tracing::info!("DEBUG: Acquired ConnectionManager lock, checking status...");
+
+                    let pre_send_status = manager.get_status().await;
+                    tracing::info!("DEBUG: Pre-send connection status: {:?}", pre_send_status);
+
+                    tracing::info!("DEBUG: Calling send_message...");
+                    let result = manager.send_message(formatted_message_clone).await;
+
+                    tracing::info!("DEBUG: send_message call completed, checking status...");
+                    let post_send_status = manager.get_status().await;
+                    tracing::info!("DEBUG: Post-send connection status: {:?}", post_send_status);
+
+                    result
+                };
+                tracing::info!(
+                    "DEBUG: ConnectionManager.send_message returned: {:?}",
+                    send_result
+                );
+
+                // Check final status after lock is released
+                let final_status = {
+                    if let Ok(manager) = connection_manager.try_lock() {
+                        manager.get_status_sync()
+                    } else {
+                        crate::transport::ConnectionStatus::DISCONNECTED
+                    }
+                };
+                tracing::info!("DEBUG: Final connection status: {:?}", final_status);
 
                 match send_result {
                     Ok(()) => {
@@ -1150,7 +1189,9 @@ impl App {
     /// Get current connection status from ConnectionManager (async version)
     async fn get_connection_status_async(&self) -> crate::transport::ConnectionStatus {
         let manager = self.connection_manager.lock().await;
-        manager.get_status().await
+        let status = manager.get_status().await;
+        tracing::info!("DEBUG: get_connection_status_async returning: {:?}", status);
+        status
     }
 
     /// Get current connection status from ConnectionManager (sync wrapper)
@@ -1158,9 +1199,14 @@ impl App {
     fn get_connection_status(&self) -> crate::transport::ConnectionStatus {
         // Use try_lock to avoid blocking, fall back to sync status check
         if let Ok(manager) = self.connection_manager.try_lock() {
-            manager.get_status_sync()
+            let status = manager.get_status_sync();
+            tracing::info!(
+                "DEBUG: get_connection_status (sync) returning: {:?}",
+                status
+            );
+            status
         } else {
-            // If lock is held, assume disconnected to be safe
+            tracing::warn!("DEBUG: get_connection_status failed to lock, returning DISCONNECTED");
             crate::transport::ConnectionStatus::DISCONNECTED
         }
     }

@@ -75,15 +75,16 @@ This plan details the step-by-step modernization of the message handling system,
 
 **ROOT CAUSE FOUND**: Home component Enter handler checks legacy CLIENT_STATUS.status which remains DISCONNECTED even when ConnectionManager is CONNECTED, causing Enter key to do nothing.
 
-#### Step 3A.4: Fix Message Display Observer Integration
-**Duration**: 1 day  
-**Files**: `src/client/app.rs`, `src/client/connection_manager.rs`
-- [ ] **3A.4.1** Ensure ChatMessageObserver is properly registered
-- [ ] **3A.4.2** Verify observer calls Action::ReceiveMessage
-- [ ] **3A.4.3** Implement Action::ReceiveMessage handler in App
-- [ ] **3A.4.4** Connect received messages to UI display
-- [ ] **3A.4.5** Test end-to-end message flow
-- [ ] **3A.4.6** Commit: "Complete message observer integration"
+#### Step 3A.4: Debug Connection Drop During Message Send ✅ COMPLETED
+**Duration**: 0.5 days  
+**Files**: `src/client/connection_manager.rs`, `src/client/app.rs`
+- [x] **3A.4.1** Add debug logging to ConnectionManager.send_message()
+- [x] **3A.4.2** Add debug logging to authentication check
+- [x] **3A.4.3** Add debug logging to transport.send() call
+- [x] **3A.4.4** Test and identify where connection drop occurs
+- [x] **3A.4.5** Commit: "Add debugging for connection drop during message send"
+
+**ISSUE FOUND**: Enter key now triggers Action::SendMessage but ConnectionManager.send_message() causes immediate client disconnect while server remains connected.
 
 ### Phase 3B: Legacy Message Function Elimination (Week 2)
 
