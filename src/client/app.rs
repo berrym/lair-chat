@@ -1080,16 +1080,8 @@ impl App {
 
     /// Modern message sending using ConnectionManager only (synchronous version)
     fn handle_modern_send_message_sync(&mut self, message: String) {
-        // Format message with username to avoid confusion
-        let formatted_message = if self.auth_state.is_authenticated() {
-            if let Some(username) = self.auth_state.profile().map(|p| p.username.clone()) {
-                format!("{}: {}", username, message.clone())
-            } else {
-                message.clone()
-            }
-        } else {
-            message.clone()
-        };
+        // Send raw message content - server will format it with username
+        let message_to_send = message.clone();
 
         // Get connection status from ConnectionManager
         let connection_status = if let Ok(manager) = self.connection_manager.try_lock() {
@@ -1108,7 +1100,7 @@ impl App {
             let connection_manager = Arc::clone(&self.connection_manager);
             let action_tx = self.action_tx.clone();
             let message_clone = message.clone();
-            let formatted_message_clone = formatted_message.clone();
+            let message_to_send_clone = message_to_send.clone();
 
             tokio::spawn(async move {
                 tracing::info!("DEBUG: Starting async message send task");
@@ -1132,7 +1124,7 @@ impl App {
                     tracing::info!("DEBUG: Pre-send connection status: {:?}", pre_send_status);
 
                     tracing::info!("DEBUG: Calling send_message...");
-                    let result = manager.send_message(formatted_message_clone).await;
+                    let result = manager.send_message(message_to_send_clone).await;
 
                     tracing::info!("DEBUG: send_message call completed, checking status...");
                     let post_send_status = manager.get_status().await;
