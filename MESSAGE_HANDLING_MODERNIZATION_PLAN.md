@@ -53,14 +53,16 @@ This plan details the step-by-step modernization of the message handling system,
 - ❓ **ISSUE FOUND**: ReceiveMessage handler may not be properly displaying sent messages
 - ❓ **SUSPECTED**: Message display logic in home component might have conditions preventing display
 
-#### Step 3A.2: Add Modern Message Action Handling
-**Duration**: 1 day  
-**Files**: `src/client/app.rs`, `src/client/action.rs`
-- [ ] **3A.2.1** Add `SendMessage(String)` action to Action enum if missing
-- [ ] **3A.2.2** Implement `handle_send_message_action` in App
-- [ ] **3A.2.3** Connect action to ConnectionManager::send_message()
-- [ ] **3A.2.4** Test compilation and basic action flow
-- [ ] **3A.2.5** Commit: "Add modern message sending action handling"
+#### Step 3A.2: Fix Message Display Logic ✅ COMPLETED
+**Duration**: 0.5 days  
+**Files**: `src/client/app.rs`
+- [x] **3A.2.1** Identify bug: ReceiveMessage handler excludes "You:" messages
+- [x] **3A.2.2** Fix condition to allow sent messages to display
+- [x] **3A.2.3** Remove exclusion of messages starting with "You:"
+- [x] **3A.2.4** Test compilation 
+- [x] **3A.2.5** Commit: "Fix message display logic for sent messages"
+
+**BUG FIXED**: ReceiveMessage handler was excluding messages starting with "You:" but sent messages are formatted as "You: {message}", causing sent messages to never display.
 
 #### Step 3A.3: Update Home Component Message Input
 **Duration**: 1 day  
@@ -215,7 +217,7 @@ This plan details the step-by-step modernization of the message handling system,
 
 ### Phase 3A Progress: Message Sending Modernization
 - [x] Step 3A.1: Analyze Current Message Flow (4/4 substeps) ✅ COMPLETED
-- [ ] Step 3A.2: Add Modern Message Action Handling (0/5 substeps)
+- [x] Step 3A.2: Fix Message Display Logic (5/5 substeps) ✅ COMPLETED
 - [ ] Step 3A.3: Update Home Component Message Input (0/5 substeps)  
 - [ ] Step 3A.4: Fix Message Display Observer Integration (0/6 substeps)
 
@@ -234,7 +236,7 @@ This plan details the step-by-step modernization of the message handling system,
 - [ ] Step 3D.2: Documentation and Release Preparation (0/5 substeps)
 
 **Total Steps**: 12 major steps, 69 substeps  
-**Current Progress**: 6% (4/69 substeps completed)  
+**Current Progress**: 13% (9/69 substeps completed)  
 **Target Completion**: 3 weeks
 
 ## Communication Plan

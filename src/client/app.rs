@@ -513,10 +513,8 @@ impl App {
 
                 // Make sure the message appears in the chat regardless of source
                 if !message.is_empty() && self.auth_state.is_authenticated() {
-                    // Only add to chat if it's not a system message and we're authenticated
-                    if !message.starts_with("You:")
-                        && !self.home_component.is_system_message(&message)
-                    {
+                    // Add all non-system messages to chat (including sent messages starting with "You:")
+                    if !self.home_component.is_system_message(&message) {
                         self.home_component
                             .add_message_to_room(message.clone(), false);
                     }
