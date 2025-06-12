@@ -740,10 +740,7 @@ impl Component for Home {
                     KeyCode::Char('f') => Action::ToggleFps,
                     KeyCode::Char('?') => Action::ToggleShowHelp,
                     KeyCode::Char('/') => {
-                        if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::DISCONNECTED {
-                            show_disconnection();
-                            return Ok(Some(Action::EnterInsert));
-                        }
+                        // Use modern connection status instead of legacy CLIENT_STATUS
                         Action::EnterInsert
                     }
                     KeyCode::F(2) => {
@@ -755,10 +752,6 @@ impl Component for Home {
                         Action::Update
                     }
                     KeyCode::Char('c') => {
-                        if CLIENT_STATUS.lock().unwrap().status == ConnectionStatus::CONNECTED {
-                            show_warning("Already connected to a server");
-                            return Ok(Some(Action::Update));
-                        }
                         show_info("Please use the authentication system to connect (restart the application)");
                         Action::Update
                     }
