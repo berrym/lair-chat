@@ -1119,7 +1119,7 @@ impl Component for Home {
                 .wrap(Wrap { trim: false })
                 .block(
                     Block::default()
-                        .title_top(Line::from("v0.5.1".white()).left_aligned())
+                        .title_top(Line::from("v0.5.2".white()).left_aligned())
                         .title_top(
                             Line::from(vec![Span::styled(
                                 "THE LAIR",
