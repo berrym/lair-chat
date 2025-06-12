@@ -4,7 +4,7 @@
 
 This document provides a comprehensive, step-by-step action plan for completing the legacy code migration to the modern ConnectionManager architecture. Each step is designed to be completed, tested, and committed independently.
 
-**Current Status**: 34% Complete (14/41 steps)
+**Current Status**: 49% Complete (20/41 steps)
 **Target**: v0.6.0 release with full modern architecture
 **Timeline**: 2-4 weeks
 
@@ -166,10 +166,20 @@ This document provides a comprehensive, step-by-step action plan for completing 
 **Estimated Time**: 2 days
 **Files**: `src/client/app.rs`
 
-- [ ] **2.2.1** Replace `handle_register_with_server` function (lines 1023-1046)
-- [ ] **2.2.2** Remove `register_compat` function
-- [ ] **2.2.3** Test registration flow
-- [ ] **2.2.4** Commit: "Implement modern registration flow"
+- [x] **2.2.1** Replace `handle_register_with_server` function (lines 1023-1046)
+- [x] **2.2.2** Remove `register_compat` function
+- [x] **2.2.3** Test registration flow
+- [x] **2.2.4** Commit: "Implement modern registration flow"
+
+#### Step 2.3: Fix Multi-User Authentication Conflicts
+**Estimated Time**: 1 day
+**Files**: `src/client/auth/storage/mod.rs`, `src/client/auth/manager.rs`
+
+- [x] **2.3.1** Fix shared authentication file conflicts
+- [x] **2.3.2** Implement process-specific auth storage
+- [x] **2.3.3** Remove overly restrictive "Already authenticated" checks
+- [x] **2.3.4** Test multiple concurrent user authentication
+- [x] **2.3.5** Commit: "Fix multi-user authentication conflicts"
 
 ### Phase 3: UI Component Migration (Week 2-3)
 
@@ -388,7 +398,8 @@ Use this checklist to track progress:
 
 ### Phase 2 Progress: Authentication Migration  
 - [x] Step 2.1: Create Modern Authentication Flow (4/4 substeps)
-- [ ] Step 2.2: Replace Registration Flow (0/4 substeps)
+- [x] Step 2.2: Replace Registration Flow (4/4 substeps) - COMPLETED
+- [x] Step 2.3: Fix Multi-User Authentication Conflicts (5/5 substeps) - COMPLETED
 
 ### Phase 3 Progress: UI Component Migration
 - [ ] Step 3.1: Migrate Home Component (0/4 substeps)
@@ -403,7 +414,7 @@ Use this checklist to track progress:
 - [ ] Step 5.1: End-to-End Testing (0/7 substeps)
 - [ ] Step 5.2: Documentation and Release Preparation (0/4 substeps)
 
-**Overall Progress: 14/41 steps completed (34%)**
+**Overall Progress: 20/41 steps completed (49%)**
 
 ---
 

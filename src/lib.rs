@@ -1,5 +1,5 @@
 //! Lair-Chat Library
-//! 
+//!
 //! This is the main library crate that exposes all client functionality
 //! for use by binaries, tests, and other consumers.
 
@@ -7,7 +7,7 @@
 #[path = "client/action.rs"]
 pub mod action;
 
-#[path = "client/aes_gcm_encryption.rs"] 
+#[path = "client/aes_gcm_encryption.rs"]
 pub mod aes_gcm_encryption;
 
 #[path = "client/app.rs"]
@@ -37,6 +37,9 @@ pub mod connection_manager;
 #[path = "client/encryption.rs"]
 pub mod encryption;
 
+#[path = "client/encrypted_transport.rs"]
+pub mod encrypted_transport;
+
 #[path = "client/errors.rs"]
 pub mod errors;
 
@@ -49,6 +52,12 @@ pub mod logging;
 #[path = "client/migration_facade.rs"]
 pub mod migration_facade;
 
+#[path = "client/server_compatible_encryption.rs"]
+pub mod server_compatible_encryption;
+
+#[path = "client/simple_transport.rs"]
+pub mod simple_transport;
+
 #[path = "client/tcp_transport.rs"]
 pub mod tcp_transport;
 
@@ -58,29 +67,12 @@ pub mod transport;
 #[path = "client/tui.rs"]
 pub mod tui;
 
-
-
 // Group client modules under a client namespace for cleaner imports
 pub mod client {
     pub use super::{
-        action::*,
-        aes_gcm_encryption::*,
-        app::*,
-        auth::*,
-        chat::*,
-        cli::*,
-        compatibility_layer::*,
-        components::*,
-        config::*,
-        connection_manager::*,
-        encryption::*,
-        errors::*,
-        history::*,
-        logging::*,
-        migration_facade::*,
-        tcp_transport::*,
-        transport::*,
-        tui::*,
-
+        action::*, aes_gcm_encryption::*, app::*, auth::*, chat::*, cli::*, compatibility_layer::*,
+        components::*, config::*, connection_manager::*, encrypted_transport::*, encryption::*,
+        errors::*, history::*, logging::*, migration_facade::*, server_compatible_encryption::*,
+        simple_transport::*, tcp_transport::*, transport::*, tui::*,
     };
 }

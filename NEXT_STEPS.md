@@ -9,10 +9,10 @@ With the successful completion of the transport refactoring project, which intro
 Building on the successful completion of Phase 1 and current modernization efforts:
 
 1. **Complete Legacy Code Migration** (🔄 Active - Priority 1)
-   - 🔄 Finish ConnectionManager async integration
-     - Complete authentication flow using ConnectionManager
-     - Remove remaining global state access
-     - Implement proper message observer patterns
+   - ✅ Finish ConnectionManager async integration
+     - ✅ Complete authentication flow using ConnectionManager
+     - ✅ Fix multi-user authentication conflicts
+     - 🔄 Implement proper message observer patterns
    - 🔄 Remove compatibility layer usage in App
    - 📅 Target: v0.6.0 release with full modern architecture
 
@@ -29,9 +29,11 @@ Building on the successful completion of Phase 1 and current modernization effor
 
 **Migration Status Summary:**
 - ✅ Deprecation warnings: 100% complete
-- ✅ Modern architecture: 75% integrated
-- 🔄 Legacy removal: 25% complete
-- 📅 Target completion: v0.6.0 (4 weeks)
+- ✅ Modern architecture: 85% integrated
+- ✅ Authentication flow: 100% complete
+- 🔄 Message handling: 25% complete
+- 🔄 Legacy removal: 35% complete
+- 📅 Target completion: v0.6.0 (3 weeks)
 
 These tasks complete the architectural modernization foundation for all future enhancements.
 
@@ -265,9 +267,10 @@ Keeping the codebase healthy:
 - Comprehensive deprecation warnings guide developers to modern alternatives
 
 **Critical Path to v0.6.0:**
-1. Complete async ConnectionManager integration (2 weeks)
-2. Remove compatibility layer dependencies (1 week)
-3. Final testing and validation (1 week)
+1. ✅ Complete async ConnectionManager integration
+2. 🔄 Fix message sending in input mode (1 week)
+3. Remove compatibility layer dependencies (1 week) 
+4. Final testing and validation (1 week)
 
 ## Conclusion
 

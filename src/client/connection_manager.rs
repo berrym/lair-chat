@@ -6,6 +6,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::auth::storage::{FileTokenStorage, TokenStorage};
 use crate::auth::{AuthError, AuthManager, AuthResult, AuthState, Credentials};
+use crate::encrypted_transport::EncryptedTransport;
 use crate::transport::{
     ConnectionConfig, ConnectionObserver, ConnectionStatus, EncryptionService, Message,
     MessageStore, Transport, TransportError,
@@ -183,11 +184,27 @@ impl ConnectionManager {
             transport_guard.connect().await?;
         }
 
-        // Initialize authentication if transport is available
+        // Perform key exchange handshake if encryption is configured
+        let handshake_complete =
+            if let (Some(transport), Some(encryption)) = (&self.transport, &self.encryption) {
+                let mut encryption_guard = encryption.lock().await;
+                let mut transport_guard = transport.lock().await;
+                encryption_guard
+                    .perform_handshake(&mut **transport_guard)
+                    .await?;
+                self.notify_message(Message::system_message(
+                    "Key exchange completed".to_string(),
+                ));
+                true
+            } else {
+                false
+            };
+
+        // Initialize authentication after handshake is complete
         if let Some(transport) = &self.transport {
             if self.auth_manager.is_none() {
                 let token_storage = match FileTokenStorage::new() {
-                    Ok(storage) => Box::new(storage),
+                    Ok(storage) => storage,
                     Err(_) => {
                         return Err(crate::transport::TransportError::ConnectionError(
                             std::io::Error::new(
@@ -197,8 +214,25 @@ impl ConnectionManager {
                         ))
                     }
                 };
-                let auth_manager = AuthManager::new_without_transport(token_storage.clone());
-                self.token_storage = Some(Arc::new(token_storage));
+
+                // Create the transport for AuthManager
+                let auth_transport = if handshake_complete && self.encryption.is_some() {
+                    // If we have encryption and handshake is complete, use EncryptedTransport
+                    let encryption = self.encryption.as_ref().unwrap().clone();
+                    let encrypted_transport =
+                        EncryptedTransport::new(transport.clone(), encryption);
+                    Arc::new(Mutex::new(
+                        Box::new(encrypted_transport) as Box<dyn Transport + Send + Sync>
+                    ))
+                } else {
+                    // Use raw transport if no encryption
+                    transport.clone()
+                };
+
+                // Create AuthManager with the appropriate transport
+                let auth_manager =
+                    AuthManager::new(auth_transport, Box::new(token_storage.clone()));
+                self.token_storage = Some(Arc::new(Box::new(token_storage)));
                 self.auth_manager = Some(Arc::new(auth_manager));
 
                 // Try to restore previous session
@@ -208,18 +242,6 @@ impl ConnectionManager {
                     }
                 }
             }
-        }
-
-        // Perform key exchange handshake if encryption is configured
-        if let (Some(transport), Some(encryption)) = (&self.transport, &self.encryption) {
-            let mut encryption_guard = encryption.lock().await;
-            let mut transport_guard = transport.lock().await;
-            encryption_guard
-                .perform_handshake(&mut **transport_guard)
-                .await?;
-            self.notify_message(Message::system_message(
-                "Key exchange completed".to_string(),
-            ));
         }
 
         // Set status to connected

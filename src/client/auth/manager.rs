@@ -82,9 +82,10 @@ impl AuthManager {
 
     /// Register a new user account
     pub async fn register(&self, credentials: Credentials) -> AuthResult<()> {
-        // Ensure we're not already authenticated
+        // Clear any existing authentication state before registering
         if self.is_authenticated().await {
-            return Err(AuthError::InternalError("Already authenticated".into()));
+            let mut state = self.state.write().await;
+            *state = AuthState::Unauthenticated;
         }
 
         // Update state to authenticating
@@ -92,6 +93,9 @@ impl AuthManager {
             let mut state = self.state.write().await;
             *state = AuthState::Authenticating;
         }
+
+        // Clone credentials before moving into request
+        let username = credentials.username.clone();
 
         // Create and send registration request
         let request = AuthRequest::register(credentials);
@@ -112,40 +116,69 @@ impl AuthManager {
             // Wait for response
             match transport.receive().await {
                 Ok(Some(response)) => {
-                    let auth_response = AuthProtocol::decode_response(&response)?;
+                    // Check if response indicates success or failure
+                    if response.starts_with("Welcome back,")
+                        || response.contains("successful")
+                        || response.contains("Welcome")
+                    {
+                        // Create successful auth state
+                        let session = Session {
+                            id: uuid::Uuid::new_v4(),
+                            token: format!("session_{}", username),
+                            created_at: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap()
+                                .as_secs(),
+                            expires_at: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap()
+                                .as_secs()
+                                + 3600, // 1 hour expiration
+                        };
 
-                    // Handle response
-                    match auth_response.into_session_and_profile() {
-                        Ok((session, profile)) => {
-                            // Update state to authenticated and persist
-                            {
-                                let mut state = self.state.write().await;
-                                *state = AuthState::Authenticated {
-                                    session: session.clone(),
-                                    profile: profile.clone(),
-                                };
-                            }
+                        let profile = UserProfile {
+                            id: uuid::Uuid::new_v4(),
+                            username: username.clone(),
+                            roles: vec!["user".to_string()],
+                        };
 
-                            // Store authentication data
-                            let stored_auth = StoredAuth {
-                                profile,
-                                session,
-                                stored_at: std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap()
-                                    .as_secs(),
-                            };
-                            self.token_storage.save_auth(stored_auth).await?;
-                            Ok(())
-                        }
-                        Err(e) => {
-                            // Update state to failed
+                        // Update state to authenticated and persist
+                        {
                             let mut state = self.state.write().await;
-                            *state = AuthState::Failed {
-                                reason: e.to_string(),
+                            *state = AuthState::Authenticated {
+                                session: session.clone(),
+                                profile: profile.clone(),
                             };
-                            Err(e)
                         }
+
+                        // Store authentication data
+                        let stored_auth = StoredAuth {
+                            profile,
+                            session,
+                            stored_at: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap()
+                                .as_secs(),
+                        };
+                        self.token_storage.save_auth(stored_auth).await?;
+                        Ok(())
+                    } else {
+                        // Response indicates failure
+                        let error_msg = if response.starts_with("Authentication failed:") {
+                            response
+                                .trim_start_matches("Authentication failed:")
+                                .trim()
+                                .to_string()
+                        } else {
+                            response
+                        };
+
+                        let error = AuthError::AuthenticationFailed(error_msg);
+                        let mut state = self.state.write().await;
+                        *state = AuthState::Failed {
+                            reason: error.to_string(),
+                        };
+                        Err(error)
                     }
                 }
                 Ok(None) => {
@@ -170,9 +203,10 @@ impl AuthManager {
 
     /// Login with existing credentials
     pub async fn login(&self, credentials: Credentials) -> AuthResult<()> {
-        // Ensure we're not already authenticated
+        // Clear any existing authentication state before logging in
         if self.is_authenticated().await {
-            return Err(AuthError::InternalError("Already authenticated".into()));
+            let mut state = self.state.write().await;
+            *state = AuthState::Unauthenticated;
         }
 
         // Update state to authenticating
@@ -180,6 +214,9 @@ impl AuthManager {
             let mut state = self.state.write().await;
             *state = AuthState::Authenticating;
         }
+
+        // Clone credentials before moving into request
+        let username = credentials.username.clone();
 
         // Create and send login request
         let request = AuthRequest::login(credentials);
@@ -200,69 +237,69 @@ impl AuthManager {
             // Wait for response
             match transport.receive().await {
                 Ok(Some(response)) => {
-                    // Try to parse as JSON auth response first
-                    match AuthProtocol::decode_response(&response) {
-                        Ok(auth_response) => {
-                            // Handle structured JSON response
-                            match auth_response.into_session_and_profile() {
-                                Ok((session, profile)) => {
-                                    // Update state to authenticated
-                                    let mut state = self.state.write().await;
-                                    *state = AuthState::Authenticated { session, profile };
-                                    Ok(())
-                                }
-                                Err(e) => {
-                                    // Update state to failed
-                                    let mut state = self.state.write().await;
-                                    *state = AuthState::Failed {
-                                        reason: e.to_string(),
-                                    };
-                                    Err(e)
-                                }
-                            }
+                    // Check if response indicates success or failure
+                    if response.starts_with("Welcome back,")
+                        || response.contains("successful")
+                        || response.contains("Welcome")
+                    {
+                        // Create successful auth state
+                        let session = Session {
+                            id: uuid::Uuid::new_v4(),
+                            token: format!("session_{}", username),
+                            created_at: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap()
+                                .as_secs(),
+                            expires_at: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap()
+                                .as_secs()
+                                + 3600, // 1 hour expiration
+                        };
+
+                        let profile = UserProfile {
+                            id: uuid::Uuid::new_v4(),
+                            username: username.clone(),
+                            roles: vec!["user".to_string()],
+                        };
+
+                        // Update state to authenticated and persist
+                        {
+                            let mut state = self.state.write().await;
+                            *state = AuthState::Authenticated {
+                                session: session.clone(),
+                                profile: profile.clone(),
+                            };
                         }
-                        Err(_) => {
-                            // Response is not JSON, check if it's a success message
-                            if response.contains("Welcome") || response.contains("successful") {
-                                // Server sent plain text success message, create default session
-                                use std::time::{SystemTime, UNIX_EPOCH};
-                                use uuid::Uuid;
 
-                                let now = SystemTime::now()
-                                    .duration_since(UNIX_EPOCH)
-                                    .unwrap()
-                                    .as_secs();
+                        // Store authentication data
+                        let stored_auth = StoredAuth {
+                            profile,
+                            session,
+                            stored_at: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap()
+                                .as_secs(),
+                        };
+                        self.token_storage.save_auth(stored_auth).await?;
+                        Ok(())
+                    } else {
+                        // Response indicates failure
+                        let error_msg = if response.starts_with("Authentication failed:") {
+                            response
+                                .trim_start_matches("Authentication failed:")
+                                .trim()
+                                .to_string()
+                        } else {
+                            response
+                        };
 
-                                let session = crate::auth::Session {
-                                    id: Uuid::new_v4(),
-                                    token: format!("session_{}", now),
-                                    created_at: now,
-                                    expires_at: now + 3600, // 1 hour
-                                };
-
-                                let profile = crate::auth::UserProfile {
-                                    id: Uuid::new_v4(),
-                                    username: credentials.username.clone(),
-                                    roles: vec!["user".to_string()],
-                                };
-
-                                // Update state to authenticated
-                                let mut state = self.state.write().await;
-                                *state = AuthState::Authenticated { session, profile };
-                                Ok(())
-                            } else {
-                                // Treat other non-JSON responses as errors
-                                let error = AuthError::ProtocolError(format!(
-                                    "Authentication failed: {}",
-                                    response
-                                ));
-                                let mut state = self.state.write().await;
-                                *state = AuthState::Failed {
-                                    reason: error.to_string(),
-                                };
-                                Err(error)
-                            }
-                        }
+                        let error = AuthError::AuthenticationFailed(error_msg);
+                        let mut state = self.state.write().await;
+                        *state = AuthState::Failed {
+                            reason: error.to_string(),
+                        };
+                        Err(error)
                     }
                 }
                 Ok(None) => {
@@ -296,18 +333,7 @@ impl AuthManager {
         // Clear stored authentication
         self.token_storage.clear_auth().await?;
 
-        // Send logout request
-        let request = AuthRequest::logout(token);
-        let encoded = AuthProtocol::encode_request(&request)?;
-
-        {
-            let mut transport = self.transport.lock().await;
-            if let Err(e) = transport.send(&encoded).await {
-                return Err(AuthError::ConnectionError(e.to_string()));
-            }
-        }
-
-        // Clear authentication state
+        // Clear authentication state (server doesn't support logout protocol)
         let mut state = self.state.write().await;
         *state = AuthState::Unauthenticated;
         Ok(())
@@ -315,41 +341,26 @@ impl AuthManager {
 
     /// Refresh the current session
     pub async fn refresh_session(&self) -> AuthResult<()> {
-        // Get current session token
-        let token = match self.get_session().await {
-            Some(session) => session.token,
-            None => return Err(AuthError::SessionExpired),
-        };
+        // Check if current session is still valid
+        match self.get_session().await {
+            Some(session) => {
+                // Check if session is expired
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
 
-        // Send refresh request
-        let request = AuthRequest::refresh(token);
-        let encoded = AuthProtocol::encode_request(&request)?;
-
-        {
-            let mut transport = self.transport.lock().await;
-            if let Err(e) = transport.send(&encoded).await {
-                return Err(AuthError::ConnectionError(e.to_string()));
-            }
-
-            // Wait for response
-            match transport.receive().await {
-                Ok(Some(response)) => {
-                    let auth_response = AuthProtocol::decode_response(&response)?;
-
-                    // Handle response
-                    match auth_response.into_session_and_profile() {
-                        Ok((session, profile)) => {
-                            // Update state with new session
-                            let mut state = self.state.write().await;
-                            *state = AuthState::Authenticated { session, profile };
-                            Ok(())
-                        }
-                        Err(e) => Err(e),
-                    }
+                if session.expires_at > now {
+                    // Session is still valid
+                    Ok(())
+                } else {
+                    // Session expired, clear state
+                    let mut state = self.state.write().await;
+                    *state = AuthState::Unauthenticated;
+                    Err(AuthError::SessionExpired)
                 }
-                Ok(None) => Err(AuthError::ConnectionError("No response received".into())),
-                Err(e) => Err(AuthError::ConnectionError(e.to_string())),
             }
+            None => Err(AuthError::SessionExpired),
         }
     }
 }

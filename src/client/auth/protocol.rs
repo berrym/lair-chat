@@ -1,149 +1,88 @@
 //! Client-side authentication protocol handler for Lair-Chat
 //! Handles authentication message serialization and communication.
 
+use super::types::{AuthError, AuthResult, Credentials, DeviceInfo, Session, UserProfile};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use super::types::{AuthError, AuthResult, Credentials, DeviceInfo, Session, UserProfile};
 
-/// Authentication request message
+/// Authentication request message (server-compatible format)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum AuthRequest {
-    /// Register a new user account
-    #[serde(rename = "register")]
-    Register {
-        username: String,
-        password: String,
-        #[serde(default)]
-        device: DeviceInfo,
-    },
-
-    /// Login with existing credentials
-    #[serde(rename = "login")]
-    Login {
-        username: String,
-        password: String,
-        #[serde(default)]
-        device: DeviceInfo,
-    },
-
-    /// Logout request
-    #[serde(rename = "logout")]
-    Logout {
-        token: String,
-    },
-
-    /// Refresh session token
-    #[serde(rename = "refresh")]
-    RefreshToken {
-        token: String,
-    },
+pub struct AuthRequest {
+    pub username: String,
+    pub password: String,
+    pub fingerprint: String,
+    /// Whether this is a registration request
+    pub is_registration: bool,
 }
 
 impl AuthRequest {
     /// Create a login request
     pub fn login(credentials: Credentials) -> Self {
-        Self::Login {
+        Self {
             username: credentials.username,
             password: credentials.password,
-            device: DeviceInfo::current(),
+            fingerprint: DeviceInfo::current().fingerprint,
+            is_registration: false,
         }
     }
 
     /// Create a registration request
     pub fn register(credentials: Credentials) -> Self {
-        Self::Register {
+        Self {
             username: credentials.username,
             password: credentials.password,
-            device: DeviceInfo::current(),
+            fingerprint: DeviceInfo::current().fingerprint,
+            is_registration: true,
         }
-    }
-
-    /// Create a logout request
-    pub fn logout(token: String) -> Self {
-        Self::Logout { token }
-    }
-
-    /// Create a token refresh request
-    pub fn refresh(token: String) -> Self {
-        Self::RefreshToken { token }
     }
 }
 
-/// Authentication response message
+/// Authentication response message (server-compatible format)
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "type")]
-pub enum AuthResponse {
-    /// Successful authentication
-    #[serde(rename = "success")]
-    Success {
-        user_id: Uuid,
-        username: String,
-        roles: Vec<String>,
-        token: String,
-        expires_at: u64,
-    },
+pub struct AuthResponse {
+    pub user: AuthUser,
+    pub session: AuthSession,
+}
 
-    /// Authentication failed
-    #[serde(rename = "error")]
-    Error {
-        code: String,
-        message: String,
-        #[serde(default)]
-        details: Option<String>,
-    },
+/// User information in auth response
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthUser {
+    pub id: Uuid,
+    pub username: String,
+    pub roles: Vec<String>,
+    pub created_at: u64,
+    pub last_login: u64,
+    pub status: String,
+}
 
-    /// Additional authentication step required
-    #[serde(rename = "challenge")]
-    Challenge {
-        challenge_type: String,
-        challenge_data: String,
-    },
+/// Session information in auth response
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthSession {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub created_at: u64,
+    pub expires_at: u64,
+    pub token: String,
+    pub fingerprint: String,
 }
 
 impl AuthResponse {
-    /// Convert successful response into session and profile
+    /// Convert the authentication response into session and profile
     pub fn into_session_and_profile(self) -> AuthResult<(Session, UserProfile)> {
-        match self {
-            AuthResponse::Success {
-                user_id,
-                username,
-                roles,
-                token,
-                expires_at,
-            } => {
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
+        let session = Session {
+            id: self.session.id,
+            token: self.session.token,
+            created_at: self.session.created_at,
+            expires_at: self.session.expires_at,
+        };
 
-                let session = Session {
-                    id: Uuid::new_v4(),
-                    token,
-                    created_at: now,
-                    expires_at,
-                };
+        let profile = UserProfile {
+            id: self.user.id,
+            username: self.user.username,
+            roles: self.user.roles,
+        };
 
-                let profile = UserProfile {
-                    id: user_id,
-                    username,
-                    roles,
-                };
-
-                Ok((session, profile))
-            }
-            AuthResponse::Error { code, message, details } => {
-                let error_msg = if let Some(detail) = details {
-                    format!("{}: {} ({})", code, message, detail)
-                } else {
-                    format!("{}: {}", code, message)
-                };
-                Err(AuthError::AuthenticationFailed(error_msg))
-            }
-            AuthResponse::Challenge { .. } => {
-                Err(AuthError::ProtocolError("Unexpected challenge response".into()))
-            }
-        }
+        Ok((session, profile))
     }
 }
 
@@ -153,16 +92,14 @@ pub struct AuthProtocol;
 impl AuthProtocol {
     /// Encode an authentication request
     pub fn encode_request(request: &AuthRequest) -> AuthResult<String> {
-        serde_json::to_string(request).map_err(|e| {
-            AuthError::ProtocolError(format!("Failed to encode request: {}", e))
-        })
+        serde_json::to_string(request)
+            .map_err(|e| AuthError::ProtocolError(format!("Failed to encode request: {}", e)))
     }
 
     /// Decode an authentication response
     pub fn decode_response(response: &str) -> AuthResult<AuthResponse> {
-        serde_json::from_str(response).map_err(|e| {
-            AuthError::ProtocolError(format!("Failed to decode response: {}", e))
-        })
+        serde_json::from_str(response)
+            .map_err(|e| AuthError::ProtocolError(format!("Failed to decode response: {}", e)))
     }
 }
 
@@ -171,16 +108,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_request_encoding() {
+    fn test_register_request_encoding() {
         let credentials = Credentials {
-            username: "testuser".to_string(),
-            password: "password123".to_string(),
+            username: "newuser".to_string(),
+            password: "newpassword123".to_string(),
         };
 
-        let login_request = AuthRequest::login(credentials.clone());
-        let encoded = AuthProtocol::encode_request(&login_request).unwrap();
-        
-        assert!(encoded.contains(r#""type":"login""#));
+        let register_request = AuthRequest::register(credentials.clone());
+        let encoded = AuthProtocol::encode_request(&register_request).unwrap();
+
+        assert!(encoded.contains(r#""is_registration":true"#));
         assert!(encoded.contains(&credentials.username));
         assert!(encoded.contains(&credentials.password));
     }
@@ -188,34 +125,28 @@ mod tests {
     #[test]
     fn test_response_decoding() {
         let success_json = r#"{
-            "type": "success",
-            "user_id": "123e4567-e89b-12d3-a456-426614174000",
-            "username": "testuser",
-            "roles": ["user"],
-            "token": "session123",
-            "expires_at": 1234567890
+            "user": {
+                "id": "01234567-89ab-cdef-0123-456789abcdef",
+                "username": "testuser",
+                "roles": ["user"],
+                "created_at": 1234567890,
+                "last_login": 1234567890,
+                "status": "Active"
+            },
+            "session": {
+                "id": "01234567-89ab-cdef-0123-456789abcdef",
+                "user_id": "01234567-89ab-cdef-0123-456789abcdef",
+                "created_at": 1234567890,
+                "expires_at": 1234567890,
+                "token": "test_token_123",
+                "fingerprint": "test_fingerprint"
+            }
         }"#;
 
         let response = AuthProtocol::decode_response(success_json).unwrap();
         let (session, profile) = response.into_session_and_profile().unwrap();
 
         assert_eq!(profile.username, "testuser");
-        assert_eq!(session.token, "session123");
-    }
-
-    #[test]
-    fn test_error_response() {
-        let error_json = r#"{
-            "type": "error",
-            "code": "AUTH001",
-            "message": "Invalid credentials",
-            "details": "Username not found"
-        }"#;
-
-        let response = AuthProtocol::decode_response(error_json).unwrap();
-        let result = response.into_session_and_profile();
-        
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), AuthError::AuthenticationFailed(_)));
+        assert_eq!(session.token, "test_token_123");
     }
 }

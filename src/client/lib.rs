@@ -4,6 +4,7 @@
 pub mod action;
 pub mod aes_gcm_encryption;
 pub mod app;
+pub mod auth;
 pub mod cli;
 pub mod compatibility_layer;
 pub mod components;
@@ -14,7 +15,8 @@ pub mod errors;
 pub mod history;
 pub mod logging;
 pub mod migration_facade;
+pub mod server_compatible_encryption;
+pub mod simple_transport;
 pub mod tcp_transport;
 pub mod transport;
 pub mod tui;
-pub mod auth;

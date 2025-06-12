@@ -17,8 +17,8 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 
 mod auth;
 use auth::{
-    AuthError, AuthRequest, AuthService, MemorySessionStorage,
-    MemoryUserStorage, Session, User, UserStorage,
+    AuthError, AuthRequest, AuthService, MemorySessionStorage, MemoryUserStorage, Session, User,
+    UserStorage,
 };
 
 /// Shorthand for the transmit half of the message channel.
@@ -43,8 +43,12 @@ impl SharedState {
     fn new() -> Self {
         let user_storage = Arc::new(MemoryUserStorage::new());
         let session_storage = Arc::new(MemorySessionStorage::new());
-        let auth_service = Arc::new(AuthService::new(user_storage.clone(), session_storage, None));
-        
+        let auth_service = Arc::new(AuthService::new(
+            user_storage.clone(),
+            session_storage,
+            None,
+        ));
+
         // Add default test users for easier testing
         tokio::spawn(async move {
             if let Ok(user1) = User::new("lusus".to_string(), "c2nt3ach") {
@@ -61,7 +65,7 @@ impl SharedState {
             }
             tracing::info!("Default test users created");
         });
-        
+
         SharedState {
             peers: HashMap::new(),
             auth_service,
@@ -209,9 +213,15 @@ async fn process(
     };
     // keep converting until key is a 32 byte u8 array
     let peer_public_key_vec = match peer_public_key_string {
-        Ok(key_vec) => BASE64_STANDARD.decode(key_vec).unwrap(),
-        _ => {
-            println!("Failed to convert peer public key to byte vec!");
+        Ok(key_vec) => match BASE64_STANDARD.decode(key_vec) {
+            Ok(decoded) => decoded,
+            Err(e) => {
+                tracing::error!("Failed to decode base64 public key from {}: {}", addr, e);
+                return Ok(());
+            }
+        },
+        Err(e) => {
+            tracing::error!("Failed to receive public key from {}: {}", addr, e);
             return Ok(());
         }
     };
@@ -248,27 +258,36 @@ async fn process(
     while user.is_none() {
         match transport.next().await {
             Some(Ok(message)) => {
-                let auth_request: AuthRequest = serde_json::from_str(
-                    &decrypt(shared_aes256_key.clone(), message)
-                ).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid auth request"))?;
+                let auth_request: AuthRequest =
+                    serde_json::from_str(&decrypt(shared_aes256_key.clone(), message)).map_err(
+                        |_| io::Error::new(io::ErrorKind::InvalidData, "Invalid auth request"),
+                    )?;
 
                 // Store username before auth_request is moved
                 let username = auth_request.username.clone();
-                
+
                 let state = state.lock().await;
                 let result = if auth_request.is_registration {
                     // Register the user first
-                    match state.auth_service.register(
-                        auth_request.username.clone(),
-                        &auth_request.password,
-                    ).await {
+                    match state
+                        .auth_service
+                        .register(auth_request.username.clone(), &auth_request.password)
+                        .await
+                    {
                         Ok(_registered_user) => {
-                            tracing::info!("User {} registered successfully, attempting auto-login", username);
+                            tracing::info!(
+                                "User {} registered successfully, attempting auto-login",
+                                username
+                            );
                             // After successful registration, automatically log them in
                             match state.auth_service.login(auth_request).await {
                                 Ok(response) => {
                                     session = Some(response.session.clone());
-                                    tracing::info!("Auto-login successful for {}, session: {}", response.user.username, response.session.token);
+                                    tracing::info!(
+                                        "Auto-login successful for {}, session: {}",
+                                        response.user.username,
+                                        response.session.token
+                                    );
                                     Ok(response.user)
                                 }
                                 Err(e) => {
@@ -286,7 +305,11 @@ async fn process(
                     match state.auth_service.login(auth_request).await {
                         Ok(response) => {
                             session = Some(response.session.clone());
-                            tracing::info!("Login successful for {}, session: {}", response.user.username, response.session.token);
+                            tracing::info!(
+                                "Login successful for {}, session: {}",
+                                response.user.username,
+                                response.session.token
+                            );
                             Ok(response.user)
                         }
                         Err(e) => {
@@ -376,7 +399,11 @@ async fn process(
         state.peers.remove(&addr);
 
         // Cleanup user session
-        tracing::info!("Cleaning up session for {} (token: {})", user.username, session.token);
+        tracing::info!(
+            "Cleaning up session for {} (token: {})",
+            user.username,
+            session.token
+        );
         if let Err(e) = state.auth_service.logout(&session.token).await {
             tracing::error!("Failed to cleanup session for {}: {}", user.username, e);
         } else {

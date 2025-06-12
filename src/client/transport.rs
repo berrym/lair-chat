@@ -315,15 +315,7 @@ async fn perform_key_exchange(
     let client_secret_key = EphemeralSecret::random();
     let client_public_key = PublicKey::from(&client_secret_key);
 
-    // start handshake by sending public key to server
-    sink.tx
-        .send(BASE64_STANDARD.encode(client_public_key))
-        .await
-        .map_err(|e| {
-            TransportError::KeyExchangeError(format!("Failed to send public key: {}", e))
-        })?;
-
-    // receive server public key
+    // receive server public key first (server sends first)
     let server_public_key_string = match stream.rx.next().await {
         Some(key_string) => key_string,
         None => {
@@ -332,6 +324,14 @@ async fn perform_key_exchange(
             ));
         }
     };
+
+    // then send our public key to server
+    sink.tx
+        .send(BASE64_STANDARD.encode(client_public_key))
+        .await
+        .map_err(|e| {
+            TransportError::KeyExchangeError(format!("Failed to send public key: {}", e))
+        })?;
 
     // keep converting until key is a 32 byte u8 array
     let server_public_key_vec = match server_public_key_string {
@@ -862,6 +862,10 @@ async fn client_io_select_loop_async(input: Input, mut stream: ClientStream, mut
 
     // Notify status change to CONNECTING before key exchange
     add_text_message("Performing encryption key exchange with server...".to_string());
+
+    // Clear any pending outgoing messages to prevent interference with key exchange
+    MESSAGES.lock().unwrap().outgoing.clear();
+    tracing::info!("DEBUG: Cleared outgoing message queue before key exchange");
 
     // perform key exchange with server
     let shared_aes256_key = match perform_key_exchange(&mut sink, &mut stream).await {

@@ -16,8 +16,11 @@ use crate::{
     },
     config::Config,
     connection_manager::ConnectionManager,
+    server_compatible_encryption::create_server_compatible_encryption,
     tcp_transport::TcpTransport,
-    transport::{ConnectionConfig, ConnectionObserver, Message, MessageStore},
+    transport::{
+        ConnectionConfig, ConnectionObserver, ConnectionStatus, Message, MessageStore, TuiObserver,
+    },
     tui::{Event, Tui},
 };
 use std::sync::Arc;
@@ -139,6 +142,11 @@ impl App {
         let mut connection_manager = ConnectionManager::new(connection_config.clone());
         let transport = Box::new(TcpTransport::new(connection_config));
         connection_manager.with_transport(transport);
+
+        // Configure server-compatible encryption for proper handshake
+        let encryption = create_server_compatible_encryption();
+        connection_manager.with_encryption(encryption);
+
         let connection_manager = Arc::new(tokio::sync::Mutex::new(connection_manager));
 
         Ok(Self {
@@ -335,28 +343,31 @@ impl App {
             // We use legacy methods here to maintain functionality while ConnectionManager
             // integration is completed. This will be replaced in Step 7-9.
             Action::Login(credentials) => {
-                // Use legacy method that actually connects to server and enables message flow
-                self.handle_login_with_server(credentials.clone(), "127.0.0.1:8080".to_string());
+                // Use ConnectionManager for login
+                self.handle_connection_manager_login(credentials.clone());
                 Ok(None)
             }
-
             Action::Register(credentials) => {
-                // Use legacy method that actually connects to server and enables message flow
-                self.handle_register_with_server(credentials.clone(), "127.0.0.1:8080".to_string());
+                // Use ConnectionManager for registration
+                self.handle_connection_manager_register(credentials.clone());
                 Ok(None)
             }
 
             Action::LoginWithServer(credentials, server_address) => {
-                // For backward compatibility, still support legacy method for now
-                #[allow(deprecated)]
-                self.handle_login_with_server(credentials.clone(), server_address.clone());
+                // Use ConnectionManager for login with specific server
+                self.handle_connection_manager_login_with_server(
+                    credentials.clone(),
+                    server_address.clone(),
+                );
                 Ok(None)
             }
 
             Action::RegisterWithServer(credentials, server_address) => {
-                // For backward compatibility, still support legacy method for now
-                #[allow(deprecated)]
-                self.handle_register_with_server(credentials.clone(), server_address.clone());
+                // Use ConnectionManager for registration with specific server
+                self.handle_connection_manager_register_with_server(
+                    credentials.clone(),
+                    server_address.clone(),
+                );
                 Ok(None)
             }
 
@@ -665,169 +676,407 @@ impl App {
             || message.contains("Error:")
     }
 
-    /// Modern authentication flow using ConnectionManager
-    fn handle_modern_login(&mut self, credentials: Credentials) {
+    /// Modern authentication flow using ConnectionManager with server-compatible encryption
+    fn handle_connection_manager_login(&mut self, credentials: Credentials) {
         let action_tx = self.action_tx.clone();
+        let connection_manager = Arc::clone(&self.connection_manager);
 
         // Set state to authenticating immediately
         self.auth_state = AuthState::Authenticating;
+        self.auth_status.update_state(self.auth_state.clone());
 
-        // Spawn async task for authentication
-        let connection_manager = Arc::clone(&self.connection_manager);
         tokio::spawn(async move {
-            // Get authentication manager if available
-            let manager = connection_manager.lock().await;
-            if let Some(_auth_state) = manager.get_auth_state().await {
-                // Authentication manager is available
-                tracing::info!("Authentication manager is available");
-            } else {
-                tracing::info!("No authentication manager configured");
-            }
-        });
-
-        let creds = credentials.clone();
-
-        // Spawn async task to handle real authentication
-        tokio::spawn(async move {
-            // For now, still use mock authentication but with realistic flow
-            // This will be replaced with real ConnectionManager auth in future iterations
-
-            // Step 1: Validate credentials
-            if creds.username.is_empty() || creds.password.is_empty() {
+            // Validate credentials
+            if credentials.username.is_empty() || credentials.password.is_empty() {
                 let _ = action_tx.send(Action::AuthenticationFailure(
                     "Username and password are required".to_string(),
                 ));
                 return;
             }
 
-            if creds.username.len() < 3 {
+            if credentials.username.len() < 3 {
                 let _ = action_tx.send(Action::AuthenticationFailure(
                     "Username must be at least 3 characters".to_string(),
                 ));
                 return;
             }
 
-            // Step 2: Simulate connection process
-            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+            // Connect using ConnectionManager with server-compatible encryption
+            {
+                let mut manager = connection_manager.lock().await;
+                match manager.connect().await {
+                    Ok(()) => {
+                        info!("Successfully connected to server using ConnectionManager");
+                    }
+                    Err(e) => {
+                        error!("ConnectionManager connection failed: {}", e);
+                        let detailed_error = format!("Connection failed: {}. This could be due to: (1) Server not running - start with 'cargo run --bin lair-chat-server', (2) Server starting up - wait a moment and retry, (3) Port already in use, (4) Firewall blocking connection.", e);
+                        let _ = action_tx.send(Action::AuthenticationFailure(detailed_error));
+                        return;
+                    }
+                }
+            }
 
-            // Step 3: Simulate authentication process
-            tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+            // Login using ConnectionManager
+            {
+                let manager = connection_manager.lock().await;
+                match manager.login(credentials.clone()).await {
+                    Ok(()) => {
+                        info!("Login successful for user: {}", credentials.username);
 
-            // Step 4: Simulate success - in real implementation this would be:
-            // 1. connection_manager.connect().await
-            // 2. auth_manager.login(credentials).await
-            // 3. Handle actual auth response
+                        // Create a successful auth state
+                        let auth_state = AuthState::Authenticated {
+                            profile: crate::auth::UserProfile {
+                                id: uuid::Uuid::new_v4(),
+                                username: credentials.username.clone(),
+                                roles: vec!["user".to_string()],
+                            },
+                            session: crate::auth::Session {
+                                id: uuid::Uuid::new_v4(),
+                                token: format!("session_{}", credentials.username),
+                                created_at: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs(),
+                                expires_at: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs()
+                                    + 3600, // 1 hour expiration
+                            },
+                        };
 
-            let result = Action::AuthenticationSuccess(AuthState::Authenticated {
-                profile: crate::auth::UserProfile {
-                    id: uuid::Uuid::new_v4(),
-                    username: creds.username.clone(),
-                    roles: vec!["user".to_string()],
-                },
-                session: crate::auth::Session {
-                    id: uuid::Uuid::new_v4(),
-                    token: format!("auth_token_{}", creds.username),
-                    created_at: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs(),
-                    expires_at: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs()
-                        + 3600, // 1 hour expiration
-                },
-            });
-
-            let _ = action_tx.send(result);
+                        let _ = action_tx.send(Action::AuthenticationSuccess(auth_state));
+                    }
+                    Err(e) => {
+                        error!("Login failed for {}: {}", credentials.username, e);
+                        let _ = action_tx.send(Action::AuthenticationFailure(format!(
+                            "Login failed: {}",
+                            e
+                        )));
+                    }
+                }
+            }
         });
     }
 
-    /// Modern registration flow using ConnectionManager
-    fn handle_modern_register(&mut self, credentials: Credentials) {
+    /// Modern registration flow using ConnectionManager with server-compatible encryption
+    fn handle_connection_manager_register(&mut self, credentials: Credentials) {
         let action_tx = self.action_tx.clone();
+        let connection_manager = Arc::clone(&self.connection_manager);
 
         // Set state to authenticating immediately
         self.auth_state = AuthState::Authenticating;
+        self.auth_status.update_state(self.auth_state.clone());
 
-        // Spawn async task for registration
-        let connection_manager = Arc::clone(&self.connection_manager);
         tokio::spawn(async move {
-            // Enable authentication on connection manager if not already enabled
-            let mut manager = connection_manager.lock().await;
-            manager.with_auth();
-        });
-
-        let creds = credentials.clone();
-
-        // Spawn async task to handle real registration
-        tokio::spawn(async move {
-            // For now, still use mock registration but with realistic flow
-            // This will be replaced with real ConnectionManager registration in future iterations
-
-            // Step 1: Validate registration requirements
-            if creds.username.is_empty() || creds.password.is_empty() {
+            // Validate credentials
+            if credentials.username.is_empty() || credentials.password.is_empty() {
                 let _ = action_tx.send(Action::AuthenticationFailure(
                     "Username and password are required".to_string(),
                 ));
                 return;
             }
 
-            if creds.username.len() < 3 {
+            if credentials.username.len() < 3 {
                 let _ = action_tx.send(Action::AuthenticationFailure(
                     "Username must be at least 3 characters".to_string(),
                 ));
                 return;
             }
 
-            if creds.password.len() < 6 {
+            if credentials.password.len() < 6 {
                 let _ = action_tx.send(Action::AuthenticationFailure(
                     "Password must be at least 6 characters".to_string(),
                 ));
                 return;
             }
 
-            // Step 2: Simulate connection process
-            tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+            // Connect using ConnectionManager with server-compatible encryption
+            {
+                let mut manager = connection_manager.lock().await;
+                match manager.connect().await {
+                    Ok(()) => {
+                        info!("Successfully connected to server using ConnectionManager");
+                    }
+                    Err(e) => {
+                        error!("ConnectionManager connection failed: {}", e);
+                        let detailed_error = format!("Connection failed: {}. This could be due to: (1) Server not running - start with 'cargo run --bin lair-chat-server', (2) Server starting up - wait a moment and retry, (3) Port already in use, (4) Firewall blocking connection.", e);
+                        let _ = action_tx.send(Action::AuthenticationFailure(detailed_error));
+                        return;
+                    }
+                }
+            }
 
-            // Step 3: Simulate registration process
-            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            // Register using ConnectionManager
+            {
+                let manager = connection_manager.lock().await;
+                match manager.register(credentials.clone()).await {
+                    Ok(()) => {
+                        info!("Registration successful for user: {}", credentials.username);
 
-            // Step 4: Simulate successful registration
-            // In real implementation this would be:
-            // 1. connection_manager.connect().await
-            // 2. connection_manager.register(credentials).await
-            // 3. Auto-login after registration
+                        // Send registration success notification
+                        let _ = action_tx
+                            .send(Action::RegistrationSuccess(credentials.username.clone()));
 
-            // Send registration success notification
-            let _ = action_tx.send(Action::RegistrationSuccess(creds.username.clone()));
+                        // Create a successful auth state for auto-login after registration
+                        let auth_state = AuthState::Authenticated {
+                            profile: crate::auth::UserProfile {
+                                id: uuid::Uuid::new_v4(),
+                                username: credentials.username.clone(),
+                                roles: vec!["user".to_string()],
+                            },
+                            session: crate::auth::Session {
+                                id: uuid::Uuid::new_v4(),
+                                token: format!("reg_session_{}", credentials.username),
+                                created_at: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs(),
+                                expires_at: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs()
+                                    + 3600, // 1 hour expiration
+                            },
+                        };
 
-            // Step 5: Small delay before auto-login
-            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+                        let _ = action_tx.send(Action::AuthenticationSuccess(auth_state));
+                    }
+                    Err(e) => {
+                        error!("Registration failed for {}: {}", credentials.username, e);
+                        let _ = action_tx.send(Action::AuthenticationFailure(format!(
+                            "Registration failed: {}",
+                            e
+                        )));
+                    }
+                }
+            }
+        });
+    }
 
-            // Step 6: Auto-login after successful registration
-            let auth_result = Action::AuthenticationSuccess(AuthState::Authenticated {
-                profile: crate::auth::UserProfile {
-                    id: uuid::Uuid::new_v4(),
-                    username: creds.username.clone(),
-                    roles: vec!["user".to_string()],
-                },
-                session: crate::auth::Session {
-                    id: uuid::Uuid::new_v4(),
-                    token: format!("reg_token_{}", creds.username),
-                    created_at: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs(),
-                    expires_at: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs()
-                        + 3600, // 1 hour expiration
-                },
-            });
+    /// Modern authentication flow using ConnectionManager with specific server address
+    fn handle_connection_manager_login_with_server(
+        &mut self,
+        credentials: Credentials,
+        server_address: String,
+    ) {
+        let action_tx = self.action_tx.clone();
+        let connection_manager = Arc::clone(&self.connection_manager);
 
-            let _ = action_tx.send(auth_result);
+        // Set state to authenticating immediately
+        self.auth_state = AuthState::Authenticating;
+        self.auth_status.update_state(self.auth_state.clone());
+
+        tokio::spawn(async move {
+            // Parse server address
+            let addr: std::net::SocketAddr = match server_address.parse() {
+                Ok(addr) => addr,
+                Err(_) => {
+                    let _ = action_tx.send(Action::AuthenticationFailure(format!(
+                        "Invalid server address: {}",
+                        server_address
+                    )));
+                    return;
+                }
+            };
+
+            // Update connection manager config
+            {
+                let mut manager = connection_manager.lock().await;
+                let config = crate::transport::ConnectionConfig::new(addr);
+                manager.update_config(config);
+            }
+
+            // Validate credentials
+            if credentials.username.is_empty() || credentials.password.is_empty() {
+                let _ = action_tx.send(Action::AuthenticationFailure(
+                    "Username and password are required".to_string(),
+                ));
+                return;
+            }
+
+            if credentials.username.len() < 3 {
+                let _ = action_tx.send(Action::AuthenticationFailure(
+                    "Username must be at least 3 characters".to_string(),
+                ));
+                return;
+            }
+
+            // Connect using ConnectionManager with server-compatible encryption
+            {
+                let mut manager = connection_manager.lock().await;
+                match manager.connect().await {
+                    Ok(()) => {
+                        info!("Successfully connected to server using ConnectionManager");
+                    }
+                    Err(e) => {
+                        error!("ConnectionManager connection failed: {}", e);
+                        let detailed_error = format!("Connection failed: {}. This could be due to: (1) Server not running - start with 'cargo run --bin lair-chat-server', (2) Server starting up - wait a moment and retry, (3) Port already in use, (4) Firewall blocking connection.", e);
+                        let _ = action_tx.send(Action::AuthenticationFailure(detailed_error));
+                        return;
+                    }
+                }
+            }
+
+            // Login using ConnectionManager
+            {
+                let manager = connection_manager.lock().await;
+                match manager.login(credentials.clone()).await {
+                    Ok(()) => {
+                        info!("Login successful for user: {}", credentials.username);
+
+                        // Create a successful auth state
+                        let auth_state = AuthState::Authenticated {
+                            profile: crate::auth::UserProfile {
+                                id: uuid::Uuid::new_v4(),
+                                username: credentials.username.clone(),
+                                roles: vec!["user".to_string()],
+                            },
+                            session: crate::auth::Session {
+                                id: uuid::Uuid::new_v4(),
+                                token: format!("session_{}", credentials.username),
+                                created_at: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs(),
+                                expires_at: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs()
+                                    + 3600, // 1 hour expiration
+                            },
+                        };
+
+                        let _ = action_tx.send(Action::AuthenticationSuccess(auth_state));
+                    }
+                    Err(e) => {
+                        error!("Login failed for {}: {}", credentials.username, e);
+                        let _ = action_tx.send(Action::AuthenticationFailure(format!(
+                            "Login failed: {}",
+                            e
+                        )));
+                    }
+                }
+            }
+        });
+    }
+
+    /// Modern registration flow using ConnectionManager with specific server address
+    fn handle_connection_manager_register_with_server(
+        &mut self,
+        credentials: Credentials,
+        server_address: String,
+    ) {
+        let action_tx = self.action_tx.clone();
+        let connection_manager = Arc::clone(&self.connection_manager);
+
+        // Set state to authenticating immediately
+        self.auth_state = AuthState::Authenticating;
+        self.auth_status.update_state(self.auth_state.clone());
+
+        tokio::spawn(async move {
+            // Parse server address
+            let addr: std::net::SocketAddr = match server_address.parse() {
+                Ok(addr) => addr,
+                Err(_) => {
+                    let _ = action_tx.send(Action::AuthenticationFailure(format!(
+                        "Invalid server address: {}",
+                        server_address
+                    )));
+                    return;
+                }
+            };
+
+            // Update connection manager config
+            {
+                let mut manager = connection_manager.lock().await;
+                let config = crate::transport::ConnectionConfig::new(addr);
+                manager.update_config(config);
+            }
+
+            // Validate credentials
+            if credentials.username.is_empty() || credentials.password.is_empty() {
+                let _ = action_tx.send(Action::AuthenticationFailure(
+                    "Username and password are required".to_string(),
+                ));
+                return;
+            }
+
+            if credentials.username.len() < 3 {
+                let _ = action_tx.send(Action::AuthenticationFailure(
+                    "Username must be at least 3 characters".to_string(),
+                ));
+                return;
+            }
+
+            if credentials.password.len() < 6 {
+                let _ = action_tx.send(Action::AuthenticationFailure(
+                    "Password must be at least 6 characters".to_string(),
+                ));
+                return;
+            }
+
+            // Connect using ConnectionManager with server-compatible encryption
+            {
+                let mut manager = connection_manager.lock().await;
+                match manager.connect().await {
+                    Ok(()) => {
+                        info!("Successfully connected to server using ConnectionManager");
+                    }
+                    Err(e) => {
+                        error!("ConnectionManager connection failed: {}", e);
+                        let detailed_error = format!("Connection failed: {}. This could be due to: (1) Server not running - start with 'cargo run --bin lair-chat-server', (2) Server starting up - wait a moment and retry, (3) Port already in use, (4) Firewall blocking connection.", e);
+                        let _ = action_tx.send(Action::AuthenticationFailure(detailed_error));
+                        return;
+                    }
+                }
+            }
+
+            // Register using ConnectionManager
+            {
+                let manager = connection_manager.lock().await;
+                match manager.register(credentials.clone()).await {
+                    Ok(()) => {
+                        info!("Registration successful for user: {}", credentials.username);
+
+                        // Send registration success notification
+                        let _ = action_tx
+                            .send(Action::RegistrationSuccess(credentials.username.clone()));
+
+                        // Create a successful auth state for auto-login after registration
+                        let auth_state = AuthState::Authenticated {
+                            profile: crate::auth::UserProfile {
+                                id: uuid::Uuid::new_v4(),
+                                username: credentials.username.clone(),
+                                roles: vec!["user".to_string()],
+                            },
+                            session: crate::auth::Session {
+                                id: uuid::Uuid::new_v4(),
+                                token: format!("reg_session_{}", credentials.username),
+                                created_at: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs(),
+                                expires_at: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs()
+                                    + 3600, // 1 hour expiration
+                            },
+                        };
+
+                        let _ = action_tx.send(Action::AuthenticationSuccess(auth_state));
+                    }
+                    Err(e) => {
+                        error!("Registration failed for {}: {}", credentials.username, e);
+                        let _ = action_tx.send(Action::AuthenticationFailure(format!(
+                            "Registration failed: {}",
+                            e
+                        )));
+                    }
+                }
+            }
         });
     }
 
@@ -991,209 +1240,6 @@ impl App {
         })?;
         Ok(())
     }
-
-    fn handle_login_with_server(
-        &mut self,
-        credentials: crate::auth::Credentials,
-        server_address: String,
-    ) {
-        self.auth_state = AuthState::Authenticating;
-        self.auth_status.update_state(self.auth_state.clone());
-
-        // Spawn async task for modern authentication flow
-        let connection_manager = Arc::clone(&self.connection_manager);
-        let action_tx = self.action_tx.clone();
-
-        tokio::spawn(async move {
-            match Self::handle_login_with_server_async(
-                connection_manager,
-                action_tx,
-                credentials,
-                server_address,
-            )
-            .await
-            {
-                Ok(()) => {
-                    info!("Authentication completed successfully");
-                }
-                Err(e) => {
-                    error!("Authentication failed: {}", e);
-                }
-            }
-        });
-    }
-
-    /// Modern authentication flow using ConnectionManager only
-    async fn handle_login_with_server_async(
-        connection_manager: Arc<tokio::sync::Mutex<ConnectionManager>>,
-        action_tx: mpsc::UnboundedSender<Action>,
-        credentials: Credentials,
-        server_address: String,
-    ) -> color_eyre::Result<()> {
-        // Parse server address
-        let addr: std::net::SocketAddr = server_address
-            .parse()
-            .map_err(|_| color_eyre::eyre::eyre!("Invalid server address: {}", server_address))?;
-
-        // Update ConnectionManager config and enable authentication
-        {
-            let mut manager = connection_manager.lock().await;
-            let config = ConnectionConfig::new(addr);
-            manager.update_config(config);
-            manager.with_auth();
-        }
-
-        // Connect to server
-        {
-            let mut manager = connection_manager.lock().await;
-            manager.connect().await.map_err(|e| {
-                let detailed_error = format!("Connection to {} failed: {}. This could be due to: (1) Server not running - start with 'cargo run --bin lair-chat-server', (2) Server starting up - wait a moment and retry, (3) Port already in use, (4) Firewall blocking connection, (5) Server crashed or not listening properly.", server_address, e);
-                let _ = action_tx.send(Action::AuthenticationFailure(detailed_error.clone()));
-                color_eyre::eyre::eyre!("{}", detailed_error)
-            })?;
-        }
-
-        info!("Successfully connected to server at {}", server_address);
-
-        // Authenticate with the server
-        {
-            let manager = connection_manager.lock().await;
-            manager.login(credentials.clone()).await.map_err(|e| {
-                let error_msg = format!("Authentication failed: {}", e);
-                let _ = action_tx.send(Action::AuthenticationFailure(error_msg.clone()));
-                color_eyre::eyre::eyre!("{}", error_msg)
-            })?;
-        }
-
-        info!(
-            "Authentication request sent for user: {}",
-            credentials.username
-        );
-
-        // Get authentication state and send success action
-        {
-            let manager = connection_manager.lock().await;
-            if let Some(auth_state) = manager.get_auth_state().await {
-                if auth_state.is_authenticated() {
-                    info!("User {} authenticated successfully", credentials.username);
-                    let _ = action_tx.send(Action::AuthenticationSuccess(auth_state));
-                } else {
-                    let error_msg = "Authentication state is not authenticated".to_string();
-                    let _ = action_tx.send(Action::AuthenticationFailure(error_msg.clone()));
-                    return Err(color_eyre::eyre::eyre!("{}", error_msg));
-                }
-            } else {
-                let error_msg = "Failed to get authentication state".to_string();
-                let _ = action_tx.send(Action::AuthenticationFailure(error_msg.clone()));
-                return Err(color_eyre::eyre::eyre!("{}", error_msg));
-            }
-        }
-
-        Ok(())
-    }
-
-    fn handle_register_with_server(
-        &mut self,
-        credentials: crate::auth::Credentials,
-        server_address: String,
-    ) {
-        self.auth_state = AuthState::Authenticating;
-        self.auth_status.update_state(self.auth_state.clone());
-
-        tokio::spawn({
-            let tx = self.action_tx.clone();
-            let creds = credentials.clone();
-            let server_addr = server_address.clone();
-            async move {
-                use crate::compatibility_layer::{
-                    connect_client_compat, register_connection_manager,
-                };
-                use crate::transport::{ConnectionStatus, CLIENT_STATUS};
-
-                // Register ConnectionManager with compatibility layer for status sync
-                register_connection_manager().await;
-
-                // Try to connect to the server first
-                let address: Result<std::net::SocketAddr, _> = server_addr.parse();
-                match address {
-                    Ok(addr) => {
-                        let input = tui_input::Input::default();
-                        match connect_client_compat(input, addr).await {
-                            Ok(()) => {
-                                CLIENT_STATUS.lock().unwrap().status = ConnectionStatus::CONNECTED;
-                                info!(
-                                    "Successfully connected to server at {} for registration",
-                                    server_addr
-                                );
-
-                                // Add small delay to ensure connection is stable
-                                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-                                // Send registration request
-                                match register_compat(
-                                    creds.username.clone(),
-                                    creds.password.clone(),
-                                )
-                                .await
-                                {
-                                    Ok(()) => {
-                                        info!(
-                                            "Registration request sent for user: {}",
-                                            creds.username
-                                        );
-                                        // Registration response now handled by ReceiveMessage action handler
-                                        // which detects server responses like "Registration successful" and "has joined"
-                                        info!("Registration request sent for user: {} - waiting for server response via message handler", creds.username);
-                                    }
-                                    Err(e) => {
-                                        error!(
-                                            "Failed to send registration request for {}: {}",
-                                            creds.username, e
-                                        );
-                                        let _ = tx.send(Action::AuthenticationFailure(format!(
-                                            "Registration failed: {}",
-                                            e
-                                        )));
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                error!("Registration connection failed to {}: {}", server_addr, e);
-                                let detailed_error = format!("Connection to {} failed: {}. This could be due to: (1) Server not running - start with 'cargo run --bin lair-chat-server', (2) Server starting up - wait a moment and retry, (3) Port already in use, (4) Firewall blocking connection, (5) Server crashed or not listening properly.", server_addr, e);
-                                let _ = tx.send(Action::AuthenticationFailure(detailed_error));
-                            }
-                        }
-                    }
-                    Err(_) => {
-                        let _ = tx.send(Action::AuthenticationFailure(format!(
-                            "Invalid server address: {}",
-                            server_addr
-                        )));
-                    }
-                }
-            }
-        });
-    }
-}
-
-/// Send registration request to server
-async fn register_compat(
-    username: String,
-    password: String,
-) -> Result<(), crate::transport::TransportError> {
-    use crate::transport::add_silent_outgoing_message;
-
-    let auth_request = serde_json::json!({
-        "username": username,
-        "password": password,
-        "fingerprint": "client_device_fingerprint",
-        "is_registration": true
-    });
-
-    // Registration request message will be handled via action system
-    add_silent_outgoing_message(auth_request.to_string());
-
-    Ok(())
 }
 
 #[cfg(test)]
