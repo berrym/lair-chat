@@ -19,10 +19,7 @@ use crate::{
     app::Mode,
     chat::{ChatMessage, MessageType, RoomManager, RoomSettings, RoomUser, UserRole},
     config::Config,
-    errors::display::{
-        set_global_error_display_action_sender, show_disconnection, show_info,
-        show_validation_error, show_warning,
-    },
+    errors::display::{set_global_error_display_action_sender, show_info, show_validation_error},
     history::CommandHistory,
     migration_facade,
     transport::{ConnectionStatus, *},

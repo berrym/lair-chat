@@ -50,13 +50,16 @@ impl ErrorDisplay {
         self.action_sender = Some(sender);
     }
 
-    /// Send a message via action system or fallback to legacy
+    /// Send a message via action system
     fn send_message(&self, message: String) {
         if let Some(sender) = &self.action_sender {
             let _ = sender.send(Action::ReceiveMessage(message));
         } else {
-            // Fallback to legacy system if no action sender available
-            crate::transport::add_text_message(message);
+            // Log error if no action sender is available - this should not happen in modern usage
+            tracing::error!(
+                "ErrorDisplay: No action sender available for message: {}",
+                message
+            );
         }
     }
 
