@@ -19,9 +19,6 @@ pub mod auth;
 #[path = "client/cli.rs"]
 pub mod cli;
 
-#[path = "client/compatibility_layer.rs"]
-pub mod compatibility_layer;
-
 #[path = "client/chat/mod.rs"]
 pub mod chat;
 
@@ -49,9 +46,6 @@ pub mod history;
 #[path = "client/logging.rs"]
 pub mod logging;
 
-#[path = "client/migration_facade.rs"]
-pub mod migration_facade;
-
 #[path = "client/server_compatible_encryption.rs"]
 pub mod server_compatible_encryption;
 
@@ -70,9 +64,9 @@ pub mod tui;
 // Group client modules under a client namespace for cleaner imports
 pub mod client {
     pub use super::{
-        action::*, aes_gcm_encryption::*, app::*, auth::*, chat::*, cli::*, compatibility_layer::*,
-        components::*, config::*, connection_manager::*, encrypted_transport::*, encryption::*,
-        errors::*, history::*, logging::*, migration_facade::*, server_compatible_encryption::*,
-        simple_transport::*, tcp_transport::*, transport::*, tui::*,
+        action::*, aes_gcm_encryption::*, app::*, auth::*, chat::*, cli::*, components::*,
+        config::*, connection_manager::*, encrypted_transport::*, encryption::*, errors::*,
+        history::*, logging::*, server_compatible_encryption::*, simple_transport::*,
+        tcp_transport::*, transport::*, tui::*,
     };
 }

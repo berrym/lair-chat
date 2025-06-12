@@ -21,7 +21,6 @@ use crate::{
     config::Config,
     errors::display::{set_global_error_display_action_sender, show_info, show_validation_error},
     history::CommandHistory,
-    migration_facade,
     transport::{ConnectionStatus, *},
 };
 
@@ -450,10 +449,8 @@ impl Home {
                     self.dialog_host_input = Input::default();
                     self.dialog_port_input = Input::default();
 
-                    let input = self.input.clone();
-                    tokio::spawn(async move {
-                        let _ = migration_facade::connect_client(input, addr).await;
-                    });
+                    // Use modern action-based connection flow
+                    show_info("Please restart the application and use the login screen to connect to this server");
 
                     return Ok(Some(Action::Update));
                 }
@@ -957,10 +954,8 @@ impl Component for Home {
                         return Ok(Some(Action::Update));
                     }
                 };
-                let input = self.input.clone();
-                tokio::spawn(async move {
-                    let _ = migration_facade::connect_client(input, address).await;
-                });
+                // Use modern action-based connection flow
+                show_info("Please restart the application and use the login screen to connect to this server");
             }
             Action::ShowConnectionDialog => {
                 show_info(
