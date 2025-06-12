@@ -465,12 +465,9 @@ impl ConnectionManager {
         let auth_manager_clone = self.auth_manager.clone();
 
         // Clone the observers
-        // TEMPORARILY DISABLED: Start background task for receiving messages
-        // This is disabled to isolate the disconnection issue during message sending
-        /*
-        let cancel_token_clone = cancel_token.clone();
         let observers = self.observers.clone();
-        let auth_manager_clone = self.auth_manager.clone();
+
+        // Start message receiving task
         tokio::spawn(async move {
             Self::receive_messages(
                 transport,
@@ -483,8 +480,6 @@ impl ConnectionManager {
             )
             .await;
         });
-        */
-        tracing::warn!("DEBUG: receive_messages task DISABLED for debugging");
 
         Ok(())
     }
