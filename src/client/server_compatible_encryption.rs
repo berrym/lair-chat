@@ -141,6 +141,7 @@ pub fn create_server_compatible_encryption() -> Box<dyn EncryptionService + Send
 mod tests {
     use super::*;
     use std::collections::VecDeque;
+    use std::sync::Arc;
     use tokio::sync::Mutex;
 
     struct MockTransport {

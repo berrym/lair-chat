@@ -77,14 +77,17 @@ This plan details the step-by-step modernization of the message handling system,
 
 #### Step 3A.4: Debug Connection Drop During Message Send ✅ COMPLETED
 **Duration**: 0.5 days  
-**Files**: `src/client/connection_manager.rs`, `src/client/app.rs`
+**Files**: `src/client/connection_manager.rs`, `src/client/app.rs`, `src/client/tcp_transport.rs`
 - [x] **3A.4.1** Add debug logging to ConnectionManager.send_message()
 - [x] **3A.4.2** Add debug logging to authentication check
 - [x] **3A.4.3** Add debug logging to transport.send() call
 - [x] **3A.4.4** Test and identify where connection drop occurs
-- [x] **3A.4.5** Commit: "Add debugging for connection drop during message send"
+- [x] **3A.4.5** Fix TCP transport race condition by splitting streams
+- [x] **3A.4.6** Commit: "Fix TCP transport race condition causing client disconnection"
 
-**ISSUE FOUND**: Enter key now triggers Action::SendMessage but ConnectionManager.send_message() causes immediate client disconnect while server remains connected.
+**ROOT CAUSE IDENTIFIED**: TCP transport was using a single TcpStream for both send and receive operations. The receive_messages task and send_message function created a race condition where concurrent access to the same stream caused connection drops.
+
+**SOLUTION IMPLEMENTED**: Split TcpStream into separate read and write halves using `into_split()` to eliminate send/receive conflicts. This allows the receive_messages monitoring task to run independently of send operations.
 
 ### Phase 3B: Legacy Message Function Elimination (Week 2)
 
@@ -222,7 +225,19 @@ This plan details the step-by-step modernization of the message handling system,
 - [x] Step 3A.1: Analyze Current Message Flow (4/4 substeps) ✅ COMPLETED
 - [x] Step 3A.2: Fix Message Display Logic (5/5 substeps) ✅ COMPLETED
 - [x] Step 3A.3: Fix Legacy CLIENT_STATUS Check in Enter Handler (5/5 substeps) ✅ COMPLETED
-- [ ] Step 3A.4: Fix Message Display Observer Integration (0/6 substeps)
+- [x] Step 3A.4: Debug Connection Drop During Message Send (6/6 substeps) ✅ COMPLETED
+- [x] Step 3A.5: Test Message Sending Fix (5/5 substeps) ✅ COMPLETED
+
+#### Step 3A.5: Test Message Sending Fix ✅ COMPLETED
+**Duration**: 0.5 days  
+**Files**: Testing only
+- [x] **3A.5.1** Test message sending after TCP transport fix
+- [x] **3A.5.2** Verify no client disconnections occur
+- [x] **3A.5.3** Confirm messages display properly
+- [x] **3A.5.4** Test multi-message scenarios
+- [x] **3A.5.5** Update plan with test results
+
+**TEST RESULTS**: Message sending now works correctly without client disconnection. Ready to proceed to Phase 3B.
 
 ### Phase 3B Progress: Legacy Function Elimination
 - [ ] Step 3B.1: Replace add_text_message in Home Component (0/5 substeps)
@@ -238,9 +253,11 @@ This plan details the step-by-step modernization of the message handling system,
 - [ ] Step 3D.1: End-to-End Testing (0/7 substeps)
 - [ ] Step 3D.2: Documentation and Release Preparation (0/5 substeps)
 
-**Total Steps**: 12 major steps, 69 substeps  
-**Current Progress**: 20% (14/69 substeps completed)  
+**Total Steps**: 13 major steps, 75 substeps  
+**Current Progress**: 27% (20/75 substeps completed)  
 **Target Completion**: 3 weeks
+
+**Phase 3A Complete**: Message sending modernization is now working correctly. Enter key successfully sends messages through ConnectionManager without client disconnection.
 
 ## Communication Plan
 
