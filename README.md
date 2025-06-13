@@ -30,17 +30,48 @@ Lair Chat v0.6.1 introduces complete Direct Messaging functionality:
 
 - [Quick Start](#quick-start)
 - [Features](#features)
+- [Font Requirements](#font-requirements)
 - [Architecture](#architecture)
 - [Installation](#installation)
 - [Usage](#usage)
 - [API Documentation](#api-documentation)
 - [Examples](#examples)
 - [Development](#development)
-- [Migration Guide](#migration-guide)
-- [Contributing](#contributing)
-- [License](#license)
 
-## 🚀 Quick Start
+## 🔤 Font Requirements
+
+Lair Chat uses Unicode symbols and emojis for enhanced visual experience:
+
+### **Required for Full Experience**
+- **Terminal with emoji support** (recommended)
+- **Font with Unicode emoji coverage** such as:
+  - **Nerd Fonts** (JetBrainsMono Nerd Font, Fira Code Nerd Font)
+  - **Apple Color Emoji** (macOS default)
+  - **Noto Color Emoji** (Linux)
+  - **Segoe UI Emoji** (Windows)
+
+### **Symbols Used**
+- 🔔 Bell icons for DM notifications
+- 💬 Speech bubbles for DM headers  
+- 🏠 House icon for Lobby chat
+- ● ○ ◐ Status indicators (online/offline/idle)
+- ✖ ← Moderation status symbols
+
+### **Fallback Support**
+If emojis don't display properly, the application remains fully functional:
+- All functionality works without emoji display
+- Text-based alternatives show the same information
+- Core features (messaging, DMs, navigation) unaffected
+
+### **Testing Font Support**
+```bash
+# Test emoji support in your terminal
+echo "🔔 💬 🏠 ● ○ ◐ ✖ ←"
+```
+
+If you see the symbols clearly, you have proper font support. Otherwise, consider installing a Nerd Font or emoji-capable font for your terminal.
+
+## ⚡ Quick Start
 
 ### Prerequisites
 

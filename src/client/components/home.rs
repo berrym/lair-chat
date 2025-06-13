@@ -98,6 +98,9 @@ pub struct Home {
     // Chat sidebar state
     show_chat_sidebar: bool,
     chat_sidebar_selected: usize,
+
+    // Accessibility options
+    text_only_mode: bool,
 }
 
 // Static state variables for scrolling
@@ -202,13 +205,21 @@ impl Default for Home {
             // Chat sidebar state
             show_chat_sidebar: false,
             chat_sidebar_selected: 0,
+
+            // Accessibility options
+            text_only_mode: false,
         }
     }
 }
 
 impl Home {
     pub fn new() -> Self {
+        Self::new_with_options(false)
+    }
+
+    pub fn new_with_options(text_only: bool) -> Self {
         let mut home = Self::default();
+        home.text_only_mode = text_only;
 
         // Set up user list with event channel
         let (tx, rx) = unbounded_channel();
@@ -1583,7 +1594,11 @@ impl Component for Home {
                 text.push("".into());
                 text.push(Line::from(vec![
                     Span::styled(
-                        "💬 DIRECT MESSAGE ",
+                        if self.text_only_mode {
+                            "DM: "
+                        } else {
+                            "💬 DIRECT MESSAGE "
+                        },
                         Style::default()
                             .fg(Color::Magenta)
                             .add_modifier(Modifier::BOLD),
@@ -1607,7 +1622,11 @@ impl Component for Home {
             text.push("".into());
             text.push(Line::from(vec![
                 Span::styled(
-                    "🏠 LOBBY CHAT ",
+                    if self.text_only_mode {
+                        "LOBBY: "
+                    } else {
+                        "🏠 LOBBY CHAT "
+                    },
                     Style::default()
                         .fg(Color::Green)
                         .add_modifier(Modifier::BOLD),
@@ -1669,7 +1688,11 @@ impl Component for Home {
                             Style::default().fg(Color::Cyan),
                         ),
                         Span::styled(
-                            format!("(🔔 {} unread)", unread_count),
+                            if self.text_only_mode {
+                                format!("({} unread)", unread_count)
+                            } else {
+                                format!("(🔔 {} unread)", unread_count)
+                            },
                             Style::default()
                                 .fg(Color::Yellow)
                                 .add_modifier(Modifier::BOLD),
@@ -2501,7 +2524,11 @@ impl Home {
                     if let Some(dm_manager) = &self.dm_conversation_manager {
                         if let Ok(unread_count) = dm_manager.get_unread_count_with_user(partner) {
                             if unread_count > 0 {
-                                let text = format!("🔔 {} ({})", chat, unread_count);
+                                let text = if self.text_only_mode {
+                                    format!("[!] {} ({})", chat, unread_count)
+                                } else {
+                                    format!("🔔 {} ({})", chat, unread_count)
+                                };
                                 return ListItem::new(text).style(style);
                             }
                         }

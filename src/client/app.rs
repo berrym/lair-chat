@@ -132,7 +132,7 @@ pub enum Mode {
 }
 
 impl App {
-    pub fn new(tick_rate: f64, frame_rate: f64) -> Result<Self> {
+    pub fn new(tick_rate: f64, frame_rate: f64, text_only: bool) -> Result<Self> {
         let (action_tx, action_rx) = mpsc::unbounded_channel();
 
         // Create modern ConnectionManager with transport
@@ -171,7 +171,7 @@ impl App {
             auth_status: AuthStatusBar::new(),
 
             // Main components
-            home_component: Home::new(),
+            home_component: Home::new_with_options(text_only),
             status_bar: StatusBar::new(),
             fps_counter: FpsCounter::default(),
 

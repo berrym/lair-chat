@@ -12,6 +12,10 @@ pub struct Cli {
     /// Frame rate, i.e. number of frames per second
     #[arg(short, long, value_name = "FLOAT", default_value_t = 60.0)]
     pub frame_rate: f64,
+
+    /// Enable text-only mode (no emojis/Unicode symbols)
+    #[arg(long)]
+    pub text_only: bool,
 }
 
 const VERSION_MESSAGE: &str = concat!(
