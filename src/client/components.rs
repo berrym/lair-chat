@@ -14,17 +14,25 @@ pub mod app;
 pub mod auth;
 #[path = "components/chat/mod.rs"]
 pub mod chat;
+#[path = "components/dm_conversation.rs"]
+pub mod dm_conversation;
+#[path = "components/dm_navigation.rs"]
+pub mod dm_navigation;
 #[path = "components/fps.rs"]
 pub mod fps;
 #[path = "components/home.rs"]
 pub mod home;
 #[path = "components/status/mod.rs"]
 pub mod status;
-
+#[path = "components/user_list.rs"]
+pub mod user_list;
 
 pub use self::auth::{AuthStatusBar, LoginScreen};
 pub use self::chat::ChatView;
+pub use self::dm_conversation::{ConversationEvent, ConversationPanel, ConversationState};
+pub use self::dm_navigation::{NavigationEvent, NavigationPanel, NavigationState};
 pub use self::status::StatusBar;
+pub use self::user_list::{UserListEvent, UserListPanel, UserListState};
 
 /// `Component` is a trait that represents a visual and interactive element of the user interface.
 ///

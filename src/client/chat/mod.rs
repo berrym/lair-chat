@@ -1,17 +1,29 @@
 //! Chat room management module for Lair-Chat
 //! Provides comprehensive room management, user tracking, and message handling.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-pub mod rooms;
+pub mod direct_messages;
+pub mod dm_manager;
 pub mod messages;
+pub mod rooms;
+pub mod user_manager;
 pub mod users;
 
-pub use rooms::{Room, RoomManager, RoomType, RoomSettings};
-pub use messages::{ChatMessage, MessageType, MessageStatus};
+pub use direct_messages::{
+    ConversationId, ConversationSummary, DirectConversation, DirectMessage, MessageDeliveryStatus,
+    MessageTarget,
+};
+pub use dm_manager::{
+    DirectMessageError, DirectMessageEvent, DirectMessageManager, DirectMessageObserver,
+    DirectMessageResult, DirectMessageStats,
+};
+pub use messages::{ChatMessage, MessageStatus, MessageType};
+pub use rooms::{Room, RoomManager, RoomSettings, RoomType};
+pub use user_manager::{UserFilter, UserManager, UserPresence, UserProfile, UserStats};
 pub use users::{RoomUser, UserRole, UserStatus};
 
 /// Chat room identifier
@@ -22,6 +34,21 @@ pub type UserId = Uuid;
 
 /// Message identifier
 pub type MessageId = Uuid;
+
+/// Helper function to create a new message ID
+pub fn new_message_id() -> MessageId {
+    Uuid::new_v4()
+}
+
+/// Helper function to create a new user ID
+pub fn new_user_id() -> UserId {
+    Uuid::new_v4()
+}
+
+/// Helper function to create a new room ID
+pub fn new_room_id() -> RoomId {
+    Uuid::new_v4()
+}
 
 /// Chat room event types
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -236,7 +263,7 @@ impl TypingIndicators {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        
+
         let was_typing = self.typing_users.contains_key(&user_id);
         self.typing_users.insert(user_id, now);
         !was_typing
@@ -255,9 +282,8 @@ impl TypingIndicators {
             .as_secs();
 
         // Remove expired typing indicators
-        self.typing_users.retain(|_, &mut start_time| {
-            now - start_time < self.timeout
-        });
+        self.typing_users
+            .retain(|_, &mut start_time| now - start_time < self.timeout);
 
         self.typing_users.keys().copied().collect()
     }
@@ -300,7 +326,12 @@ mod tests {
         assert_eq!(event.user_id(), Some(user_id));
         assert!(event.timestamp() > 0);
 
-        if let RoomEvent::UserJoined { user_id: id, username: name, .. } = event {
+        if let RoomEvent::UserJoined {
+            user_id: id,
+            username: name,
+            ..
+        } = event
+        {
             assert_eq!(id, user_id);
             assert_eq!(name, username);
         } else {
@@ -335,7 +366,7 @@ mod tests {
         indicators.start_typing(user_id);
         // Sleep to ensure timeout
         std::thread::sleep(std::time::Duration::from_millis(10));
-        
+
         // Should be cleared due to timeout
         assert!(indicators.get_typing_users().is_empty());
         assert!(!indicators.is_typing(&user_id));

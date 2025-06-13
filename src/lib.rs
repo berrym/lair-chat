@@ -55,6 +55,9 @@ pub mod tcp_transport;
 #[path = "client/transport.rs"]
 pub mod transport;
 
+#[path = "client/protocol.rs"]
+pub mod protocol;
+
 #[path = "client/tui.rs"]
 pub mod tui;
 
@@ -63,7 +66,7 @@ pub mod client {
     pub use super::{
         action::*, aes_gcm_encryption::*, app::*, auth::*, chat::*, cli::*, components::*,
         config::*, connection_manager::*, encrypted_transport::*, encryption::*, errors::*,
-        history::*, logging::*, server_compatible_encryption::*, tcp_transport::*, transport::*,
-        tui::*,
+        history::*, logging::*, protocol::*, server_compatible_encryption::*, tcp_transport::*,
+        transport::*, tui::*,
     };
 }
