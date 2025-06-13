@@ -7,6 +7,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     action::Action,
+    aes_gcm_encryption::create_aes_gcm_encryption_with_random_key,
     auth::{AuthState, Credentials},
     components::{
         auth::{AuthStatusBar, LoginScreen},
@@ -16,7 +17,6 @@ use crate::{
     },
     config::Config,
     connection_manager::ConnectionManager,
-    server_compatible_encryption::create_server_compatible_encryption,
     tcp_transport::TcpTransport,
     transport::{ConnectionConfig, ConnectionObserver, Message, MessageStore},
     tui::{Event, Tui},
@@ -145,8 +145,8 @@ impl App {
         let transport = Box::new(TcpTransport::new(connection_config));
         connection_manager.with_transport(transport);
 
-        // Configure server-compatible encryption for proper handshake
-        let encryption = create_server_compatible_encryption();
+        // Configure secure AES-GCM encryption with proper handshake
+        let encryption = create_aes_gcm_encryption_with_random_key();
         connection_manager.with_encryption(encryption);
 
         let connection_manager = Arc::new(tokio::sync::Mutex::new(connection_manager));

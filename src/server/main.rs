@@ -4,7 +4,7 @@ use aes_gcm::{
 };
 use base64::prelude::*;
 use futures::SinkExt;
-use md5;
+use sha2::{Digest, Sha256};
 use std::{collections::HashMap, env, error::Error, io, net::SocketAddr, sync::Arc};
 use tokio::{
     net::{TcpListener, TcpStream},
@@ -22,7 +22,7 @@ use auth::{AuthRequest, AuthService, MemorySessionStorage, MemoryUserStorage, Us
 pub type Tx<T> = mpsc::UnboundedSender<T>;
 /// Shorthand for the receive half of the message channel.
 pub type Rx<T> = mpsc::UnboundedReceiver<T>;
-pub type WriteData = (String, Tx<String>);
+pub type WriteData = (Vec<u8>, Tx<String>);
 
 /// Data that is shared between all peers in the chat server.
 ///
@@ -274,7 +274,7 @@ impl Peer {
     async fn new(
         state: Arc<Mutex<SharedState>>,
         transport: Framed<TcpStream, LinesCodec>,
-        shared_aes_key: String,
+        shared_aes_key: Vec<u8>,
     ) -> io::Result<Peer> {
         let mut state_guard = state.lock().await;
 
@@ -285,7 +285,7 @@ impl Peer {
         let (tx, rx) = mpsc::unbounded_channel();
 
         // Create a shared key/transport writer tuple
-        let write_data = (shared_aes_key.clone(), tx);
+        let write_data = (shared_aes_key, tx);
 
         // Add an entry for this `Peer` in the shared state map.
         state_guard.peers.insert(addr, write_data);
@@ -406,9 +406,13 @@ async fn process(
             return Ok(());
         }
     };
-    // create shared keys
+    // create shared keys using secure SHA-256 with domain separation
     let shared_secret = server_secret_key.diffie_hellman(&PublicKey::from(peer_public_key_array));
-    let shared_aes256_key = format!("{:x}", md5::compute(BASE64_STANDARD.encode(shared_secret)));
+    let mut hasher = Sha256::new();
+    hasher.update(shared_secret.as_bytes());
+    hasher.update(b"LAIR_CHAT_AES_KEY"); // Domain separation
+    let result = hasher.finalize();
+    let shared_aes256_key = result.to_vec();
 
     // Send a welcome prompt to the client
     transport
@@ -634,8 +638,8 @@ async fn process(
     Ok(())
 }
 
-fn encrypt(key: String, data: String) -> String {
-    let aes_key = Key::<Aes256Gcm>::from_slice(key.as_bytes());
+fn encrypt(key: Vec<u8>, data: String) -> String {
+    let aes_key = Key::<Aes256Gcm>::from_slice(&key);
     let cipher = Aes256Gcm::new(aes_key);
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
     let ciphertext = cipher.encrypt(&nonce, data.as_bytes()).unwrap();
@@ -644,10 +648,10 @@ fn encrypt(key: String, data: String) -> String {
     BASE64_STANDARD.encode(&encrypted_data)
 }
 
-fn decrypt(key: String, data: String) -> String {
+fn decrypt(key: Vec<u8>, data: String) -> String {
     let encrypted_data = BASE64_STANDARD.decode(data).unwrap();
     let (nonce, ciphertext) = encrypted_data.split_at(12);
-    let aes_key = Key::<Aes256Gcm>::from_slice(key.as_bytes());
+    let aes_key = Key::<Aes256Gcm>::from_slice(&key);
     let cipher = Aes256Gcm::new(aes_key);
     let nonce = Nonce::from_slice(nonce);
     let plaintext = cipher.decrypt(nonce, ciphertext).unwrap();

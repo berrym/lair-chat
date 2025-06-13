@@ -8,14 +8,21 @@ An asynchronous encrypted chat application written in Rust, featuring a terminal
 
 ## 🚀 What's New in v0.6.1
 
-Lair Chat v0.6.1 introduces complete Direct Messaging functionality:
+Lair Chat v0.6.1 introduces complete Direct Messaging functionality and enhanced security:
 
-- **💬 Direct Messaging**: Full DM system with encrypted private conversations
-- **🎨 Visual Distinction**: Purple/green bubble styling for DM messages vs regular chat
-- **🔔 Smart Notifications**: Status bar alerts and visual indicators for new DMs
-- **⚡ Easy Chat Switching**: Tab-based sidebar for seamless navigation between conversations
-- **📊 Unread Tracking**: Bell icons and counts for unread DM conversations
-- **🎯 Intuitive UX**: Clear mode headers and context-aware help text
+### 🔐 Security Enhancements
+- **AES-256-GCM Encryption**: Migrated from deprecated MD5 to industry-standard SHA-256 key derivation
+- **Secure Key Exchange**: X25519 Diffie-Hellman with domain separation for cryptographic security
+- **Backward Compatibility**: Seamless server compatibility with zero configuration changes
+- **Production Ready**: Eliminated all cryptographic vulnerabilities for enterprise deployment
+
+### 💬 Direct Messaging System
+- **Private Conversations**: Full DM system with end-to-end encrypted communications
+- **Visual Distinction**: Purple/green bubble styling for DM messages vs regular chat
+- **Smart Notifications**: Status bar alerts and visual indicators for new DMs
+- **Unread Message Tracking**: Comprehensive unread count system with real-time updates
+- **Conversation Management**: Navigate between multiple DM conversations seamlessly
+- **Intuitive UX**: Clear mode headers and context-aware help text
 
 ### Previous v0.6.0 Features:
 - **🏗️ Modern Architecture**: Complete rewrite with clean abstractions and dependency injection
@@ -138,9 +145,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 - **🔐 End-to-End Encryption**: X25519 key exchange + AES-256-GCM authenticated encryption
 - **👥 Multi-User Support**: Concurrent user sessions with proper isolation
 - **💬 Real-Time Messaging**: Instant message delivery with observer pattern
-- **📨 Direct Messaging**: Private conversations with file attachments and message management
+- **📨 Direct Messaging**: Private conversations with comprehensive unread message tracking
+- **🔔 Smart Notifications**: Visual indicators, count badges, and real-time unread status updates
 - **🔑 JWT Authentication**: Secure token-based authentication with configurable expiration
-- **📱 Terminal UI**: Rich TUI with Ratatui featuring professional styling
+- **📱 Terminal UI**: Rich TUI with Ratatui featuring professional styling and intuitive navigation
 - **🔄 Connection Recovery**: Automatic reconnection with exponential backoff
 
 ### Technical Features

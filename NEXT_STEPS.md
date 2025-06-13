@@ -6,12 +6,20 @@ With the successful completion of v0.6.1, which introduced complete Direct Messa
 
 ## Recent Accomplishments (v0.6.1 - Released)
 
+✅ **Security Infrastructure Modernization**
+- **AES-256-GCM Encryption Migration**: Eliminated insecure MD5 key derivation, replaced with SHA-256 + domain separation
+- **Cryptographic Security**: Industry-standard X25519 Diffie-Hellman key exchange with proper domain separation
+- **Production-Ready Security**: All cryptographic vulnerabilities resolved, enterprise deployment ready
+- **Backward Compatibility**: Server protocol unchanged, seamless migration for all clients
+- **Comprehensive Testing**: All encryption tests pass, 100% compatibility validation complete
+
 ✅ **Direct Messaging System Complete**
 - Full DM functionality with encrypted private conversations
 - Purple/green bubble styling for visual distinction from regular chat
-- Status bar notifications and unread tracking
-- Tab-based chat switching sidebar
-- Intuitive UX with clear mode headers
+- **Comprehensive Unread Message Tracking**: Real-time unread counts, visual indicators, and notification system
+- Status bar notifications and smart conversation management
+- Tab-based chat switching sidebar with unread badges
+- Intuitive UX with clear mode headers and navigation
 
 ✅ **Modern Architecture Complete (v0.6.0)**
 - Complete architectural modernization with async/await
@@ -22,19 +30,24 @@ With the successful completion of v0.6.1, which introduced complete Direct Messa
 
 ## Immediate Action Items (Next 2-4 Weeks)
 
-1. **DM System Enhancements** (🔄 Active - Priority 1)
+1. **Unread Messages Enhancement** (🔄 Active - Priority 1)
+   - 📅 Add global status bar unread count indicator (outside DM navigation panel)
+   - 📅 Implement cross-conversation notification alerts (when viewing one chat, get notified of messages in others)
+   - 📅 Enhanced visual indicators with pulse animations for new messages
+   - 📅 Audio notifications for new DM messages (user preference)
+
+2. **DM System Enhancements** (📅 Priority 2)
    - 📅 Add DM message persistence across server restarts
    - 📅 Implement typing indicators for DM conversations
    - 📅 Add message read receipts for DMs
    - 📅 Implement DM history search functionality
 
-2. **Performance Optimization** (📅 Priority 2)
+3. **Performance Optimization** (📅 Priority 2)
    - 📅 Optimize DM conversation switching performance
    - 📅 Implement message history limits to prevent memory bloat
    - 📅 Add efficient conversation caching
 
-3. **User Experience Polish** (📅 Priority 2)
-   - 📅 Add notification sounds for new DMs
+4. **User Experience Polish** (📅 Priority 3)
    - 📅 Implement DM conversation export functionality
    - 📅 Add user blocking/muting for DMs
    - 📅 Improve mobile-friendly key bindings

@@ -33,8 +33,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let transport = Box::new(TcpTransport::new(config));
     connection_manager.with_transport(transport);
 
-    // Add server-compatible encryption
-    let encryption = lair_chat::client::create_server_compatible_encryption();
+    // Add secure AES-GCM encryption
+    let encryption = lair_chat::client::create_aes_gcm_encryption_with_random_key();
     connection_manager.with_encryption(encryption);
 
     println!("✅ ConnectionManager configured with modern architecture");

@@ -6,12 +6,30 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 use super::encryption::{decrypt, encrypt, EncryptionError};
 use super::transport::{EncryptionService, Transport, TransportError};
 
-/// Encryption service that implements the exact key exchange protocol expected by the server
+/// **DEPRECATED**: This encryption service has a critical security vulnerability
 ///
-/// This service handles the server's handshake sequence:
+/// # Security Issue
+/// This implementation uses MD5 for key derivation, which is cryptographically broken
+/// and vulnerable to collision attacks. Use `AesGcmEncryption` instead.
+///
+/// # Migration
+/// Replace usage with:
+/// ```rust
+/// use crate::aes_gcm_encryption::create_aes_gcm_encryption_with_random_key;
+/// let encryption = create_aes_gcm_encryption_with_random_key();
+/// ```
+///
+/// # Legacy Protocol Support
+/// This service implements the legacy server handshake sequence:
 /// 1. Server sends its public key as base64
 /// 2. Client responds with its public key as base64 (NOT prefixed with "HANDSHAKE:")
-/// 3. Both derive shared secret and use it for encryption
+/// 3. Both derive shared secret using **insecure MD5** and use it for encryption
+///
+/// **WARNING**: Do not use in production environments!
+#[deprecated(
+    since = "0.6.1",
+    note = "Uses insecure MD5 key derivation. Use AesGcmEncryption instead."
+)]
 pub struct ServerCompatibleEncryption {
     shared_key: Option<String>,
 }
@@ -132,7 +150,25 @@ impl EncryptionService for ServerCompatibleEncryption {
     }
 }
 
-/// Create a new server-compatible encryption service
+/// **DEPRECATED**: Create a new server-compatible encryption service
+///
+/// # Security Warning
+/// This function creates an encryption service that uses MD5 for key derivation,
+/// which is cryptographically broken. Use `create_aes_gcm_encryption_with_random_key()` instead.
+///
+/// # Migration
+/// ```rust
+/// // OLD (insecure):
+/// let encryption = create_server_compatible_encryption();
+///
+/// // NEW (secure):
+/// use crate::aes_gcm_encryption::create_aes_gcm_encryption_with_random_key;
+/// let encryption = create_aes_gcm_encryption_with_random_key();
+/// ```
+#[deprecated(
+    since = "0.6.1",
+    note = "Uses insecure MD5 key derivation. Use create_aes_gcm_encryption_with_random_key() instead."
+)]
 pub fn create_server_compatible_encryption() -> Box<dyn EncryptionService + Send + Sync> {
     Box::new(ServerCompatibleEncryption::new())
 }

@@ -7,13 +7,8 @@ use tokio::sync::Mutex;
 use tokio::time::timeout;
 
 use lair_chat::client::{
-    aes_gcm_encryption::AesGcmEncryption,
-    config::ConnectionConfig,
-    connection_manager::{ConnectionManager, ConnectionStatus},
-    server_compatible_encryption::ServerCompatibleEncryption,
-    tcp_transport::TcpTransport,
-    transport::{ConnectionObserver, EncryptionService, Transport, TransportError},
-    Credentials,
+    AesGcmEncryption, ConnectionConfig, ConnectionManager, ConnectionObserver, ConnectionStatus,
+    Credentials, EncryptionService, TcpTransport, Transport, TransportError,
 };
 
 /// Mock transport for testing without a live server
@@ -192,9 +187,9 @@ async fn test_v0_6_0_architecture_integration() {
     println!("   ✅ Transport configured successfully");
 
     // Test 3: Encryption configuration
-    let encryption = lair_chat::client::create_server_compatible_encryption();
+    let encryption = lair_chat::client::create_aes_gcm_encryption_with_random_key();
     connection_manager.with_encryption(encryption);
-    println!("   ✅ Server-compatible encryption configured successfully");
+    println!("   ✅ AES-GCM encryption configured successfully");
 
     // Test 4: Observer registration
     let observer = Arc::new(TestObserver::new());
@@ -228,7 +223,7 @@ async fn test_v0_6_0_connection_lifecycle() {
     println!("   ✅ Initial disconnected state verified");
 
     // Configure transport and encryption
-    let encryption = lair_chat::client::create_server_compatible_encryption();
+    let encryption = lair_chat::client::create_aes_gcm_encryption_with_random_key();
     connection_manager.with_encryption(encryption);
 
     // For this test, we'll verify the configuration was successful
@@ -252,10 +247,10 @@ async fn test_v0_6_0_encryption_services() {
     assert_eq!(test_message, decrypted);
     println!("   ✅ AES-GCM encryption/decryption working");
 
-    // Test 2: Server-Compatible Encryption creation
-    let server_encryption = lair_chat::client::create_server_compatible_encryption();
+    // Test 2: AES-GCM Encryption with random key creation
+    let server_encryption = lair_chat::client::create_aes_gcm_encryption_with_random_key();
     // Note: Full handshake testing would require a mock server
-    println!("   ✅ Server-compatible encryption created successfully");
+    println!("   ✅ AES-GCM encryption with random key created successfully");
 
     // Test 3: Encryption service traits
     let boxed_encryption: Box<dyn EncryptionService + Send + Sync> =
@@ -480,7 +475,7 @@ async fn test_v0_6_0_complete_integration() {
     let mock_transport = MockTransport::new();
     connection_manager.with_transport(Box::new(mock_transport));
 
-    let encryption = lair_chat::client::create_server_compatible_encryption();
+    let encryption = lair_chat::client::create_aes_gcm_encryption_with_random_key();
     connection_manager.with_encryption(encryption);
 
     let observer = Arc::new(TestObserver::new());
