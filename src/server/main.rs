@@ -33,6 +33,48 @@ pub type WriteData = (String, Tx<String>);
 struct SharedState {
     peers: HashMap<SocketAddr, WriteData>,
     auth_service: Arc<AuthService>,
+    connected_users: HashMap<String, ConnectedUser>,
+    rooms: HashMap<String, Room>,
+}
+
+#[derive(Debug, Clone)]
+struct ConnectedUser {
+    username: String,
+    address: SocketAddr,
+    connected_at: u64,
+    current_room: String,
+}
+
+#[derive(Debug, Clone)]
+struct Room {
+    name: String,
+    users: Vec<String>,
+    created_at: u64,
+    is_lobby: bool,
+}
+
+impl Room {
+    fn new(name: String, is_lobby: bool) -> Self {
+        Self {
+            name,
+            users: Vec::new(),
+            created_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            is_lobby,
+        }
+    }
+
+    fn add_user(&mut self, username: String) {
+        if !self.users.contains(&username) {
+            self.users.push(username);
+        }
+    }
+
+    fn remove_user(&mut self, username: &str) {
+        self.users.retain(|u| u != username);
+    }
 }
 
 impl SharedState {
@@ -63,23 +105,118 @@ impl SharedState {
             tracing::info!("Default test users created");
         });
 
+        let mut rooms = HashMap::new();
+        // Create the default Lobby room
+        rooms.insert("Lobby".to_string(), Room::new("Lobby".to_string(), true));
+
         SharedState {
             peers: HashMap::new(),
             auth_service,
+            connected_users: HashMap::new(),
+            rooms,
+        }
+    }
+
+    /// Add a connected user to the server tracking and join them to the Lobby
+    fn add_connected_user(&mut self, username: String, address: SocketAddr) {
+        let user = ConnectedUser {
+            username: username.clone(),
+            address,
+            connected_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            current_room: "Lobby".to_string(),
+        };
+
+        self.connected_users.insert(username.clone(), user);
+
+        // Add user to the Lobby room
+        if let Some(lobby) = self.rooms.get_mut("Lobby") {
+            lobby.add_user(username.clone());
+        }
+
+        tracing::info!("User {} joined the Lobby", username);
+    }
+
+    /// Remove a connected user from server tracking and all rooms
+    fn remove_connected_user(&mut self, address: SocketAddr) {
+        // Find the user by address
+        let username = self
+            .connected_users
+            .iter()
+            .find(|(_, user)| user.address == address)
+            .map(|(username, _)| username.clone());
+
+        if let Some(username) = username {
+            // Remove from all rooms
+            for room in self.rooms.values_mut() {
+                room.remove_user(&username);
+            }
+
+            // Remove from connected users
+            self.connected_users.remove(&username);
+            tracing::info!("User {} left the server", username);
+        }
+    }
+
+    /// Get list of all connected users (for DM user discovery)
+    fn get_connected_users(&self) -> Vec<String> {
+        self.connected_users.keys().cloned().collect()
+    }
+
+    /// Get users in a specific room
+    fn get_room_users(&self, room_name: &str) -> Vec<String> {
+        self.rooms
+            .get(room_name)
+            .map(|room| room.users.clone())
+            .unwrap_or_default()
+    }
+
+    /// Broadcast user list to all connected clients (encrypted)
+    async fn broadcast_user_list(&mut self) {
+        let user_list = self.get_connected_users();
+        let user_list_msg = format!("USER_LIST:{}", user_list.join(","));
+
+        // Broadcast to all peers with encryption
+        for (_, peer_data) in self.peers.iter_mut() {
+            let encrypted_msg = encrypt(peer_data.0.clone(), user_list_msg.clone());
+            let _ = peer_data.1.send(encrypted_msg);
+        }
+    }
+
+    /// Broadcast a room status message to all connected clients
+    async fn broadcast_room_status(&mut self, username: &str) {
+        let room_status_msg = format!("ROOM_STATUS:Lobby,{}", username);
+
+        // Broadcast to all peers with encryption
+        for (_, peer_data) in self.peers.iter_mut() {
+            let encrypted_msg = encrypt(peer_data.0.clone(), room_status_msg.clone());
+            let _ = peer_data.1.send(encrypted_msg);
         }
     }
 
     /// Send a `LineCodec` encoded message to every peer, except
     /// for the sender.
     async fn broadcast(&mut self, sender: SocketAddr, message: &str) {
-        for peer in self.peers.iter_mut() {
-            if *peer.0 != sender {
-                let _ = peer
-                    .1
-                     .1
-                    .send(encrypt(peer.1 .0.to_string().clone(), message.into()));
+        for (addr, peer_data) in self.peers.iter_mut() {
+            if *addr != sender {
+                let encrypted_msg = encrypt(peer_data.0.clone(), message.to_string());
+                let _ = peer_data.1.send(encrypted_msg);
             }
         }
+    }
+
+    /// Send a message to a specific user
+    async fn send_to_user(&mut self, username: &str, message: &str) -> bool {
+        if let Some(user) = self.connected_users.get(username) {
+            if let Some(peer_data) = self.peers.get_mut(&user.address) {
+                let encrypted_msg = encrypt(peer_data.0.clone(), message.to_string());
+                let _ = peer_data.1.send(encrypted_msg);
+                return true;
+            }
+        }
+        false
     }
 }
 
@@ -106,7 +243,7 @@ impl Peer {
         transport: Framed<TcpStream, LinesCodec>,
         shared_aes_key: String,
     ) -> io::Result<Peer> {
-        let mut state = state.lock().await;
+        let mut state_guard = state.lock().await;
 
         // Get the client socket address
         let addr = transport.get_ref().peer_addr()?;
@@ -118,7 +255,7 @@ impl Peer {
         let write_data = (shared_aes_key.clone(), tx);
 
         // Add an entry for this `Peer` in the shared state map.
-        state.peers.insert(addr, write_data);
+        state_guard.peers.insert(addr, write_data);
 
         Ok(Peer { transport, rx })
     }
@@ -162,6 +299,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind(&addr).await?;
 
     tracing::info!("server running on {}", addr);
+    tracing::info!("Lobby room created and ready for connections");
 
     loop {
         let server_secret_key = EphemeralSecret::random();
@@ -184,7 +322,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 }
 
-/// Process an individual chat client
 async fn process(
     state: Arc<Mutex<SharedState>>,
     stream: TcpStream,
@@ -263,10 +400,10 @@ async fn process(
                 // Store username before auth_request is moved
                 let username = auth_request.username.clone();
 
-                let state = state.lock().await;
+                let state_guard = state.lock().await;
                 let result = if auth_request.is_registration {
                     // Register the user first
-                    match state
+                    match state_guard
                         .auth_service
                         .register(auth_request.username.clone(), &auth_request.password)
                         .await
@@ -277,7 +414,7 @@ async fn process(
                                 username
                             );
                             // After successful registration, automatically log them in
-                            match state.auth_service.login(auth_request).await {
+                            match state_guard.auth_service.login(auth_request).await {
                                 Ok(response) => {
                                     session = Some(response.session.clone());
                                     tracing::info!(
@@ -299,7 +436,7 @@ async fn process(
                         }
                     }
                 } else {
-                    match state.auth_service.login(auth_request).await {
+                    match state_guard.auth_service.login(auth_request).await {
                         Ok(response) => {
                             session = Some(response.session.clone());
                             tracing::info!(
@@ -315,14 +452,27 @@ async fn process(
                         }
                     }
                 };
+                drop(state_guard); // Release the lock
 
                 match result {
                     Ok(authenticated_user) => {
                         user = Some(authenticated_user.clone());
+
+                        // Add user to server tracking and broadcast updated user list
+                        {
+                            let mut state_guard = state.lock().await;
+                            state_guard
+                                .add_connected_user(authenticated_user.username.clone(), addr);
+                            state_guard.broadcast_user_list().await;
+                            state_guard
+                                .broadcast_room_status(&authenticated_user.username)
+                                .await;
+                        }
+
                         transport
                             .send(encrypt(
                                 shared_aes256_key.clone(),
-                                format!("Welcome back, {}!", authenticated_user.username),
+                                format!("Welcome to the Lobby, {}!", authenticated_user.username),
                             ))
                             .await?;
                         break;
@@ -352,10 +502,10 @@ async fn process(
 
     // A client has connected, let's let everyone know.
     {
-        let mut state = state.lock().await;
-        let message = format!("{} has joined the chat", user.username);
+        let mut state_guard = state.lock().await;
+        let message = format!("{} has joined the Lobby", user.username);
         tracing::info!("{}", message);
-        state.broadcast(addr, &message).await;
+        state_guard.broadcast(addr, &message).await;
     }
 
     // Process incoming messages until our stream is exhausted by a disconnect.
@@ -369,11 +519,34 @@ async fn process(
                 // A message was received from the current user, we should
                 // broadcast this message to the other users.
                 Some(Ok(message)) => {
-                    let message = decrypt(shared_aes256_key.clone(), message);
-                    let mut state = state.lock().await;
-                    let message = format!("{}: {}", user.username, message);
+                    let decrypted_message = decrypt(shared_aes256_key.clone(), message);
 
-                    state.broadcast(addr, &message).await;
+                    // Handle special protocol messages
+                    if decrypted_message.starts_with("DM:") {
+                        // Handle direct message: DM:target_user:message_content
+                        let parts: Vec<&str> = decrypted_message.splitn(3, ':').collect();
+                        if parts.len() == 3 {
+                            let target_user = parts[1];
+                            let dm_content = parts[2];
+                            let dm_message = format!("DM_FROM:{}:{}", user.username, dm_content);
+
+                            let mut state_guard = state.lock().await;
+                            if state_guard.send_to_user(target_user, &dm_message).await {
+                                tracing::info!("DM sent from {} to {}: {}", user.username, target_user, dm_content);
+                            } else {
+                                tracing::warn!("Failed to send DM from {} to {}: user not found", user.username, target_user);
+                            }
+                        }
+                    } else if decrypted_message == "REQUEST_USER_LIST" {
+                        // Handle user list request
+                        let mut state_guard = state.lock().await;
+                        state_guard.broadcast_user_list().await;
+                    } else {
+                        // Regular chat message - broadcast to all users in the Lobby
+                        let mut state_guard = state.lock().await;
+                        let message = format!("{}: {}", user.username, decrypted_message);
+                        state_guard.broadcast(addr, &message).await;
+                    }
                 }
                 // An error occurred.
                 Some(Err(e)) => {
@@ -392,8 +565,12 @@ async fn process(
     // If this section is reached it means that the client was disconnected!
     // Let's let everyone still connected know about it.
     {
-        let mut state = state.lock().await;
-        state.peers.remove(&addr);
+        let mut state_guard = state.lock().await;
+        state_guard.peers.remove(&addr);
+
+        // Remove user from server tracking and broadcast updated user list
+        state_guard.remove_connected_user(addr);
+        state_guard.broadcast_user_list().await;
 
         // Cleanup user session
         tracing::info!(
@@ -401,41 +578,36 @@ async fn process(
             user.username,
             session.token
         );
-        if let Err(e) = state.auth_service.logout(&session.token).await {
+        if let Err(e) = state_guard.auth_service.logout(&session.token).await {
             tracing::error!("Failed to cleanup session for {}: {}", user.username, e);
         } else {
             tracing::info!("Session cleanup successful for {}", user.username);
         }
 
-        let message = format!("{} has left the chat", user.username);
+        let message = format!("{} has left the Lobby", user.username);
         tracing::info!("{}", message);
-        state.broadcast(addr, &message).await;
+        state_guard.broadcast(addr, &message).await;
     }
 
     Ok(())
 }
 
-fn encrypt(key_str: String, plaintext: String) -> String {
-    let key = Key::<Aes256Gcm>::from_slice(key_str.as_bytes());
+fn encrypt(key: String, data: String) -> String {
+    let aes_key = Key::<Aes256Gcm>::from_slice(key.as_bytes());
+    let cipher = Aes256Gcm::new(aes_key);
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-    let cipher = Aes256Gcm::new(key);
-    let ciphered_data = cipher
-        .encrypt(&nonce, plaintext.as_bytes())
-        .expect("failed to encrypt");
-    // combining nonce and encrypted data together for storage purpose
-    let mut encrypted_data: Vec<u8> = nonce.to_vec();
-    encrypted_data.extend_from_slice(&ciphered_data);
-    BASE64_STANDARD.encode(encrypted_data)
+    let ciphertext = cipher.encrypt(&nonce, data.as_bytes()).unwrap();
+    let mut encrypted_data = nonce.to_vec();
+    encrypted_data.extend_from_slice(&ciphertext);
+    BASE64_STANDARD.encode(&encrypted_data)
 }
 
-fn decrypt(key_str: String, encrypted_data: String) -> String {
-    let encrypted_data = BASE64_STANDARD.decode(encrypted_data).unwrap(); // hex::decode(encrypted_data).expect("failed to decode hex string into vec");
-    let key = Key::<Aes256Gcm>::from_slice(key_str.as_bytes());
-    let (nonce_arr, ciphered_data) = encrypted_data.split_at(12);
-    let nonce = Nonce::from_slice(nonce_arr);
-    let cipher = Aes256Gcm::new(key);
-    let plaintext = cipher
-        .decrypt(nonce, ciphered_data)
-        .expect("failed to decrypt data");
-    String::from_utf8(plaintext).expect("failed to convert vector of bytes to string")
+fn decrypt(key: String, data: String) -> String {
+    let encrypted_data = BASE64_STANDARD.decode(data).unwrap();
+    let (nonce, ciphertext) = encrypted_data.split_at(12);
+    let aes_key = Key::<Aes256Gcm>::from_slice(key.as_bytes());
+    let cipher = Aes256Gcm::new(aes_key);
+    let nonce = Nonce::from_slice(nonce);
+    let plaintext = cipher.decrypt(nonce, ciphertext).unwrap();
+    String::from_utf8(plaintext).unwrap()
 }

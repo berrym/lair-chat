@@ -42,6 +42,8 @@ pub enum Action {
     RecordReceivedMessage,
     RecordSentMessage,
     MessageSent(String),
+    // Direct Message actions
+    ToggleDM,
     // Connection status actions
     ConnectionStatusChanged(crate::transport::ConnectionStatus),
 }

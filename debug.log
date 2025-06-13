@@ -1,0 +1,129 @@
+warning: unused import: `block::Title`
+  --> src/client/components/dm_conversation.rs:11:9
+   |
+11 |         block::Title, Block, Borders, List, ListItem, ListState, Paragraph, Scrollbar,
+   |         ^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `block::Title`
+  --> src/client/components/user_list.rs:10:15
+   |
+10 |     widgets::{block::Title, Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
+   |               ^^^^^^^^^^^^
+
+warning: unused import: `crate::encryption::EncryptionError`
+ --> src/client/encrypted_transport.rs:6:5
+  |
+6 | use crate::encryption::EncryptionError;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: ambiguous glob re-exports
+  --> src/lib.rs:66:13
+   |
+66 |       pub use super::{
+   |  _____________^
+67 | |         action::*, aes_gcm_encryption::*, app::*, auth::*, chat::*, cli::*, components::*,
+68 | |         config::*, connection_manager::*, encrypted_transport::*, encryption::*, errors::*,
+69 | |         history::*, logging::*, protocol::*, server_compatible_encryption::*, tcp_transport::*,
+   | |                     ---------- but the name `init` in the value namespace is also re-exported here
+70 | |         transport::*, tui::*,
+71 | |     };
+   | |_____^ the name `init` in the value namespace is first re-exported here
+   |
+   = note: `#[warn(ambiguous_glob_reexports)]` on by default
+
+warning: ambiguous glob re-exports
+  --> src/lib.rs:66:13
+   |
+66 |       pub use super::{
+   |  _____________^
+67 | |         action::*, aes_gcm_encryption::*, app::*, auth::*, chat::*, cli::*, components::*,
+   | |                                                            ------- but the name `MessageType` in the type namespace is also re-exported here
+68 | |         config::*, connection_manager::*, encrypted_transport::*, encryption::*, errors::*,
+69 | |         history::*, logging::*, protocol::*, server_compatible_encryption::*, tcp_transport::*,
+70 | |         transport::*, tui::*,
+71 | |     };
+   | |_____^ the name `MessageType` in the type namespace is first re-exported here
+
+warning: ambiguous glob re-exports
+  --> src/lib.rs:66:13
+   |
+66 |       pub use super::{
+   |  _____________^
+67 | |         action::*, aes_gcm_encryption::*, app::*, auth::*, chat::*, cli::*, components::*,
+   | |                                                            ------- but the name `ConversationSummary` in the type namespace is also re-exported here
+68 | |         config::*, connection_manager::*, encrypted_transport::*, encryption::*, errors::*,
+69 | |         history::*, logging::*, protocol::*, server_compatible_encryption::*, tcp_transport::*,
+70 | |         transport::*, tui::*,
+71 | |     };
+   | |_____^ the name `ConversationSummary` in the type namespace is first re-exported here
+
+warning: ambiguous glob re-exports
+  --> src/lib.rs:66:13
+   |
+66 |       pub use super::{
+   |  _____________^
+67 | |         action::*, aes_gcm_encryption::*, app::*, auth::*, chat::*, cli::*, components::*,
+   | |                                                            ------- but the name `UserProfile` in the type namespace is also re-exported here
+68 | |         config::*, connection_manager::*, encrypted_transport::*, encryption::*, errors::*,
+69 | |         history::*, logging::*, protocol::*, server_compatible_encryption::*, tcp_transport::*,
+70 | |         transport::*, tui::*,
+71 | |     };
+   | |_____^ the name `UserProfile` in the type namespace is first re-exported here
+
+warning: unused import: `backend::Backend`
+ --> src/client/components/dm_conversation.rs:6:5
+  |
+6 |     backend::Backend,
+  |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `backend::Backend`
+ --> src/client/components/user_list.rs:6:5
+  |
+6 |     backend::Backend,
+  |     ^^^^^^^^^^^^^^^^
+
+warning: unused variable: `width`
+   --> src/client/components/dm_conversation.rs:600:60
+    |
+600 |     fn create_message_item(&self, message: &DirectMessage, width: u16) -> ListItem {
+    |                                                            ^^^^^ help: if this is intentional, prefix it with an underscore: `_width`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: methods `send_with_retry` and `try_send_message` are never used
+    --> src/client/chat/dm_manager.rs:1353:14
+     |
+120  | impl DirectMessageManager {
+     | ------------------------- methods in this implementation
+...
+1353 |     async fn send_with_retry(&self, message: String) -> DirectMessageResult<()> {
+     |              ^^^^^^^^^^^^^^^
+...
+1376 |     async fn try_send_message(&self, message: &str) -> DirectMessageResult<()> {
+     |              ^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` on by default
+
+warning: field `show_avatars` is never read
+   --> src/client/components/dm_conversation.rs:314:5
+    |
+304 | pub struct ConversationPanel {
+    |            ----------------- field in this struct
+...
+314 |     show_avatars: bool,
+    |     ^^^^^^^^^^^^
+
+warning: field `show_actions` is never read
+   --> src/client/components/dm_navigation.rs:309:5
+    |
+301 | pub struct NavigationPanel {
+    |            --------------- field in this struct
+...
+309 |     show_actions: bool,
+    |     ^^^^^^^^^^^^
+
+warning: `lair-chat` (lib) generated 13 warnings (run `cargo fix --lib -p lair-chat` to apply 3 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running `target/debug/lair-chat-client`

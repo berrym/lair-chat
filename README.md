@@ -99,6 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 - **🔐 End-to-End Encryption**: X25519 key exchange + AES-256-GCM authenticated encryption
 - **👥 Multi-User Support**: Concurrent user sessions with proper isolation
 - **💬 Real-Time Messaging**: Instant message delivery with observer pattern
+- **📨 Direct Messaging**: Private conversations with file attachments and message management
 - **🔑 JWT Authentication**: Secure token-based authentication with configurable expiration
 - **📱 Terminal UI**: Rich TUI with Ratatui featuring professional styling
 - **🔄 Connection Recovery**: Automatic reconnection with exponential backoff
@@ -117,6 +118,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 - **⌨️ Tab Completion**: Smart completion for commands and usernames
 - **📊 Status Bar**: Real-time connection status, message counts, and uptime
 - **🎯 Error Handling**: User-friendly error messages with actionable suggestions
+- **💬 DM Navigation**: Intuitive keyboard-driven interface with lobby-based user discovery
 
 ## 🏗️ Architecture
 
@@ -223,6 +225,18 @@ cargo run --bin lair-chat-client -- --server 192.168.1.100:8080
 # Non-interactive mode
 echo "Hello, World!" | cargo run --bin lair-chat-client -- --username alice --password secret
 ```
+
+### Direct Messaging
+
+Once connected, you can use the built-in direct messaging system:
+
+- **Lobby System**: All users automatically join a shared "Lobby" room for user discovery
+- **Open DM Panel**: Press `Ctrl+L` to access private conversations
+- **Start New DM**: Press `n` in the DM panel to select from lobby users
+- **Navigate**: Use arrow keys or `j/k` to browse conversations
+- **Quick Help**: Press `?` for complete keybinding reference
+
+For detailed DM usage instructions, see [Direct Messaging Guide](docs/DIRECT_MESSAGING.md).
 
 ### Environment Variables
 

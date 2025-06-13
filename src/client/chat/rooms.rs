@@ -452,6 +452,49 @@ impl RoomManager {
         Ok(room_id)
     }
 
+    /// Get or create a shared room by name (uses fixed UUID for lobby)
+    pub fn get_or_create_shared_room(
+        &mut self,
+        room_name: &str,
+        room_type: RoomType,
+        created_by: UserId,
+    ) -> ChatResult<RoomId> {
+        // Use a truly fixed UUID for the lobby room
+        let room_id = if room_name == "Lobby" {
+            // Fixed UUID that all clients will use for the lobby
+            uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000001")
+                .expect("Invalid lobby UUID")
+        } else {
+            // For other rooms, create deterministic ID based on name
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+
+            let mut hasher = DefaultHasher::new();
+            room_name.hash(&mut hasher);
+            let hash = hasher.finish();
+            uuid::Uuid::from_u128(hash as u128)
+        };
+
+        // Check if room already exists
+        if self.rooms.contains_key(&room_id) {
+            return Ok(room_id);
+        }
+
+        // Create new room with the fixed/deterministic ID
+        let room_settings = match room_type {
+            RoomType::Public => RoomSettings::public(room_name.to_string()),
+            RoomType::Private => RoomSettings::private(room_name.to_string()),
+            RoomType::DirectMessage => {
+                RoomSettings::direct_message(uuid::Uuid::new_v4(), uuid::Uuid::new_v4())
+            }
+            RoomType::GroupMessage => RoomSettings::group_message(room_name.to_string(), 100),
+        };
+
+        let room = Room::new(room_id, room_settings, created_by)?;
+        self.rooms.insert(room_id, room);
+        Ok(room_id)
+    }
+
     /// Get a room by ID
     pub fn get_room(&self, room_id: &RoomId) -> Option<&Room> {
         self.rooms.get(room_id)

@@ -13,11 +13,11 @@ enum MessageStyle {
     System,   // System messages
 }
 
-use super::Component;
+use super::{Component, NavigationPanel, UserListPanel};
 use crate::{
     action::Action,
     app::Mode,
-    chat::{ChatMessage, MessageType, RoomManager, RoomSettings, RoomUser, UserRole},
+    chat::{ChatMessage, MessageType, RoomManager, RoomSettings, RoomType, RoomUser, UserRole},
     config::Config,
     errors::display::{set_global_error_display_action_sender, show_info, show_validation_error},
     history::CommandHistory,
@@ -67,6 +67,17 @@ pub struct Home {
 
     // Connection status for UI display
     connection_status: ConnectionStatus,
+
+    // DM navigation panel
+    dm_navigation: NavigationPanel,
+    show_dm_navigation: bool,
+
+    // User list for starting new DMs
+    user_list: UserListPanel,
+    show_user_list: bool,
+
+    // Server-provided connected users list
+    connected_users: Vec<String>,
 }
 
 // Static state variables for scrolling
@@ -110,6 +121,55 @@ impl Default for Home {
             manual_scroll: false,
 
             connection_status: ConnectionStatus::DISCONNECTED,
+
+            // DM navigation panel
+            dm_navigation: {
+                let mut panel = NavigationPanel::new();
+                // Initialize with sample conversations for testing
+                let user1 = uuid::Uuid::new_v4();
+                let user2 = uuid::Uuid::new_v4();
+                let user3 = uuid::Uuid::new_v4();
+
+                let sample_conversations = vec![
+                    crate::chat::ConversationSummary {
+                        id: crate::chat::ConversationId::from_participants(user1, user2),
+                        other_user_id: user2,
+                        other_username: "Alice".to_string(),
+                        last_message: Some("Hey, how's it going?".to_string()),
+                        last_activity: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs(),
+                        unread_count: 2,
+                        is_archived: false,
+                        is_muted: false,
+                    },
+                    crate::chat::ConversationSummary {
+                        id: crate::chat::ConversationId::from_participants(user1, user3),
+                        other_user_id: user3,
+                        other_username: "Bob".to_string(),
+                        last_message: Some("Thanks for the help earlier!".to_string()),
+                        last_activity: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs()
+                            - 3600,
+                        unread_count: 0,
+                        is_archived: false,
+                        is_muted: false,
+                    },
+                ];
+                panel.state_mut().update_conversations(sample_conversations);
+                panel
+            },
+            show_dm_navigation: false,
+
+            // User list for starting new DMs
+            user_list: UserListPanel::new(),
+            show_user_list: false,
+
+            // Server-provided connected users list
+            connected_users: Vec::new(),
         }
     }
 }
@@ -124,11 +184,12 @@ impl Home {
         // Reset the room manager to clean up any existing state
         self.reset_chat_state();
 
-        // Create a default public room
-        let room_settings = RoomSettings::public("General".to_string());
-        let room_id = self
-            .room_manager
-            .create_room(room_settings, uuid::Uuid::nil())?;
+        // Create or get the shared lobby room that all users join
+        let room_id = self.room_manager.get_or_create_shared_room(
+            "Lobby",
+            RoomType::Public,
+            uuid::Uuid::nil(),
+        )?;
 
         // Create user - ensure username doesn't have a '!' character
         let clean_username = username.replace("!", "");
@@ -144,7 +205,7 @@ impl Home {
 
         // Add a system message to indicate successful initialization
         let welcome_msg = format!(
-            "Welcome, {}! You are now connected to the chat.",
+            "Welcome, {}! You have joined the Lobby. Use Ctrl+L to access direct messages.",
             clean_username
         );
         if let Some(room) = self.room_manager.get_room_mut(&room_id) {
@@ -164,14 +225,12 @@ impl Home {
 
     /// Reset the chat state when logging out or reinitializing
     pub fn reset_chat_state(&mut self) {
-        // Clear room manager
-        self.room_manager = RoomManager::new();
-
-        // Clear context
+        // Don't clear room manager - keep existing rooms so multiple users can share them
+        // Only clear user context
         self.current_room_id = None;
         self.current_user_id = None;
 
-        tracing::info!("DEBUG: Chat state reset");
+        tracing::info!("DEBUG: Chat state reset (keeping room manager)");
 
         // Also reset the scroll position to default
         self.scroll_offset = 0;
@@ -598,6 +657,28 @@ impl Component for Home {
     }
 
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
+        // Handle user list if it's visible and focused
+        if self.show_user_list && self.user_list.state().focused {
+            if self.user_list.handle_input(key) {
+                return Ok(Some(Action::Render));
+            }
+        }
+
+        // Handle DM navigation if it's visible and focused
+        if self.show_dm_navigation && self.dm_navigation.state().focused {
+            // Check for 'n' key to start new DM before letting navigation handle it
+            if key.code == KeyCode::Char('n') && !self.dm_navigation.state().search_active {
+                self.show_user_list_for_new_dm();
+                return Ok(Some(Action::Render));
+            }
+
+            if self.dm_navigation.handle_input(key) {
+                // Check for navigation events
+                self.handle_dm_navigation_events();
+                return Ok(Some(Action::Render));
+            }
+        }
+
         // Handle scrolling with PageUp and PageDown
         if self.mode == Mode::Normal || self.mode == Mode::Processing {
             // Handle scrolling for the help popup if it's visible
@@ -835,6 +916,9 @@ impl Component for Home {
                     KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         Action::Suspend
                     }
+                    KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        Action::ToggleDM
+                    }
                     KeyCode::Char('f') => Action::ToggleFps,
                     KeyCode::Char('?') => Action::ToggleShowHelp,
                     KeyCode::Char('/') => {
@@ -876,6 +960,14 @@ impl Component for Home {
                         if self.show_help {
                             self.show_help = false;
                             self.help_scroll = 0; // Reset help scroll position when closing
+                        } else if self.show_user_list {
+                            self.show_user_list = false;
+                            self.user_list.state_mut().focused = false;
+                            self.user_list.state_mut().visible = false;
+                        } else if self.show_dm_navigation {
+                            self.show_dm_navigation = false;
+                            self.dm_navigation.state_mut().focused = false;
+                            self.dm_navigation.state_mut().visible = false;
                         }
                         Action::Update
                     }
@@ -905,6 +997,9 @@ impl Component for Home {
                     }
                     KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         Action::Suspend
+                    }
+                    KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        Action::ToggleDM
                     }
                     KeyCode::Esc => Action::EnterNormal,
                     KeyCode::Enter => {
@@ -990,6 +1085,23 @@ impl Component for Home {
                 self.show_help = !self.show_help;
                 if self.show_help {
                     self.help_scroll = 0; // Reset scroll position when opening help
+                }
+            }
+            Action::ToggleDM => {
+                self.show_dm_navigation = !self.show_dm_navigation;
+                if self.show_dm_navigation {
+                    // Close user list if open
+                    self.show_user_list = false;
+                    self.user_list.state_mut().focused = false;
+                    self.user_list.state_mut().visible = false;
+
+                    // Focus the DM navigation when opening
+                    self.dm_navigation.state_mut().focused = true;
+                    self.dm_navigation.state_mut().visible = true;
+                } else {
+                    // Unfocus when closing
+                    self.dm_navigation.state_mut().focused = false;
+                    self.dm_navigation.state_mut().visible = false;
                 }
             }
             Action::EnterNormal => {
@@ -1217,11 +1329,18 @@ impl Component for Home {
             .collect();
         if messages.is_empty() {
             text.push("".into());
-            text.push("Waiting for messages...".dim().into());
+            text.push("Welcome to the Lobby!".green().bold().into());
+            text.push("".into());
+            text.push(
+                "Start chatting by typing a message or use direct messages."
+                    .dim()
+                    .into(),
+            );
             text.push("".into());
             text.push("Controls:".white().bold().into());
+            text.push("   / - Type a message".cyan().into());
+            text.push("   Ctrl+L - Open direct messages".cyan().into());
             text.push("   ? - Show/hide help".cyan().into());
-            text.push("   f - Toggle FPS counter".cyan().into());
             text.push("   q - Quit application".cyan().into());
             text.push("".into());
         } else {
@@ -1641,6 +1760,19 @@ impl Component for Home {
                 Row::new(vec!["Home", "Scroll to Top"]),
                 Row::new(vec!["End", "Scroll to Bottom"]),
                 Row::new(vec!["f", "Toggle FPS counter"]),
+                Row::new(vec!["", ""]),
+                Row::new(vec!["--- Direct Messages ---", ""]),
+                Row::new(vec!["Ctrl+L", "Open DM Navigation"]),
+                Row::new(vec!["n", "Start New DM (in DM mode)"]),
+                Row::new(vec!["Enter", "Open Selected Conversation"]),
+                Row::new(vec!["j/k", "Navigate DM List"]),
+                Row::new(vec!["Tab", "Switch DM View Mode"]),
+                Row::new(vec!["a", "Archive/Unarchive DM"]),
+                Row::new(vec!["m", "Mute/Unmute DM"]),
+                Row::new(vec!["r", "Mark DM as Read"]),
+                Row::new(vec!["R", "Mark All DMs as Read"]),
+                Row::new(vec!["F5", "Refresh DM List"]),
+                Row::new(vec!["Ctrl+/", "Search DMs"]),
             ];
 
             // Calculate available height for the table content
@@ -1749,6 +1881,164 @@ impl Component for Home {
             }
         };
 
+        // Render DM navigation panel if visible
+        if self.show_dm_navigation {
+            // Create left sidebar for DM navigation
+            let dm_layout = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(35), // DM navigation panel
+                    Constraint::Percentage(65), // Main content
+                ])
+                .split(area);
+
+            // Render the actual DM navigation panel
+            self.dm_navigation.render(frame, dm_layout[0]);
+        }
+
+        // Render user list if visible (overlay on top of DM navigation)
+        if self.show_user_list {
+            // Give UserListPanel the full area - it creates its own centered popup
+            self.user_list.render(frame, area);
+        }
+
         Ok(())
+    }
+}
+
+impl Home {
+    /// Handle events from DM navigation panel
+    fn handle_dm_navigation_events(&mut self) {
+        // This would normally handle events from the navigation panel
+        // For now, we'll simulate the behavior since we don't have a proper event system
+
+        // Note: In a full implementation, this would receive NavigationEvent::ShowUserList
+        // and open the user list panel
+    }
+
+    /// Get users from current room for DM user list
+    fn get_room_users_for_dm(&self) -> Vec<crate::chat::UserPresence> {
+        let mut users = Vec::new();
+
+        if let Some(room_id) = self.current_room_id {
+            if let Some(room) = self.room_manager.get_room(&room_id) {
+                for room_user in room.get_users() {
+                    // Skip current user
+                    if let Some(current_user_id) = self.current_user_id {
+                        if room_user.user_id == current_user_id {
+                            continue;
+                        }
+                    }
+
+                    // Convert RoomUser to UserPresence
+                    let user_presence = crate::chat::UserPresence {
+                        user_id: room_user.user_id,
+                        username: room_user.username.clone(),
+                        display_name: Some(room_user.username.clone()),
+                        status: crate::chat::UserStatus::Online, // Assume online if in room
+                        last_seen: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs(),
+                        avatar_url: None,
+                        status_message: Some("In lobby".to_string()),
+                        is_typing_to: None,
+                        device: Some("Connected".to_string()),
+                        online_since: Some(
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs(),
+                        ),
+                    };
+                    users.push(user_presence);
+                }
+            }
+        }
+
+        users
+    }
+
+    /// Show user list for starting new DM
+    fn show_user_list_for_new_dm(&mut self) {
+        self.show_user_list = true;
+        self.user_list.state_mut().visible = true;
+        self.user_list.state_mut().focused = true;
+        self.user_list.state_mut().set_search_focus(true);
+
+        // Disable filters to show all users for new DM creation
+        self.user_list.state_mut().filter.available_only = false;
+        self.user_list.state_mut().filter.online_only = false;
+
+        // Request fresh user list from server
+        if let Some(tx) = &self.command_tx {
+            let _ = tx.send(Action::SendMessage("REQUEST_USER_LIST".to_string()));
+        }
+
+        // Use server-provided connected users instead of room-based users
+        let mut users = Vec::new();
+
+        // Convert server user list to UserPresence objects
+        for username in &self.connected_users {
+            // Skip current user
+            if let Some(current_user_id) = self.current_user_id {
+                if let Some(room) = self
+                    .current_room_id
+                    .and_then(|id| self.room_manager.get_room(&id))
+                {
+                    if let Some(current_user) = room
+                        .get_users()
+                        .iter()
+                        .find(|u| u.user_id == current_user_id)
+                    {
+                        if username == &current_user.username {
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            let user_presence = crate::chat::UserPresence {
+                user_id: uuid::Uuid::new_v4(), // Generate temp ID for server users
+                username: username.clone(),
+                display_name: Some(username.clone()),
+                status: crate::chat::UserStatus::Online,
+                last_seen: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+                avatar_url: None,
+                status_message: Some("Connected to server".to_string()),
+                is_typing_to: None,
+                device: Some("Online".to_string()),
+                online_since: Some(
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                ),
+            };
+            users.push(user_presence);
+        }
+
+        // Update the panel title to show debug info
+        let debug_title = if users.is_empty() {
+            format!(
+                "No Other Users (Server has {} total)",
+                self.connected_users.len()
+            )
+        } else {
+            format!("Start New DM ({} users)", users.len())
+        };
+
+        // Update user list title with debug info
+        self.user_list.set_title(debug_title);
+
+        self.user_list.state_mut().update_users(users);
+    }
+
+    /// Update connected users list from server
+    pub fn update_connected_users(&mut self, users: Vec<String>) {
+        self.connected_users = users;
     }
 }

@@ -21,6 +21,7 @@ use crate::{
     transport::{ConnectionConfig, ConnectionObserver, Message, MessageStore},
     tui::{Event, Tui},
 };
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub struct App {
@@ -46,6 +47,9 @@ pub struct App {
     home_component: Home,
     status_bar: StatusBar,
     fps_counter: FpsCounter,
+
+    // Server-provided user list for DM discovery
+    connected_users: Vec<String>,
 }
 
 /// Observer for handling ConnectionManager messages and events
@@ -170,6 +174,9 @@ impl App {
             home_component: Home::new(),
             status_bar: StatusBar::new(),
             fps_counter: FpsCounter::default(),
+
+            // Server-provided user list
+            connected_users: Vec::new(),
         })
     }
 
@@ -492,6 +499,8 @@ impl App {
                             "Chat system initialized successfully for {}",
                             profile.username
                         );
+                        // Update status bar to show Lobby room
+                        self.status_bar.set_current_room(Some("Lobby".to_string()));
                     }
 
                     // Connection is already established during authentication
@@ -533,6 +542,11 @@ impl App {
                 self.home_component.update(action.clone())?;
                 Ok(None)
             }
+            Action::ToggleDM => {
+                // Toggle DM navigation panel
+                self.home_component.update(action.clone())?;
+                Ok(None)
+            }
 
             Action::SendMessage(message) => {
                 info!("DEBUG: SendMessage action received: '{}'", message);
@@ -542,6 +556,53 @@ impl App {
             }
 
             Action::ReceiveMessage(message) => {
+                // Check if this is a server user list update
+                if message.starts_with("USER_LIST:") {
+                    let user_list_str = message.strip_prefix("USER_LIST:").unwrap_or("");
+                    self.connected_users = if user_list_str.is_empty() {
+                        Vec::new()
+                    } else {
+                        user_list_str.split(',').map(|s| s.to_string()).collect()
+                    };
+                    info!("Updated connected users list: {:?}", self.connected_users);
+                    // Update the home component with the new user list
+                    self.home_component
+                        .update_connected_users(self.connected_users.clone());
+                    return Ok(None);
+                }
+
+                // Check if this is a room status update
+                if message.starts_with("ROOM_STATUS:") {
+                    let status_str = message.strip_prefix("ROOM_STATUS:").unwrap_or("");
+                    let parts: Vec<&str> = status_str.splitn(2, ',').collect();
+                    if parts.len() == 2 {
+                        let room_name = parts[0];
+                        let username = parts[1];
+                        info!("Room status update: {} joined {}", username, room_name);
+                        // Update status bar to show current room
+                        self.status_bar
+                            .set_current_room(Some(room_name.to_string()));
+                    }
+                    return Ok(None);
+                }
+
+                // Check if this is a direct message from another user
+                if message.starts_with("DM_FROM:") {
+                    let dm_str = message.strip_prefix("DM_FROM:").unwrap_or("");
+                    let parts: Vec<&str> = dm_str.splitn(2, ':').collect();
+                    if parts.len() == 2 {
+                        let sender = parts[0];
+                        let dm_content = parts[1];
+                        let formatted_dm = format!("[DM from {}]: {}", sender, dm_content);
+                        info!("Received direct message from {}: {}", sender, dm_content);
+
+                        // Add the DM to the chat display
+                        self.home_component.add_message_to_room(formatted_dm, true);
+                        self.status_bar.record_received_message();
+                    }
+                    return Ok(None);
+                }
+
                 // Message handling from either modern or legacy systems
                 // Messages can come from observer pattern or legacy transport
                 info!("ACTION: ReceiveMessage handler called with: '{}'", message);
@@ -649,6 +710,8 @@ impl App {
                         error!("Failed to initialize chat: {}", e);
                     } else {
                         info!("DEBUG: Successfully initialized chat with DefaultUser");
+                        // Update status bar to show Lobby room
+                        self.status_bar.set_current_room(Some("Lobby".to_string()));
                     }
                 } else {
                     info!("DEBUG: Chat already initialized, proceeding with message handling");
@@ -1222,6 +1285,10 @@ impl App {
                         .initialize_chat(profile.username.clone())
                     {
                         error!("Failed to initialize chat: {}", e);
+                        return;
+                    } else {
+                        // Update status bar to show Lobby room
+                        self.status_bar.set_current_room(Some("Lobby".to_string()));
                     }
                 }
             }
