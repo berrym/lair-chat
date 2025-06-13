@@ -107,7 +107,7 @@ impl UserListState {
         self.filter.current_user_id = Some(user_id);
     }
 
-    /// Update the user list
+    /// Update user list
     pub fn update_users(&mut self, users: Vec<UserPresence>) {
         // Apply filters
         let filtered_users = self.apply_filters(users);
@@ -119,16 +119,19 @@ impl UserListState {
             self.filter_by_search(filtered_users)
         };
 
-        // Reset selection if it's out of bounds
-        if let Some(index) = self.selected_index {
+        // Reset selection if it's out of bounds or users list is empty
+        if self.users.is_empty() {
+            self.selected_index = None;
+        } else if let Some(index) = self.selected_index {
             if index >= self.users.len() {
-                self.selected_index = if self.users.is_empty() { None } else { Some(0) };
+                self.selected_index = Some(0);
             }
-        } else if !self.users.is_empty() {
+        } else {
+            // If no selection and we have users, select the first one
             self.selected_index = Some(0);
         }
 
-        // Update list state
+        // Update list state - ensure valid state
         self.list_state.select(self.selected_index);
         self.last_refresh = Some(
             std::time::SystemTime::now()
@@ -199,12 +202,14 @@ impl UserListState {
     /// Select next user
     pub fn select_next(&mut self) {
         if self.users.is_empty() {
+            self.selected_index = None;
+            self.list_state.select(None);
             return;
         }
 
         let next_index = match self.selected_index {
             Some(index) => {
-                if index >= self.users.len() - 1 {
+                if index >= self.users.len().saturating_sub(1) {
                     0
                 } else {
                     index + 1
@@ -220,18 +225,20 @@ impl UserListState {
     /// Select previous user
     pub fn select_previous(&mut self) {
         if self.users.is_empty() {
+            self.selected_index = None;
+            self.list_state.select(None);
             return;
         }
 
         let prev_index = match self.selected_index {
             Some(index) => {
                 if index == 0 {
-                    self.users.len() - 1
+                    self.users.len().saturating_sub(1)
                 } else {
-                    index - 1
+                    index.saturating_sub(1)
                 }
             }
-            None => self.users.len() - 1,
+            None => self.users.len().saturating_sub(1),
         };
 
         self.selected_index = Some(prev_index);
@@ -240,6 +247,9 @@ impl UserListState {
 
     /// Get currently selected user
     pub fn selected_user(&self) -> Option<&UserPresence> {
+        if self.users.is_empty() {
+            return None;
+        }
         self.selected_index.and_then(|index| self.users.get(index))
     }
 
@@ -365,18 +375,24 @@ impl UserListPanel {
             KeyCode::Enter => {
                 if self.state.search_focused {
                     self.state.set_search_focus(false);
-                } else if let Some(user) = self.state.selected_user() {
-                    self.send_event(UserListEvent::UserSelected(user.user_id));
-                    self.state.hide();
+                } else if !self.state.users.is_empty() {
+                    if let Some(user) = self.state.selected_user() {
+                        self.send_event(UserListEvent::UserSelected(user.user_id));
+                        self.state.hide();
+                    }
                 }
                 true
             }
             KeyCode::Up | KeyCode::Char('k') if !self.state.search_focused => {
-                self.state.select_previous();
+                if !self.state.users.is_empty() {
+                    self.state.select_previous();
+                }
                 true
             }
             KeyCode::Down | KeyCode::Char('j') if !self.state.search_focused => {
-                self.state.select_next();
+                if !self.state.users.is_empty() {
+                    self.state.select_next();
+                }
                 true
             }
             KeyCode::Char('/') if !self.state.search_focused => {
@@ -560,12 +576,35 @@ impl UserListPanel {
             Style::default().fg(status_color),
         ));
 
+        // Check for unread DM indicator in status message
+        let has_unread = user
+            .status_message
+            .as_ref()
+            .map(|msg| msg.contains("unread"))
+            .unwrap_or(false);
+
+        if has_unread {
+            spans.push(Span::styled("🔔 ", Style::default().fg(Color::Yellow)));
+        }
+
         // Username/display name
         let display_name = user.display_name();
         spans.push(Span::styled(
             display_name.to_string(),
             Style::default().fg(Color::White),
         ));
+
+        // Show unread DM count if present
+        if has_unread {
+            if let Some(status_msg) = &user.status_message {
+                spans.push(Span::styled(
+                    format!(" ({})", status_msg),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ));
+            }
+        }
 
         // Show typing indicator if enabled
         if self.show_typing_indicators {
@@ -579,8 +618,8 @@ impl UserListPanel {
             }
         }
 
-        // Show presence details if enabled
-        if self.show_presence_details && user.status != UserStatus::Online {
+        // Show presence details if enabled (but not if showing unread count)
+        if self.show_presence_details && user.status != UserStatus::Online && !has_unread {
             let last_seen = user.human_last_seen();
             spans.push(Span::styled(
                 format!(" - {}", last_seen),

@@ -512,6 +512,27 @@ impl App {
                 Ok(None)
             }
 
+            Action::StartDMConversation(username) => {
+                // Handle starting a DM conversation - update status bar
+                self.status_bar
+                    .set_current_room(Some(format!("DM with {}", username)));
+                info!("Started DM conversation with {}", username);
+
+                // Pass the action to home component for handling
+                self.home_component.update(action.clone())?;
+                Ok(None)
+            }
+
+            Action::ReturnToLobby => {
+                // Handle returning to Lobby from DM mode - update status bar
+                self.status_bar.set_current_room(Some("Lobby".to_string()));
+                info!("Returned to Lobby from DM mode");
+
+                // Pass the action to home component for handling
+                self.home_component.update(action.clone())?;
+                Ok(None)
+            }
+
             Action::EnterInsert => {
                 // Switch home component to insert mode
                 self.home_component.update(action.clone())?;
@@ -588,17 +609,62 @@ impl App {
 
                 // Check if this is a direct message from another user
                 if message.starts_with("DM_FROM:") {
+                    info!("📨 DEBUG: Received DM_FROM message: '{}'", message);
                     let dm_str = message.strip_prefix("DM_FROM:").unwrap_or("");
                     let parts: Vec<&str> = dm_str.splitn(2, ':').collect();
                     if parts.len() == 2 {
                         let sender = parts[0];
                         let dm_content = parts[1];
-                        let formatted_dm = format!("[DM from {}]: {}", sender, dm_content);
-                        info!("Received direct message from {}: {}", sender, dm_content);
+                        info!(
+                            "📥 DEBUG: Parsed DM_FROM - sender: '{}', content: '{}'",
+                            sender, dm_content
+                        );
+                        info!("💬 Received direct message from {}: {}", sender, dm_content);
 
-                        // Add the DM to the chat display
-                        self.home_component.add_message_to_room(formatted_dm, true);
+                        // Add the DM to conversation manager
+                        self.home_component
+                            .add_dm_received_message(sender.to_string(), dm_content.to_string());
                         self.status_bar.record_received_message();
+
+                        // Show DM notification in status bar
+                        self.status_bar.show_dm_notification(
+                            sender.to_string(),
+                            std::time::Duration::from_secs(8),
+                        );
+
+                        info!("✅ DEBUG: DM_FROM message processed and added to conversation");
+
+                        // Show a notification to the user about the new DM
+                        let notification_msg = format!("🔔 New DM from {}: {}", sender, dm_content);
+                        info!("{}", notification_msg);
+
+                        // Check if user is currently in DM mode with this sender
+                        let is_viewing_sender_dm = self.home_component.is_in_dm_mode()
+                            && self.home_component.get_current_dm_partner().as_ref()
+                                == Some(&sender.to_string());
+
+                        // If not viewing this DM conversation, show multiple notifications
+                        if !is_viewing_sender_dm {
+                            // Show notification in chat area
+                            let notification = format!(
+                                "🔔 NEW DIRECT MESSAGE from {}: \"{}\" (Press Ctrl+L → N to view DMs)",
+                                sender, dm_content
+                            );
+                            self.home_component.add_message_to_room(notification, true);
+
+                            // Also log a prominent notification
+                            info!("🔔 NEW DM NOTIFICATION: {} → You: {}", sender, dm_content);
+
+                            // Show a system-level notification
+                            let system_notification = format!(
+                                "📨 You have a new direct message from {}! Check your DM list.",
+                                sender
+                            );
+                            self.home_component
+                                .add_message_to_room(system_notification, true);
+                        }
+                    } else {
+                        error!("❌ DEBUG: Invalid DM_FROM format - parts: {:?}", parts);
                     }
                     return Ok(None);
                 }
@@ -1243,6 +1309,23 @@ impl App {
 
     /// Modern message sending using ConnectionManager only (synchronous version)
     fn handle_modern_send_message_sync(&mut self, message: String) {
+        // Check if this is a DM message and handle it specially
+        if message.starts_with("DM:") {
+            self.handle_dm_message_send(message);
+            return;
+        }
+
+        // Send to server using extracted method
+        self.send_message_to_server(message);
+    }
+
+    /// Extract server sending logic to avoid recursion
+    fn send_message_to_server(&mut self, message: String) {
+        info!(
+            "🔄 DEBUG: send_message_to_server called with: '{}'",
+            message
+        );
+
         // Send raw message content - server will format it with username
         let message_to_send = message.clone();
 
@@ -1473,6 +1556,40 @@ impl App {
             }
         })?;
         Ok(())
+    }
+
+    /// Handle sending a DM message (format: "DM:partner:content")
+    fn handle_dm_message_send(&mut self, message: String) {
+        info!(
+            "🔥 DEBUG: handle_dm_message_send called with: '{}'",
+            message
+        );
+
+        // Parse DM message format: "DM:partner:content"
+        let parts: Vec<&str> = message.splitn(3, ':').collect();
+        if parts.len() != 3 || parts[0] != "DM" {
+            error!("❌ Invalid DM message format: {}", message);
+            return;
+        }
+
+        let partner = parts[1];
+        let content = parts[2];
+
+        info!(
+            "📤 DEBUG: Parsed DM - partner: '{}', content: '{}'",
+            partner, content
+        );
+
+        // Add to DM conversation manager first
+        self.home_component
+            .add_dm_sent_message(partner.to_string(), content.to_string());
+
+        info!("✅ DEBUG: Added DM to local conversation manager");
+
+        // Then send to server (avoid recursion)
+        info!("🚀 DEBUG: About to send DM to server: '{}'", message);
+        self.send_message_to_server(message);
+        info!("📡 DEBUG: DM sent to server");
     }
 }
 

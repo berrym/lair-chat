@@ -1,17 +1,25 @@
 # Lair Chat
 
-**Version**: 0.6.0  
+**Version**: 0.6.1  
 **Status**: Production Ready  
 **Architecture**: Modern Async/Await with Clean Abstractions
 
 An asynchronous encrypted chat application written in Rust, featuring a terminal-based server and TUI client with modern architecture patterns.
 
-## 🚀 What's New in v0.6.0
+## 🚀 What's New in v0.6.1
 
-Lair Chat v0.6.0 represents a complete architectural modernization:
+Lair Chat v0.6.1 introduces complete Direct Messaging functionality:
 
+- **💬 Direct Messaging**: Full DM system with encrypted private conversations
+- **🎨 Visual Distinction**: Purple/green bubble styling for DM messages vs regular chat
+- **🔔 Smart Notifications**: Status bar alerts and visual indicators for new DMs
+- **⚡ Easy Chat Switching**: Tab-based sidebar for seamless navigation between conversations
+- **📊 Unread Tracking**: Bell icons and counts for unread DM conversations
+- **🎯 Intuitive UX**: Clear mode headers and context-aware help text
+
+### Previous v0.6.0 Features:
 - **🏗️ Modern Architecture**: Complete rewrite with clean abstractions and dependency injection
-- **⚡ Async/Await Throughout**: Non-blocking operations with proper Tokio integration
+- **⚡ Async/Await Throughout**: Non-blocking operations with proper Tokio integration  
 - **🛡️ Type-Safe Error Handling**: Comprehensive error types replace string-based errors
 - **👁️ Observer Pattern**: Event-driven communication between components
 - **🔐 Enhanced Security**: Server-compatible encryption with X25519 + AES-256-GCM

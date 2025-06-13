@@ -7,6 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
 pub mod direct_messages;
+pub mod dm_conversations;
 pub mod dm_manager;
 pub mod messages;
 pub mod rooms;
@@ -17,6 +18,7 @@ pub use direct_messages::{
     ConversationId, ConversationSummary, DirectConversation, DirectMessage, MessageDeliveryStatus,
     MessageTarget,
 };
+pub use dm_conversations::{DMConversation, DMConversationManager, DMMessage};
 pub use dm_manager::{
     DirectMessageError, DirectMessageEvent, DirectMessageManager, DirectMessageObserver,
     DirectMessageResult, DirectMessageStats,

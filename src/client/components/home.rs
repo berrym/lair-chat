@@ -2,22 +2,30 @@ use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{prelude::*, widgets::*};
 use std::net::SocketAddr;
-use tokio::{sync::mpsc::UnboundedSender, time::Duration};
+use tokio::{
+    sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+    time::Duration,
+};
 use tui_input::{backend::crossterm::EventHandler, Input};
 
 /// Enum to distinguish different message types for styling
 #[derive(Debug, Clone, PartialEq)]
 enum MessageStyle {
-    Sent,     // Messages from the current user
-    Received, // Messages from other users
-    System,   // System messages
+    Sent,       // Regular messages from the current user
+    Received,   // Regular messages from other users
+    System,     // System messages
+    DMSent,     // DM messages from the current user
+    DMReceived, // DM messages from other users
 }
 
-use super::{Component, NavigationPanel, UserListPanel};
+use super::{Component, NavigationPanel, UserListEvent, UserListPanel};
 use crate::{
     action::Action,
     app::Mode,
-    chat::{ChatMessage, MessageType, RoomManager, RoomSettings, RoomType, RoomUser, UserRole},
+    chat::{
+        ChatMessage, DMConversationManager, MessageType, RoomManager, RoomSettings, RoomType,
+        RoomUser, UserRole,
+    },
     config::Config,
     errors::display::{set_global_error_display_action_sender, show_info, show_validation_error},
     history::CommandHistory,
@@ -78,6 +86,18 @@ pub struct Home {
 
     // Server-provided connected users list
     connected_users: Vec<String>,
+
+    // User list event handling
+    user_list_event_rx: Option<UnboundedReceiver<UserListEvent>>,
+
+    // DM conversation state
+    dm_mode: bool,
+    current_dm_partner: Option<String>,
+    dm_conversation_manager: Option<DMConversationManager>,
+
+    // Chat sidebar state
+    show_chat_sidebar: bool,
+    chat_sidebar_selected: usize,
 }
 
 // Static state variables for scrolling
@@ -164,19 +184,39 @@ impl Default for Home {
             },
             show_dm_navigation: false,
 
-            // User list for starting new DMs
+            // User list for starting new DMs - will be initialized in new()
             user_list: UserListPanel::new(),
             show_user_list: false,
 
             // Server-provided connected users list
             connected_users: Vec::new(),
+
+            // User list event handling - will be set up in new()
+            user_list_event_rx: None,
+
+            // DM conversation state
+            dm_mode: false,
+            current_dm_partner: None,
+            dm_conversation_manager: None,
+
+            // Chat sidebar state
+            show_chat_sidebar: false,
+            chat_sidebar_selected: 0,
         }
     }
 }
 
 impl Home {
     pub fn new() -> Self {
-        Self::default()
+        let mut home = Self::default();
+
+        // Set up user list with event channel
+        let (tx, rx) = unbounded_channel();
+        home.user_list = UserListPanel::with_event_sender(tx);
+        home.user_list.set_title("Start New DM".to_string());
+        home.user_list_event_rx = Some(rx);
+
+        home
     }
 
     /// Initialize default room and user for chat
@@ -191,7 +231,6 @@ impl Home {
             uuid::Uuid::nil(),
         )?;
 
-        // Create user - ensure username doesn't have a '!' character
         let clean_username = username.replace("!", "");
         let user_id = uuid::Uuid::new_v4();
         let user = RoomUser::new(user_id, clean_username.clone(), UserRole::User);
@@ -203,7 +242,9 @@ impl Home {
         self.current_room_id = Some(room_id);
         self.current_user_id = Some(user_id);
 
-        // Add a system message to indicate successful initialization
+        // Initialize DM conversation manager
+        self.dm_conversation_manager = Some(DMConversationManager::new(clean_username.clone()));
+
         let welcome_msg = format!(
             "Welcome, {}! You have joined the Lobby. Use Ctrl+L to access direct messages.",
             clean_username
@@ -230,6 +271,11 @@ impl Home {
         self.current_room_id = None;
         self.current_user_id = None;
 
+        // Reset DM state
+        self.dm_mode = false;
+        self.current_dm_partner = None;
+        self.dm_conversation_manager = None;
+
         tracing::info!("DEBUG: Chat state reset (keeping room manager)");
 
         // Also reset the scroll position to default
@@ -240,6 +286,52 @@ impl Home {
 
     /// Get current room messages for display with styling information
     fn get_display_messages_with_style(&self) -> Vec<(String, MessageStyle)> {
+        // If in DM mode, show DM conversation messages
+        if self.dm_mode {
+            if let (Some(dm_manager), Some(partner)) =
+                (&self.dm_conversation_manager, &self.current_dm_partner)
+            {
+                if let Some(conversation) = dm_manager.get_conversation_with_user(partner) {
+                    let current_user = dm_manager.get_current_user();
+                    let messages = conversation
+                        .get_messages()
+                        .iter()
+                        .map(|dm_msg| {
+                            let formatted = dm_msg.format_for_display(current_user);
+                            let style = if dm_msg.sender == current_user {
+                                MessageStyle::DMSent
+                            } else if dm_msg.message_type == MessageType::System {
+                                MessageStyle::System
+                            } else {
+                                MessageStyle::DMReceived
+                            };
+                            (formatted, style)
+                        })
+                        .collect::<Vec<(String, MessageStyle)>>();
+
+                    tracing::info!(
+                        "DEBUG: DM mode - returning {} messages for conversation with {}",
+                        messages.len(),
+                        partner
+                    );
+                    return messages;
+                } else {
+                    tracing::warn!("DEBUG: DM conversation not found for partner: {}", partner);
+                    return vec![(
+                        format!("Starting new conversation with {}", partner),
+                        MessageStyle::System,
+                    )];
+                }
+            } else {
+                tracing::warn!("DEBUG: DM mode but missing manager or partner");
+                return vec![(
+                    "DM mode error - missing conversation data".to_string(),
+                    MessageStyle::System,
+                )];
+            }
+        }
+
+        // Default to room messages when not in DM mode
         if let Some(room_id) = self.current_room_id {
             if let Some(room) = self.room_manager.get_room(&room_id) {
                 let messages = room
@@ -285,8 +377,6 @@ impl Home {
         } else {
             tracing::warn!("DEBUG: No current_room_id in get_display_messages_with_style");
         }
-
-        tracing::info!("DEBUG: get_display_messages_with_style returning empty vector");
         Vec::new()
     }
 
@@ -657,6 +747,35 @@ impl Component for Home {
     }
 
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
+        // Handle chat sidebar navigation
+        if self.show_chat_sidebar {
+            match key.code {
+                KeyCode::Up => {
+                    if self.chat_sidebar_selected > 0 {
+                        self.chat_sidebar_selected -= 1;
+                    }
+                    return Ok(Some(Action::Render));
+                }
+                KeyCode::Down => {
+                    let chats = self.get_available_chats();
+                    if self.chat_sidebar_selected < chats.len().saturating_sub(1) {
+                        self.chat_sidebar_selected += 1;
+                    }
+                    return Ok(Some(Action::Render));
+                }
+                KeyCode::Enter => {
+                    self.switch_to_selected_chat();
+                    self.show_chat_sidebar = false;
+                    return Ok(Some(Action::Render));
+                }
+                KeyCode::Esc | KeyCode::Tab => {
+                    self.show_chat_sidebar = false;
+                    return Ok(Some(Action::Render));
+                }
+                _ => {}
+            }
+        }
+
         // Handle user list if it's visible and focused
         if self.show_user_list && self.user_list.state().focused {
             if self.user_list.handle_input(key) {
@@ -919,6 +1038,13 @@ impl Component for Home {
                     KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         Action::ToggleDM
                     }
+                    KeyCode::Tab => {
+                        self.show_chat_sidebar = !self.show_chat_sidebar;
+                        if !self.show_chat_sidebar {
+                            self.chat_sidebar_selected = 0;
+                        }
+                        return Ok(Some(Action::Render));
+                    }
                     KeyCode::Char('f') => Action::ToggleFps,
                     KeyCode::Char('?') => Action::ToggleShowHelp,
                     KeyCode::Char('/') => {
@@ -1001,6 +1127,13 @@ impl Component for Home {
                     KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         Action::ToggleDM
                     }
+                    KeyCode::Tab => {
+                        self.show_chat_sidebar = !self.show_chat_sidebar;
+                        if !self.show_chat_sidebar {
+                            self.chat_sidebar_selected = 0;
+                        }
+                        return Ok(Some(Action::Render));
+                    }
                     KeyCode::Esc => Action::EnterNormal,
                     KeyCode::Enter => {
                         let message = self.input.value().to_string();
@@ -1016,7 +1149,18 @@ impl Component for Home {
                                 }
                             });
 
-                            let action = Action::SendMessage(message);
+                            // Check if we're in DM mode and format message accordingly
+                            let formatted_message = if self.dm_mode {
+                                if let Some(partner) = &self.current_dm_partner {
+                                    format!("DM:{}:{}", partner, message)
+                                } else {
+                                    message // Fallback if no partner set
+                                }
+                            } else {
+                                message
+                            };
+
+                            let action = Action::SendMessage(formatted_message);
                             self.input.reset();
                             return Ok(Some(action));
                         } else {
@@ -1078,6 +1222,9 @@ impl Component for Home {
     }
 
     fn update(&mut self, action: Action) -> Result<Option<Action>> {
+        // Handle user list events first
+        self.handle_user_list_events();
+
         match action {
             Action::Tick => self.tick(),
             Action::Render => self.render_tick(),
@@ -1107,6 +1254,17 @@ impl Component for Home {
             Action::EnterNormal => {
                 self.prev_mode = self.mode;
                 self.mode = Mode::Normal;
+
+                // Exit DM mode when entering Normal mode (Escape key)
+                if self.dm_mode {
+                    self.dm_mode = false;
+                    self.current_dm_partner = None;
+
+                    // Send action to update status bar back to Lobby
+                    if let Some(tx) = &self.command_tx {
+                        let _ = tx.send(Action::ReturnToLobby);
+                    }
+                }
             }
             Action::EnterInsert => {
                 self.prev_mode = self.mode;
@@ -1149,6 +1307,34 @@ impl Component for Home {
                     "Please use the authentication system to connect (restart the application)",
                 );
             }
+            Action::StartDMConversation(username) => {
+                // Handle starting a DM conversation with the selected user
+                self.dm_mode = true;
+                self.current_dm_partner = Some(username.clone());
+
+                // Set active conversation in DM manager
+                if let Some(dm_manager) = &mut self.dm_conversation_manager {
+                    dm_manager.set_active_conversation(Some(username.clone()));
+                }
+
+                // Hide any open panels
+                self.show_user_list = false;
+                self.show_dm_navigation = false;
+                self.user_list.state_mut().hide();
+                self.dm_navigation.state_mut().focused = false;
+                self.dm_navigation.state_mut().visible = false;
+
+                // Show info message about starting DM
+                show_info(&format!("Started DM conversation with {}", username));
+            }
+            Action::ReturnToLobby => {
+                // Handle returning to Lobby from DM mode
+                self.dm_mode = false;
+                self.current_dm_partner = None;
+
+                // Show info message about returning to Lobby
+                show_info("Returned to Lobby");
+            }
             // DisconnectClient is now handled by the main app using modern ConnectionManager
             // No need to handle it here anymore
             _ => {}
@@ -1171,6 +1357,24 @@ impl Component for Home {
             .constraints([Constraint::Percentage(100), Constraint::Min(3)].as_ref())
             .split(area);
 
+        // Create main layout with optional sidebar
+        let main_content_area = if self.show_chat_sidebar {
+            let main_layout = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Length(25), // Chat sidebar
+                    Constraint::Min(1),     // Main content
+                ])
+                .split(rects[0]);
+
+            // Render chat sidebar
+            self.render_chat_sidebar(frame, main_layout[0]);
+
+            main_layout[1]
+        } else {
+            rects[0]
+        };
+
         // Create a horizontal layout for the main content and scrollbar
         let content_layout = Layout::default()
             .direction(Direction::Horizontal)
@@ -1178,7 +1382,7 @@ impl Component for Home {
                 Constraint::Min(1),    // Main content area
                 Constraint::Length(1), // Scrollbar
             ])
-            .split(rects[0]);
+            .split(main_content_area);
 
         let content_area = content_layout[0];
         let scrollbar_area = content_layout[1];
@@ -1322,26 +1526,164 @@ impl Component for Home {
                         let centered_content = format!("{}{}", " ".repeat(padding), system_content);
                         lines.push(Line::from(centered_content).style(style));
                     }
+                    MessageStyle::DMSent => {
+                        // DM sent messages: Purple bubble, right-aligned with width limit
+                        let style = Style::default()
+                            .fg(Color::Rgb(255, 255, 255)) // Pure white text
+                            .bg(Color::Rgb(147, 51, 234)) // Purple (#9333EA)
+                            .add_modifier(Modifier::BOLD);
+
+                        // Wrap text to fit within message_max_width minus padding
+                        let content_width = message_max_width.saturating_sub(4); // -4 for padding
+                        let wrapped_lines = wrap_text(content, content_width.max(10));
+
+                        for (_line_index, wrapped_line) in wrapped_lines.iter().enumerate() {
+                            let bubble_content = format!("  {}  ", wrapped_line);
+                            let content_len = bubble_content.len();
+
+                            // Right-align the bubble
+                            let padding = if content_len < available_width {
+                                available_width.saturating_sub(content_len)
+                            } else {
+                                0
+                            };
+
+                            // Create line with mixed styling: transparent padding + colored content
+                            let line = Line::from(vec![
+                                Span::raw(" ".repeat(padding)),      // Transparent padding
+                                Span::styled(bubble_content, style), // Colored content only
+                            ]);
+                            lines.push(line);
+                        }
+                    }
+                    MessageStyle::DMReceived => {
+                        // DM received messages: Green bubble with width limit
+                        let style = Style::default()
+                            .fg(Color::Rgb(255, 255, 255)) // Pure white text
+                            .bg(Color::Rgb(34, 197, 94)) // Green (#22C55E)
+                            .add_modifier(Modifier::BOLD);
+
+                        // Wrap text to fit within message_max_width minus padding
+                        let content_width = message_max_width.saturating_sub(4); // -4 for padding
+                        let wrapped_lines = wrap_text(content, content_width.max(10));
+
+                        for wrapped_line in wrapped_lines {
+                            let bubble_content = format!("  {}  ", wrapped_line);
+                            lines.push(Line::from(vec![Span::styled(bubble_content, style)]));
+                        }
+                    }
                 };
 
                 lines
             })
             .collect();
+        // Add header to distinguish DM mode vs regular chat
+        if self.dm_mode {
+            if let Some(partner) = &self.current_dm_partner {
+                text.push("".into());
+                text.push(Line::from(vec![
+                    Span::styled(
+                        "💬 DIRECT MESSAGE ",
+                        Style::default()
+                            .fg(Color::Magenta)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled("with ", Style::default().fg(Color::White)),
+                    Span::styled(
+                        partner.clone(),
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(" (Tab to switch)", Style::default().fg(Color::White)),
+                ]));
+                text.push(Line::from(Span::styled(
+                    "─".repeat(50),
+                    Style::default().fg(Color::Magenta),
+                )));
+                text.push("".into());
+            }
+        } else {
+            text.push("".into());
+            text.push(Line::from(vec![
+                Span::styled(
+                    "🏠 LOBBY CHAT ",
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "- Public Messages (Press Tab to switch)",
+                    Style::default().fg(Color::White),
+                ),
+            ]));
+            text.push(Line::from(Span::styled(
+                "─".repeat(50),
+                Style::default().fg(Color::Green),
+            )));
+            text.push("".into());
+        }
+
         if messages.is_empty() {
-            text.push("".into());
-            text.push("Welcome to the Lobby!".green().bold().into());
-            text.push("".into());
-            text.push(
-                "Start chatting by typing a message or use direct messages."
-                    .dim()
-                    .into(),
-            );
-            text.push("".into());
-            text.push("Controls:".white().bold().into());
-            text.push("   / - Type a message".cyan().into());
-            text.push("   Ctrl+L - Open direct messages".cyan().into());
-            text.push("   ? - Show/hide help".cyan().into());
-            text.push("   q - Quit application".cyan().into());
+            if self.dm_mode {
+                if let Some(partner) = &self.current_dm_partner {
+                    text.push("".into());
+                    text.push(
+                        format!("Start your conversation with {}!", partner)
+                            .cyan()
+                            .bold()
+                            .into(),
+                    );
+                    text.push("".into());
+                    text.push("Type a message and press Enter to send.".dim().into());
+                    text.push(
+                        "Press Tab to switch chats or Esc to return to Lobby."
+                            .dim()
+                            .into(),
+                    );
+                }
+            } else {
+                text.push("".into());
+                text.push("Welcome to the Lobby!".green().bold().into());
+                text.push("".into());
+                text.push(
+                    "Start chatting by typing a message or use direct messages."
+                        .dim()
+                        .into(),
+                );
+                text.push("".into());
+                text.push("Controls:".white().bold().into());
+                text.push("   / - Type a message".cyan().into());
+
+                // Show unread DM count if any
+                let unread_count = if let Some(dm_manager) = &self.dm_conversation_manager {
+                    dm_manager.get_total_unread_count()
+                } else {
+                    0
+                };
+
+                if unread_count > 0 {
+                    text.push(Line::from(vec![
+                        Span::styled(
+                            "   Ctrl+L - Open direct messages ",
+                            Style::default().fg(Color::Cyan),
+                        ),
+                        Span::styled(
+                            format!("(🔔 {} unread)", unread_count),
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                    ]));
+                } else {
+                    text.push("   Ctrl+L - Open direct messages".cyan().into());
+                }
+
+                text.push("   Tab - Switch between chats".cyan().into());
+                text.push("   Esc - Return to Lobby (from DM)".cyan().into());
+                text.push("   ? - Show/hide help".cyan().into());
+                text.push("   q - Quit application".cyan().into());
+            }
             text.push("".into());
         } else {
             for l in messages {
@@ -1461,7 +1803,7 @@ impl Component for Home {
                         scrollbar_piece,
                         Rect::new(
                             scrollbar_area.x,
-                            scrollbar_area.y + 1 + i as u16, // +1 for top border
+                            scrollbar_area.y + 1 + (i.min(u16::MAX as usize) as u16), // +1 for top border
                             1,
                             1,
                         ),
@@ -1481,11 +1823,11 @@ impl Component for Home {
 
         frame.render_widget(
             Paragraph::new(text.clone())
-                .scroll((scroll_position as u16, 0))
+                .scroll((scroll_position.min(u16::MAX as usize) as u16, 0))
                 .wrap(Wrap { trim: false })
                 .block(
                     Block::default()
-                        .title_top(Line::from("v0.6.0".white()).left_aligned())
+                        .title_top(Line::from("v0.6.1".white()).left_aligned())
                         .title_top(
                             Line::from(vec![Span::styled(
                                 "THE LAIR",
@@ -1520,7 +1862,7 @@ impl Component for Home {
                 Mode::Insert => Style::default().bg(Color::Black).fg(Color::Yellow),
                 _ => Style::default().bg(Color::Black).fg(Color::White),
             })
-            .scroll((0, input_scroll as u16)) // Fixed input box scrolling
+            .scroll((0, input_scroll.min(u16::MAX as usize) as u16)) // Fixed input box scrolling
             .block(
                 Block::default()
                     .borders(Borders::ALL)
@@ -1555,7 +1897,8 @@ impl Component for Home {
             frame.set_cursor_position(Position::new(
                 // Draw the cursor at the current position in the input field.
                 // This position is can be controlled via the left and right arrow key
-                (rects[1].x + 1 + self.input.cursor() as u16).min(rects[1].x + rects[1].width - 2),
+                (rects[1].x + 1 + (self.input.cursor().min(u16::MAX as usize) as u16))
+                    .min(rects[1].x + rects[1].width - 2),
                 // Move one line down, from the border to the input line
                 rects[1].y + 1,
             ))
@@ -1854,7 +2197,7 @@ impl Component for Home {
                             scrollbar_piece,
                             Rect::new(
                                 scrollbar_area.x,
-                                scrollbar_area.y + 1 + i as u16, // +1 for top border
+                                scrollbar_area.y + 1 + (i.min(u16::MAX as usize) as u16), // +1 for top border
                                 1,
                                 1,
                             ),
@@ -1964,7 +2307,7 @@ impl Home {
         self.show_user_list = true;
         self.user_list.state_mut().visible = true;
         self.user_list.state_mut().focused = true;
-        self.user_list.state_mut().set_search_focus(true);
+        self.user_list.state_mut().set_search_focus(false);
 
         // Disable filters to show all users for new DM creation
         self.user_list.state_mut().filter.available_only = false;
@@ -1998,7 +2341,14 @@ impl Home {
                 }
             }
 
-            let user_presence = crate::chat::UserPresence {
+            // Check for unread DMs with this user
+            let unread_count = if let Some(dm_manager) = &self.dm_conversation_manager {
+                dm_manager.get_unread_count_with_user(username).unwrap_or(0)
+            } else {
+                0
+            };
+
+            let mut user_presence = crate::chat::UserPresence {
                 user_id: uuid::Uuid::new_v4(), // Generate temp ID for server users
                 username: username.clone(),
                 display_name: Some(username.clone()),
@@ -2018,6 +2368,11 @@ impl Home {
                         .as_secs(),
                 ),
             };
+
+            // Add unread count to status message if there are unread DMs
+            if unread_count > 0 {
+                user_presence.status_message = Some(format!("{} unread", unread_count));
+            }
             users.push(user_presence);
         }
 
@@ -2040,5 +2395,189 @@ impl Home {
     /// Update connected users list from server
     pub fn update_connected_users(&mut self, users: Vec<String>) {
         self.connected_users = users;
+    }
+
+    /// Add a sent DM message to the conversation manager
+    pub fn add_dm_sent_message(&mut self, partner: String, content: String) {
+        if let Some(dm_manager) = &mut self.dm_conversation_manager {
+            if let Err(e) = dm_manager.send_message(partner, content) {
+                tracing::error!("Failed to add sent DM message: {}", e);
+            }
+        }
+    }
+
+    /// Add a received DM message to the conversation manager
+    pub fn add_dm_received_message(&mut self, sender: String, content: String) {
+        if let Some(dm_manager) = &mut self.dm_conversation_manager {
+            if let Err(e) = dm_manager.receive_message(sender, content) {
+                tracing::error!("Failed to add received DM message: {}", e);
+            }
+        }
+    }
+
+    /// Check if currently in DM mode
+    pub fn is_in_dm_mode(&self) -> bool {
+        self.dm_mode
+    }
+
+    /// Get the current DM partner if in DM mode
+    pub fn get_current_dm_partner(&self) -> Option<String> {
+        self.current_dm_partner.clone()
+    }
+
+    /// Get list of available chats (Lobby + active DM conversations)
+    fn get_available_chats(&self) -> Vec<String> {
+        let mut chats = vec!["Lobby".to_string()];
+
+        if let Some(dm_manager) = &self.dm_conversation_manager {
+            for conversation in dm_manager.get_all_conversations() {
+                if let Some(partner) = conversation
+                    .id
+                    .get_other_participant(&dm_manager.get_current_user())
+                {
+                    chats.push(format!("DM: {}", partner));
+                }
+            }
+        }
+
+        chats
+    }
+
+    /// Switch to the selected chat from the sidebar
+    fn switch_to_selected_chat(&mut self) {
+        let chats = self.get_available_chats();
+        if let Some(selected_chat) = chats.get(self.chat_sidebar_selected) {
+            if selected_chat == "Lobby" {
+                // Switch to Lobby
+                self.dm_mode = false;
+                self.current_dm_partner = None;
+                if let Some(tx) = &self.command_tx {
+                    let _ = tx.send(Action::ReturnToLobby);
+                }
+            } else if selected_chat.starts_with("DM: ") {
+                // Switch to DM
+                let partner = selected_chat.strip_prefix("DM: ").unwrap_or("");
+                self.dm_mode = true;
+                self.current_dm_partner = Some(partner.to_string());
+                if let Some(tx) = &self.command_tx {
+                    let _ = tx.send(Action::StartDMConversation(partner.to_string()));
+                }
+            }
+        }
+    }
+
+    /// Render the chat sidebar
+    fn render_chat_sidebar(&mut self, f: &mut Frame, area: Rect) {
+        let chats = self.get_available_chats();
+
+        let items: Vec<ListItem> = chats
+            .iter()
+            .enumerate()
+            .map(|(i, chat)| {
+                let mut style = Style::default().fg(Color::White);
+
+                // Highlight current chat
+                let is_current = if chat == "Lobby" {
+                    !self.dm_mode
+                } else if chat.starts_with("DM: ") {
+                    let partner = chat.strip_prefix("DM: ").unwrap_or("");
+                    self.dm_mode && self.current_dm_partner.as_ref() == Some(&partner.to_string())
+                } else {
+                    false
+                };
+
+                if is_current {
+                    style = style.fg(Color::Yellow).add_modifier(Modifier::BOLD);
+                }
+
+                // Highlight selected item
+                if i == self.chat_sidebar_selected {
+                    style = style.bg(Color::DarkGray);
+                }
+
+                // Add unread indicators for DMs
+                if chat.starts_with("DM: ") {
+                    let partner = chat.strip_prefix("DM: ").unwrap_or("");
+                    if let Some(dm_manager) = &self.dm_conversation_manager {
+                        if let Ok(unread_count) = dm_manager.get_unread_count_with_user(partner) {
+                            if unread_count > 0 {
+                                let text = format!("🔔 {} ({})", chat, unread_count);
+                                return ListItem::new(text).style(style);
+                            }
+                        }
+                    }
+                }
+
+                ListItem::new(chat.clone()).style(style)
+            })
+            .collect();
+
+        let list = List::new(items)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Chats (Tab to toggle)")
+                    .title_style(
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+            )
+            .highlight_style(
+                Style::default()
+                    .bg(Color::Blue)
+                    .add_modifier(Modifier::BOLD),
+            );
+
+        let mut list_state = ListState::default();
+        list_state.select(Some(self.chat_sidebar_selected));
+        f.render_stateful_widget(list, area, &mut list_state);
+    }
+
+    /// Handle events from the user list panel
+    fn handle_user_list_events(&mut self) {
+        if let Some(rx) = &mut self.user_list_event_rx {
+            while let Ok(event) = rx.try_recv() {
+                match event {
+                    UserListEvent::UserSelected(_user_id) => {
+                        // Find the username from the user list
+                        if let Some(user) = self.user_list.state().selected_user() {
+                            let username = user.username.clone();
+
+                            // Send action to start DM conversation
+                            if let Some(tx) = &self.command_tx {
+                                let _ = tx.send(Action::StartDMConversation(username.clone()));
+                            }
+
+                            // Switch to DM mode
+                            self.dm_mode = true;
+                            self.current_dm_partner = Some(username.clone());
+
+                            // Hide user list
+                            self.show_user_list = false;
+                            self.user_list.state_mut().hide();
+                        }
+                    }
+                    UserListEvent::Dismissed => {
+                        self.show_user_list = false;
+                        self.user_list.state_mut().hide();
+                    }
+                    UserListEvent::RefreshRequested => {
+                        // Request fresh user list from server
+                        if let Some(tx) = &self.command_tx {
+                            let _ = tx.send(Action::SendMessage("REQUEST_USER_LIST".to_string()));
+                        }
+                    }
+                    UserListEvent::SearchChanged(_query) => {
+                        // Search functionality is handled within the user list panel
+                        // No additional action needed here
+                    }
+                    UserListEvent::FocusRequested => {
+                        self.show_user_list = true;
+                        self.user_list.state_mut().show();
+                    }
+                }
+            }
+        }
     }
 }

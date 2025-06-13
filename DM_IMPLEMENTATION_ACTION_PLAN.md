@@ -13,115 +13,155 @@ This document outlines the remaining tasks to complete the direct messaging syst
 - [x] Support for DM protocol messages (DM:target:message format)
 - [x] Client handles DM_FROM messages from server
 
-## Phase 1: User Selection and DM Initiation (Priority: High)
+## Phase 1: User Selection and DM Initiation ✅ **COMPLETED** (Priority: High)
 
-### Task 1.1: Implement User Selection Events
-**Estimate: 2-3 hours**
-**Files to modify:**
-- `src/client/components/home.rs`
-- `src/client/components/user_list.rs`
-
-**Steps:**
-1. [ ] Modify `Home::new()` to create UserListPanel with event sender
-2. [ ] Create event receiver channel in Home component
-3. [ ] Add `handle_user_list_events()` method to process UserListEvent::UserSelected
-4. [ ] Test user selection triggers correct event
-
-**Acceptance Criteria:**
-- User can select someone from user list with Enter key
-- Selection event is properly received by Home component
-- User list closes after selection
-
-### Task 1.2: Create DM Conversation State Management
-**Estimate: 3-4 hours**
-**Files to create/modify:**
-- `src/client/chat/dm_conversations.rs` (new)
-- `src/client/chat/mod.rs`
-
-**Steps:**
-1. [ ] Create `DMConversation` struct to track individual DM threads
-2. [ ] Create `DMConversationManager` to manage multiple DM conversations
-3. [ ] Implement conversation creation, message storage, and retrieval
-4. [ ] Add conversation state persistence (in-memory for now)
-5. [ ] Integrate with existing chat message system
-
-**Acceptance Criteria:**
-- Can create new DM conversation with selected user
-- Each DM conversation maintains separate message history
-- Conversations persist during client session
-
-### Task 1.3: DM Mode Toggle and UI State
-**Estimate: 2-3 hours**
-**Files to modify:**
+### Task 1.1: Implement User Selection Events ✅ **COMPLETED**
+**Estimate: 2-3 hours** | **Actual: 2 hours**
+**Files modified:**
 - `src/client/components/home.rs`
 - `src/client/action.rs`
 
 **Steps:**
-1. [ ] Add `current_dm_partner: Option<String>` to Home state
-2. [ ] Add `dm_mode: bool` flag to track when in DM conversation
-3. [ ] Create `Action::StartDMConversation(username: String)` action
-4. [ ] Implement DM mode toggle logic in `handle_user_list_events()`
-5. [ ] Update status bar to show DM partner when in DM mode
+1. [x] Modify `Home::new()` to create UserListPanel with event sender
+2. [x] Create event receiver channel in Home component
+3. [x] Add `handle_user_list_events()` method to process UserListEvent::UserSelected
+4. [x] Add `StartDMConversation` and `ReturnToLobby` actions
 
 **Acceptance Criteria:**
-- Selecting user from list switches to DM mode
-- Status bar shows "DM with [username]" instead of "Lobby"
-- Can return to Lobby mode (Escape key)
+- ✅ User can select someone from user list with Enter key
+- ✅ Selection event is properly received by Home component
+- ✅ User list closes after selection
+- ✅ Status bar updates to show DM partner
 
-## Phase 2: DM Message Input and Display (Priority: High)
-
-### Task 2.1: DM Message Input Handling
-**Estimate: 2-3 hours**
-**Files to modify:**
+### Task 1.2: Create DM Conversation State Management ✅ **COMPLETED**
+**Estimate: 3-4 hours** | **Actual: 3 hours**
+**Files created/modified:**
+- `src/client/chat/dm_conversations.rs` (new)
+- `src/client/chat/mod.rs`
 - `src/client/components/home.rs`
 
 **Steps:**
-1. [ ] Modify input handling to detect DM mode vs Lobby mode
-2. [ ] Format outgoing messages as "DM:target_user:message_content"
-3. [ ] Send DM messages through existing `Action::SendMessage` system
-4. [ ] Add visual indicator when typing in DM mode
-5. [ ] Test message sending to server with DM format
+1. [x] Create `DMConversation` struct to track individual DM threads
+2. [x] Create `DMConversationManager` to manage multiple DM conversations
+3. [x] Implement conversation creation, message storage, and retrieval
+4. [x] Add conversation state persistence (in-memory for now)
+5. [x] Integrate with existing chat message system
 
 **Acceptance Criteria:**
-- Messages typed in DM mode are sent with DM: prefix
-- Server receives and routes DM messages correctly
-- Input area shows DM context (e.g., "To: username")
+- ✅ Can create new DM conversation with selected user
+- ✅ Each DM conversation maintains separate message history
+- ✅ Conversations persist during client session
+- ✅ DMConversationManager integrated with Home component
 
-### Task 2.2: DM Message Display and Formatting
-**Estimate: 3-4 hours**
-**Files to modify:**
+### Task 1.3: DM Mode Toggle and UI State ✅ **COMPLETED**
+**Estimate: 2-3 hours** | **Actual: 2 hours**
+**Files modified:**
 - `src/client/components/home.rs`
+- `src/client/action.rs`
+- `src/client/app.rs`
 
 **Steps:**
-1. [ ] Modify `get_display_messages_with_style()` to handle DM mode
-2. [ ] Filter messages to show only DM conversation when in DM mode
-3. [ ] Update message formatting for DM display (remove "DM from" prefix in DM view)
-4. [ ] Add sent DM message tracking ("You: message" format)
-5. [ ] Implement conversation switching UI
+1. [x] Add `current_dm_partner: Option<String>` to Home state
+2. [x] Add `dm_mode: bool` flag to track when in DM conversation
+3. [x] Create `Action::StartDMConversation(username: String)` action
+4. [x] Implement DM mode toggle logic in `handle_user_list_events()`
+5. [x] Update status bar to show DM partner when in DM mode
+6. [x] Add `Action::ReturnToLobby` for exiting DM mode
 
 **Acceptance Criteria:**
-- DM mode shows only messages from current DM conversation
-- Sent messages show as "You: message"
-- Received messages show as "Partner: message"
-- Clean, chat-like appearance without protocol prefixes
+- ✅ Selecting user from list switches to DM mode
+- ✅ Status bar shows "DM with [username]" instead of "Lobby"
+- ✅ Can return to Lobby mode (Escape key)
+- ✅ DM mode state properly managed across components
 
-### Task 2.3: DM Conversation History
-**Estimate: 2-3 hours**
-**Files to modify:**
+## Phase 2: DM Message Input and Display ✅ **COMPLETED** (Priority: High)
+
+### Task 2.1: DM Message Input Handling ✅ **COMPLETED**
+**Estimate: 2-3 hours** | **Actual: 1.5 hours**
+**Files modified:**
+- `src/client/components/home.rs`
+- `src/client/app.rs`
+
+**Steps:**
+1. [x] Modify input handling to detect DM mode vs Lobby mode
+2. [x] Format outgoing messages as "DM:target_user:message_content"
+3. [x] Send DM messages through existing `Action::SendMessage` system
+4. [x] Add DM message handling in app.rs
+5. [x] Integrate with DMConversationManager for sent messages
+
+**Acceptance Criteria:**
+- ✅ Messages typed in DM mode are sent with DM: prefix
+- ✅ Server receives and routes DM messages correctly
+- ✅ Sent DM messages added to conversation manager
+- ✅ DM message handling separated from regular messages
+
+### Task 2.2: DM Message Display and Formatting ✅ **COMPLETED**
+**Estimate: 3-4 hours** | **Actual: 2 hours**
+**Files modified:**
+- `src/client/components/home.rs`
+- `src/client/app.rs`
+
+**Steps:**
+1. [x] Modify `get_display_messages_with_style()` to handle DM mode
+2. [x] Filter messages to show only DM conversation when in DM mode
+3. [x] Update message formatting for DM display (remove "DM from" prefix in DM view)
+4. [x] Add sent DM message tracking ("You: message" format)
+5. [x] Handle DM_FROM messages from server
+6. [x] Integrate received DM messages with conversation manager
+
+**Acceptance Criteria:**
+- ✅ DM mode shows only messages from current DM conversation
+- ✅ Sent messages show as "You: message"
+- ✅ Received messages show as "Partner: message"
+- ✅ Clean, chat-like appearance without protocol prefixes
+- ✅ Proper integration with existing message display system
+
+### Task 2.3: DM Conversation History ✅ **COMPLETED**
+**Estimate: 2-3 hours** | **Actual: Completed with bug fixes**
+**Files modified:**
 - `src/client/chat/dm_conversations.rs`
 - `src/client/components/home.rs`
+- `src/client/app.rs`
 
 **Steps:**
-1. [ ] Implement message history storage per DM conversation
-2. [ ] Add conversation retrieval by partner username
-3. [ ] Integrate DM history with display system
-4. [ ] Add conversation creation timestamp
-5. [ ] Test history persistence during client session
+1. [x] Implement message history storage per DM conversation
+2. [x] Add conversation retrieval by partner username
+3. [x] Integrate DM history with display system
+4. [x] Add conversation creation timestamp
+5. [x] Test history persistence during client session
+6. [x] **CRITICAL FIXES**: Resolved stack overflow and UI navigation bugs
 
 **Acceptance Criteria:**
-- Each DM conversation maintains independent message history
-- Switching between DM conversations shows correct history
-- Message history survives mode switches (DM -> Lobby -> DM)
+- ✅ Each DM conversation maintains independent message history
+- ✅ Switching between DM conversations shows correct history
+- ✅ Message history survives mode switches (DM -> Lobby -> DM)
+- ✅ No crashes when sending messages or navigating UI
+
+## 🔧 **Critical Bug Fixes Applied**
+
+### Bug Fix 1: User Selection Navigation ✅ **RESOLVED**
+**Issue:** Could only select first user in DM user list  
+**Root Cause:** User list opened in search mode instead of navigation mode  
+**Fix:** Changed `set_search_focus(true)` to `set_search_focus(false)` in user list initialization  
+**Files Modified:** `src/client/components/home.rs`
+
+### Bug Fix 2: Stack Overflow on Message Send ✅ **RESOLVED**
+**Issue:** Fatal stack overflow when pressing Enter to send DM messages  
+**Root Cause:** Infinite recursion in `handle_dm_message_send()` → `handle_modern_send_message_sync()`  
+**Fix:** Extracted server sending logic to avoid recursive calls  
+**Files Modified:** `src/client/app.rs`
+
+### Bug Fix 3: Integer Overflow Protection ✅ **RESOLVED**
+**Issue:** Potential crashes when entering insert mode due to u16 overflow  
+**Root Cause:** Unsafe casting of large usize values to u16 in UI rendering  
+**Fix:** Added bounds checking with `.min(u16::MAX as usize)` for all casts  
+**Files Modified:** `src/client/components/home.rs`
+
+### Bug Fix 4: Empty User List Safety ✅ **RESOLVED**
+**Issue:** Potential crashes with empty or malformed user lists  
+**Root Cause:** Insufficient bounds checking in user selection logic  
+**Fix:** Added comprehensive empty list checks and `saturating_sub()` calls  
+**Files Modified:** `src/client/components/user_list.rs`
 
 ## Phase 3: DM Navigation and Management (Priority: Medium)
 
@@ -261,15 +301,22 @@ This document outlines the remaining tasks to complete the direct messaging syst
 
 ## Success Metrics
 
-### Phase 1 Complete:
+### Phase 1 Complete: ✅ **ACHIEVED**
 - ✅ Users can select someone from user list and enter DM mode
 - ✅ Status bar shows DM partner information
 - ✅ Basic DM conversation state management works
+- ✅ User selection events properly handled
+- ✅ DM mode toggle functionality working
+- ✅ DMConversationManager fully integrated
 
-### Phase 2 Complete:
+### Phase 2 Complete: ✅ **FULLY ACHIEVED**
 - ✅ Users can send and receive DM messages
 - ✅ DM conversations display correctly with proper formatting
 - ✅ Message history works for each DM conversation
+- ✅ DM message input handling implemented
+- ✅ Server integration for DM protocol working
+- ✅ Conversation history persistence (in-memory during session)
+- ✅ Critical bug fixes applied
 
 ### Phase 3 Complete:
 - ✅ Users can manage multiple DM conversations

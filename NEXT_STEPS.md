@@ -2,41 +2,42 @@
 
 ## Overview
 
-With the successful completion of the transport refactoring project, which introduced a robust, modular architecture with proper encryption, connection management, and migration support, we can now focus on enhancing other aspects of the program. This document outlines the recommended next steps for improving Lair-Chat.
+With the successful completion of v0.6.1, which introduced complete Direct Messaging functionality alongside the v0.6.0 architectural modernization, Lair-Chat now has a solid foundation for advanced features. This document outlines the recommended next steps for further improvement.
+
+## Recent Accomplishments (v0.6.1 - Released)
+
+✅ **Direct Messaging System Complete**
+- Full DM functionality with encrypted private conversations
+- Purple/green bubble styling for visual distinction from regular chat
+- Status bar notifications and unread tracking
+- Tab-based chat switching sidebar
+- Intuitive UX with clear mode headers
+
+✅ **Modern Architecture Complete (v0.6.0)**
+- Complete architectural modernization with async/await
+- ConnectionManager with proper abstractions
+- Type-safe error handling throughout
+- Observer pattern implementation
+- Legacy code removal complete
 
 ## Immediate Action Items (Next 2-4 Weeks)
 
-Building on the successful completion of Phase 1 and current modernization efforts:
+1. **DM System Enhancements** (🔄 Active - Priority 1)
+   - 📅 Add DM message persistence across server restarts
+   - 📅 Implement typing indicators for DM conversations
+   - 📅 Add message read receipts for DMs
+   - 📅 Implement DM history search functionality
 
-1. **Complete Legacy Code Migration** (🔄 Active - Priority 1)
-   - ✅ Finish ConnectionManager async integration
-     - ✅ Complete authentication flow using ConnectionManager
-     - ✅ Fix multi-user authentication conflicts
-     - ✅ Implement proper message observer patterns
-   - ✅ Remove compatibility layer usage in App
-   - ✅ Clean up legacy code and documentation
-   - 📅 Target: v0.6.0 release with full modern architecture
+2. **Performance Optimization** (📅 Priority 2)
+   - 📅 Optimize DM conversation switching performance
+   - 📅 Implement message history limits to prevent memory bloat
+   - 📅 Add efficient conversation caching
 
-2. **Legacy API Removal Preparation** (🔄 In Progress)
-   - ✅ All deprecated APIs marked with warnings
-   - ✅ Remove all legacy code and compatibility layer
-   - ✅ Update all documentation to reference modern APIs only
-   - 🔄 Final integration testing with modern patterns
-
-3. **Performance Validation** (📅 Week 3-4)
-   - 🔄 Benchmark modern vs legacy performance
-   - 🔄 Validate no regressions in message throughput
-   - 🔄 Memory usage optimization verification
-
-**Migration Status Summary:**
-- ✅ Deprecation warnings: 100% complete
-- ✅ Modern architecture: 95% integrated
-- ✅ Authentication flow: 100% complete
-- ✅ Message handling: 100% complete
-- ✅ Legacy removal: 100% complete
-- 📅 Target completion: v0.6.0 (1 week - final integration testing)
-
-These tasks complete the architectural modernization foundation for all future enhancements.
+3. **User Experience Polish** (📅 Priority 2)
+   - 📅 Add notification sounds for new DMs
+   - 📅 Implement DM conversation export functionality
+   - 📅 Add user blocking/muting for DMs
+   - 📅 Improve mobile-friendly key bindings
 
 ## Priority Areas
 
@@ -64,13 +65,18 @@ Modern TUI features implemented:
 - ✅ Add status bar with connection details
 - ✅ Implement scrollback buffer management
 
-### 3. Chat Protocol Enhancements (High Priority) 🔄 IN PROGRESS
+### 3. Chat Protocol Enhancements (High Priority) ✅ FOUNDATION COMPLETE
 
 Building on the new transport layer:
 
 - ✅ Implement proper chat room management (RoomManager, Room types)
-- 🔄 Add direct messaging support (foundation ready)
-- 🔄 Implement file transfer capabilities (FileAttachment system ready)
+- ✅ Add direct messaging support (COMPLETE in v0.6.1)
+  - ✅ Full DM conversation system
+  - ✅ Visual styling and bubble appearance
+  - ✅ Status bar notifications
+  - ✅ Chat switching interface
+  - ✅ Unread message tracking
+- 📅 Implement file transfer capabilities (FileAttachment system ready)
 - ✅ Add typing indicators (TypingIndicators implemented)
 - ✅ Implement message read receipts (ReadReceipt system ready)
 - ✅ Add support for message reactions (MessageReaction system ready)
@@ -182,7 +188,7 @@ Keeping the codebase healthy:
    - ✅ Created comprehensive migration documentation
    - ✅ Updated main app to use modern patterns where feasible
 
-### Phase 2 (2-3 months) 🔄 IN PROGRESS
+### Phase 2 (2-3 months) ✅ COMPLETE - v0.6.1 Released
 1. Legacy Code Migration (✅ Complete - 100%)
    - ✅ Deprecated all legacy global state variables (CLIENT_STATUS, MESSAGES, ACTION_SENDER)
    - ✅ Deprecated legacy transport functions (add_text_message, connect_client, etc.)
@@ -191,30 +197,56 @@ Keeping the codebase healthy:
    - ✅ Complete ConnectionManager async integration
    - ✅ Removed compatibility layer dependencies
    - ✅ Removed all legacy code and updated documentation
-   - 📅 Target: Final testing for v0.6.0 release
+   - ✅ Released: v0.6.0 with full modern architecture
 
-2. Chat Protocol Enhancements (🔄 In Progress)
-   - ✅ Room management system foundation implemented
-   - ✅ User role and permission system
-   - ✅ Message system with reactions and read receipts
-   - ✅ Typing indicators and activity tracking
-   - 🔄 Integration with main application
-   - 🔄 Server-side room protocol implementation
+2. Direct Messaging Implementation (✅ Complete - v0.6.1)
+   - ✅ Complete DM conversation system
+   - ✅ Purple/green bubble styling for visual distinction
+   - ✅ Status bar notifications for new DMs
+   - ✅ Tab-based chat switching sidebar
+   - ✅ Unread message tracking with bell indicators
+   - ✅ Intuitive UX with clear mode headers
+   - ✅ Integration with main application
+   - ✅ Server-side DM routing protocol
 
-3. Architecture Modernization (🔄 Active)
+3. Architecture Modernization (✅ Complete)
    - ✅ ConnectionManager with proper encapsulation
    - ✅ Modern observer patterns implemented
-   - 🔄 Complete async/await integration throughout app
-   - 🔄 Remove global state dependencies
-   - 📅 Target: Clean architecture by v0.6.1
+   - ✅ Complete async/await integration throughout app
+   - ✅ Removed all global state dependencies
+   - ✅ Released: Clean architecture in v0.6.0
 
-4. Performance Optimization (📅 Next)
-5. Error Handling Improvements (📅 Next)
+4. Performance Optimization (📅 Phase 3)
+5. Error Handling Improvements (📅 Phase 3)
 
-### Phase 3 (3-4 months)
-1. Developer Experience
-2. Extensibility Implementation
-3. Multi-Platform Support
+### Phase 3 (3-4 months) 🔄 CURRENT PHASE
+1. Advanced DM Features
+   - 📅 DM message persistence across server restarts
+   - 📅 DM typing indicators and read receipts
+   - 📅 DM history search and export
+   - 📅 User blocking and moderation for DMs
+
+2. File Transfer System
+   - 📅 Implement file transfer capabilities (foundation ready)
+   - 📅 Add drag-and-drop file support
+   - 📅 Implement file preview system
+   - 📅 Add file transfer progress indicators
+
+3. Performance & Scalability
+   - 📅 Message batching for efficiency
+   - 📅 Connection pooling
+   - 📅 Memory optimization for large chat histories
+   - 📅 Efficient conversation switching
+
+4. Developer Experience
+   - 📅 Comprehensive API documentation updates
+   - 📅 Developer guides for DM system
+   - 📅 Enhanced debugging tools
+
+### Phase 4 (4-6 months)
+1. Extensibility Implementation
+2. Multi-Platform Support
+3. Advanced Security Features
 
 ## Success Criteria
 
@@ -257,25 +289,29 @@ Keeping the codebase healthy:
 
 ## Current Status & Next Milestone
 
-**Architecture Modernization Progress:**
+**Development Progress:**
 - ✅ **Phase 1 Complete**: Testing, UX improvements, initial security, legacy deprecation
-- ✅ **Phase 2 Complete**: Legacy migration (100% complete), chat protocol enhancements
-- 📅 **v0.6.0 Target**: Final integration testing of modern architecture
+- ✅ **Phase 2 Complete**: Legacy migration, architecture modernization, Direct Messaging
+- 🔄 **Phase 3 Active**: Advanced DM features, file transfer, performance optimization
 
-**Key Accomplishments:**
-- All legacy APIs properly deprecated with migration guidance
-- ConnectionManager integrated into main application structure
-- Modern authentication patterns scaffolded
-- Comprehensive deprecation warnings guide developers to modern alternatives
+**v0.6.1 Key Accomplishments:**
+- Complete Direct Messaging system with encrypted private conversations
+- Purple/green bubble styling for visual distinction from regular chat
+- Status bar notifications and unread message tracking
+- Tab-based chat switching interface with sidebar navigation
+- Intuitive UX with clear mode headers and context-aware help
 
-**Critical Path to v0.6.0:**
-1. ✅ Complete async ConnectionManager integration
-2. ✅ Fix message sending in input mode
-3. ✅ Remove compatibility layer dependencies
-4. 🔄 Final testing and validation (1 week)
+**Next Milestone - v0.7.0 Target:**
+1. 📅 DM message persistence across server restarts
+2. 📅 File transfer system implementation
+3. 📅 Performance optimization for large conversation histories
+4. 📅 Advanced DM features (typing indicators, read receipts, search)
+5. 📅 Target: Enhanced messaging platform (2-3 months)
 
 ## Conclusion
 
-The modernization effort has been completed successfully with all legacy code removed and documentation updated to reflect modern patterns. The transition from legacy global state to the modern ConnectionManager architecture is now complete. With Phase 2 completed, the codebase is clean, maintainable, and ready for advanced features in Phase 3.
+The v0.6.1 release represents a major milestone with complete Direct Messaging functionality built on the solid v0.6.0 modern architecture foundation. The chat application now provides both public and private messaging capabilities with intuitive UX and visual distinction between conversation types.
 
-Regular reviews and adjustments to this plan are recommended as new requirements and technologies emerge.
+With the core messaging platform complete, Phase 3 focuses on advanced features like file transfer, message persistence, and performance optimization. The clean, maintainable codebase is well-positioned for these enhancements.
+
+Regular reviews and adjustments to this plan are recommended as new requirements and user feedback emerge.

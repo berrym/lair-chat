@@ -68,6 +68,10 @@ pub struct StatusBar {
     error_message: Option<String>,
     /// Error message timeout
     error_timeout: Option<Instant>,
+    /// Current DM notification (if any)
+    dm_notification: Option<String>,
+    /// DM notification timeout
+    dm_notification_timeout: Option<Instant>,
 }
 
 impl StatusBar {
@@ -79,6 +83,8 @@ impl StatusBar {
             network_stats: NetworkStats::default(),
             error_message: None,
             error_timeout: None,
+            dm_notification: None,
+            dm_notification_timeout: None,
         }
     }
 
@@ -140,12 +146,29 @@ impl StatusBar {
         self.error_timeout = Some(Instant::now() + duration);
     }
 
+    /// Show a DM notification for a duration
+    pub fn show_dm_notification(&mut self, sender: String, duration: Duration) {
+        self.dm_notification = Some(format!("💬 New DM from {}", sender));
+        self.dm_notification_timeout = Some(Instant::now() + duration);
+    }
+
     /// Clear current error message
+    /// Check if error message has timed out
     fn check_error_timeout(&mut self) {
         if let Some(timeout) = self.error_timeout {
-            if Instant::now() > timeout {
+            if Instant::now() >= timeout {
                 self.error_message = None;
                 self.error_timeout = None;
+            }
+        }
+    }
+
+    /// Check if DM notification has timed out
+    fn check_dm_notification_timeout(&mut self) {
+        if let Some(timeout) = self.dm_notification_timeout {
+            if Instant::now() >= timeout {
+                self.dm_notification = None;
+                self.dm_notification_timeout = None;
             }
         }
     }
@@ -192,6 +215,7 @@ impl StatusBar {
 impl Component for StatusBar {
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> color_eyre::Result<()> {
         self.check_error_timeout();
+        self.check_dm_notification_timeout();
 
         // Create layout with better spacing to prevent overlapping
         let chunks = Layout::default()
@@ -266,8 +290,15 @@ impl Component for StatusBar {
         let stats = Paragraph::new(stats_text).alignment(Alignment::Left);
         f.render_widget(stats, chunks[3]);
 
-        // Draw error message if any
-        if let Some(error) = &self.error_message {
+        // Draw DM notification with priority over error messages
+        if let Some(dm_notification) = &self.dm_notification {
+            let dm_msg = Paragraph::new(dm_notification.clone()).style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            );
+            f.render_widget(dm_msg, chunks[4]);
+        } else if let Some(error) = &self.error_message {
             let error_msg = Paragraph::new(error.clone()).style(Style::default().fg(Color::Red));
             f.render_widget(error_msg, chunks[4]);
         }

@@ -44,6 +44,8 @@ pub enum Action {
     MessageSent(String),
     // Direct Message actions
     ToggleDM,
+    StartDMConversation(String), // Start DM with username
+    ReturnToLobby,               // Exit DM mode and return to Lobby
     // Connection status actions
     ConnectionStatusChanged(crate::transport::ConnectionStatus),
 }

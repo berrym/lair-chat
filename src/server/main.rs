@@ -209,12 +209,45 @@ impl SharedState {
 
     /// Send a message to a specific user
     async fn send_to_user(&mut self, username: &str, message: &str) -> bool {
+        tracing::info!(
+            "DEBUG: send_to_user called - target: '{}', message: '{}'",
+            username,
+            message
+        );
+
         if let Some(user) = self.connected_users.get(username) {
+            tracing::info!(
+                "DEBUG: Found user '{}' at address {}",
+                username,
+                user.address
+            );
             if let Some(peer_data) = self.peers.get_mut(&user.address) {
                 let encrypted_msg = encrypt(peer_data.0.clone(), message.to_string());
-                let _ = peer_data.1.send(encrypted_msg);
-                return true;
+                tracing::info!("DEBUG: Sending encrypted message to {}", username);
+                let send_result = peer_data.1.send(encrypted_msg);
+                match send_result {
+                    Ok(_) => {
+                        tracing::info!("DEBUG: Successfully sent message to {}", username);
+                        return true;
+                    }
+                    Err(e) => {
+                        tracing::error!("DEBUG: Failed to send message to {}: {:?}", username, e);
+                        return false;
+                    }
+                }
+            } else {
+                tracing::warn!(
+                    "DEBUG: User '{}' found but no peer data at address {}",
+                    username,
+                    user.address
+                );
             }
+        } else {
+            tracing::warn!("DEBUG: User '{}' not found in connected_users", username);
+            tracing::info!(
+                "DEBUG: Current connected users: {:?}",
+                self.connected_users.keys().collect::<Vec<_>>()
+            );
         }
         false
     }
@@ -520,9 +553,11 @@ async fn process(
                 // broadcast this message to the other users.
                 Some(Ok(message)) => {
                     let decrypted_message = decrypt(shared_aes256_key.clone(), message);
+                    tracing::info!("DEBUG: Received message from {}: '{}'", user.username, decrypted_message);
 
                     // Handle special protocol messages
                     if decrypted_message.starts_with("DM:") {
+                        tracing::info!("DEBUG: Processing DM message from {}: '{}'", user.username, decrypted_message);
                         // Handle direct message: DM:target_user:message_content
                         let parts: Vec<&str> = decrypted_message.splitn(3, ':').collect();
                         if parts.len() == 3 {
@@ -530,12 +565,19 @@ async fn process(
                             let dm_content = parts[2];
                             let dm_message = format!("DM_FROM:{}:{}", user.username, dm_content);
 
+                            tracing::info!(
+                                "DEBUG: Parsed DM - from: '{}', to: '{}', content: '{}', formatted: '{}'",
+                                user.username, target_user, dm_content, dm_message
+                            );
+
                             let mut state_guard = state.lock().await;
                             if state_guard.send_to_user(target_user, &dm_message).await {
                                 tracing::info!("DM sent from {} to {}: {}", user.username, target_user, dm_content);
                             } else {
                                 tracing::warn!("Failed to send DM from {} to {}: user not found", user.username, target_user);
                             }
+                        } else {
+                            tracing::error!("DEBUG: Invalid DM format from {}: parts={:?}", user.username, parts);
                         }
                     } else if decrypted_message == "REQUEST_USER_LIST" {
                         // Handle user list request
