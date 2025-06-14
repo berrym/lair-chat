@@ -7,13 +7,8 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     action::Action,
+    aes_gcm_encryption::create_aes_gcm_encryption_with_random_key,
     auth::{AuthState, Credentials},
-    common::{
-        crypto::create_aes_gcm_encryption_with_random_key,
-        transport::{
-            tcp::TcpTransport, ConnectionConfig, ConnectionObserver, Message, MessageStore,
-        },
-    },
     components::{
         auth::{AuthStatusBar, LoginScreen},
         fps::FpsCounter,
@@ -22,8 +17,11 @@ use crate::{
     },
     config::Config,
     connection_manager::ConnectionManager,
+    tcp_transport::TcpTransport,
+    transport::{ConnectionConfig, ConnectionObserver, Message, MessageStore},
     tui::{Event, Tui},
 };
+use std::collections::HashMap;
 
 use std::sync::Arc;
 
@@ -151,6 +149,9 @@ impl App {
         // Configure secure AES-GCM encryption with proper handshake
         let encryption = create_aes_gcm_encryption_with_random_key();
         connection_manager.with_encryption(encryption);
+
+        // Enable authentication for connection manager
+        connection_manager.with_auth();
 
         let connection_manager = Arc::new(tokio::sync::Mutex::new(connection_manager));
 

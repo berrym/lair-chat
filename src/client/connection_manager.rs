@@ -6,9 +6,10 @@ use tokio_util::sync::CancellationToken;
 
 use crate::auth::storage::{FileTokenStorage, TokenStorage};
 use crate::auth::{AuthError, AuthManager, AuthResult, AuthState, Credentials};
-use crate::common::transport::{
-    encrypted::EncryptedTransport, ConnectionConfig, ConnectionObserver, ConnectionStatus,
-    EncryptionService, Message, MessageStore, Transport, TransportError,
+use crate::encrypted_transport::EncryptedTransport;
+use crate::transport::{
+    ConnectionConfig, ConnectionObserver, ConnectionStatus, EncryptionService, Message,
+    MessageStore, Transport, TransportError,
 };
 
 /// Manages a network connection with encryption capabilities
