@@ -360,6 +360,13 @@ impl DMConversationManager {
             Ok(0) // No conversation means no unread messages
         }
     }
+
+    /// Mark all conversations as read
+    pub fn mark_all_read(&mut self) {
+        for conversation in self.conversations.values_mut() {
+            conversation.mark_as_read();
+        }
+    }
 }
 
 #[cfg(test)]

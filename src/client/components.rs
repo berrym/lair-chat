@@ -22,6 +22,8 @@ pub mod dm_navigation;
 pub mod fps;
 #[path = "components/home.rs"]
 pub mod home;
+#[path = "components/notifications/mod.rs"]
+pub mod notifications;
 #[path = "components/status/mod.rs"]
 pub mod status;
 #[path = "components/user_list.rs"]
@@ -31,6 +33,7 @@ pub use self::auth::{AuthStatusBar, LoginScreen};
 pub use self::chat::ChatView;
 pub use self::dm_conversation::{ConversationEvent, ConversationPanel, ConversationState};
 pub use self::dm_navigation::{NavigationEvent, NavigationPanel, NavigationState};
+pub use self::notifications::{MessageNotification, NotificationOverlay};
 pub use self::status::StatusBar;
 pub use self::user_list::{UserListEvent, UserListPanel, UserListState};
 

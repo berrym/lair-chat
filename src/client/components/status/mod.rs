@@ -1,6 +1,7 @@
 //! Status bar component for Lair-Chat
 //! Provides comprehensive status information display.
 
+use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::Frame;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -14,7 +15,8 @@ use std::time::{Duration, Instant};
 use crate::auth::AuthState;
 #[cfg(test)]
 use crate::auth::{Session, UserProfile};
-use crate::{components::Component, transport::ConnectionStatus};
+use crate::{action::Action, components::Component, transport::ConnectionStatus};
+use tokio::sync::mpsc::UnboundedSender;
 
 /// Network statistics
 #[derive(Debug, Default, Clone)]
@@ -72,6 +74,12 @@ pub struct StatusBar {
     dm_notification: Option<String>,
     /// DM notification timeout
     dm_notification_timeout: Option<Instant>,
+    /// Total unread DM count
+    unread_dm_count: u32,
+    /// Action sender for handling interactions
+    action_tx: Option<UnboundedSender<Action>>,
+    /// Area where DM count is rendered (for click detection)
+    dm_count_area: Option<Rect>,
 }
 
 impl StatusBar {
@@ -85,6 +93,9 @@ impl StatusBar {
             error_timeout: None,
             dm_notification: None,
             dm_notification_timeout: None,
+            unread_dm_count: 0,
+            action_tx: None,
+            dm_count_area: None,
         }
     }
 
@@ -152,6 +163,16 @@ impl StatusBar {
         self.dm_notification_timeout = Some(Instant::now() + duration);
     }
 
+    /// Update the unread DM count
+    pub fn set_unread_dm_count(&mut self, count: u32) {
+        self.unread_dm_count = count;
+    }
+
+    /// Get the current unread DM count
+    pub fn get_unread_dm_count(&self) -> u32 {
+        self.unread_dm_count
+    }
+
     /// Clear current error message
     /// Check if error message has timed out
     fn check_error_timeout(&mut self) {
@@ -213,6 +234,34 @@ impl StatusBar {
 }
 
 impl Component for StatusBar {
+    fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> color_eyre::Result<()> {
+        self.action_tx = Some(tx);
+        Ok(())
+    }
+
+    fn handle_mouse_event(&mut self, mouse: MouseEvent) -> color_eyre::Result<Option<Action>> {
+        if let MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            ..
+        } = mouse
+        {
+            // Check if click is within DM count area
+            if let Some(dm_area) = self.dm_count_area {
+                if column >= dm_area.x
+                    && column < dm_area.x + dm_area.width
+                    && row >= dm_area.y
+                    && row < dm_area.y + dm_area.height
+                    && self.unread_dm_count > 0
+                {
+                    return Ok(Some(Action::OpenDMNavigation));
+                }
+            }
+        }
+        Ok(None)
+    }
+
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> color_eyre::Result<()> {
         self.check_error_timeout();
         self.check_dm_notification_timeout();
@@ -223,8 +272,9 @@ impl Component for StatusBar {
             .constraints([
                 Constraint::Length(10),     // Connection indicator (more compact)
                 Constraint::Length(20),     // Auth status (reduced width)
-                Constraint::Percentage(15), // Room (percentage-based)
-                Constraint::Percentage(40), // Stats (percentage-based, larger)
+                Constraint::Percentage(12), // Room (percentage-based)
+                Constraint::Length(15),     // DM count (fixed width)
+                Constraint::Percentage(30), // Stats (percentage-based, reduced)
                 Constraint::Min(10),        // Error/message area (flexible)
             ])
             .split(area);
@@ -260,6 +310,25 @@ impl Component for StatusBar {
         let room = Paragraph::new(room_text).style(Style::default().fg(Color::Cyan));
         f.render_widget(room, chunks[2]);
 
+        // Draw DM unread count
+        if self.unread_dm_count > 0 {
+            let dm_text = format!("💬 {} (click)", self.unread_dm_count);
+            let dm_widget = Paragraph::new(dm_text).style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+                    .add_modifier(Modifier::UNDERLINED), // Add underline to indicate clickable
+            );
+            f.render_widget(dm_widget, chunks[3]);
+            // Store the area for click detection
+            self.dm_count_area = Some(chunks[3]);
+        } else {
+            // Show empty space when no unread messages
+            let dm_widget = Paragraph::new("").style(Style::default());
+            f.render_widget(dm_widget, chunks[3]);
+            self.dm_count_area = None;
+        }
+
         // Draw stats with clear message counts and bold numbers
         let stats_text = Line::from(vec![
             Span::raw("Sent: "),
@@ -288,7 +357,7 @@ impl Component for StatusBar {
         );
 
         let stats = Paragraph::new(stats_text).alignment(Alignment::Left);
-        f.render_widget(stats, chunks[3]);
+        f.render_widget(stats, chunks[4]);
 
         // Draw DM notification with priority over error messages
         if let Some(dm_notification) = &self.dm_notification {
@@ -297,10 +366,10 @@ impl Component for StatusBar {
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             );
-            f.render_widget(dm_msg, chunks[4]);
+            f.render_widget(dm_msg, chunks[5]);
         } else if let Some(error) = &self.error_message {
             let error_msg = Paragraph::new(error.clone()).style(Style::default().fg(Color::Red));
-            f.render_widget(error_msg, chunks[4]);
+            f.render_widget(error_msg, chunks[5]);
         }
 
         Ok(())

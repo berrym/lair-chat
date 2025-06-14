@@ -143,14 +143,29 @@ impl NavigationState {
             self.conversations = self.filter_by_search();
         }
 
-        // Sort conversations
-        if self.sort_by_activity {
-            self.conversations
-                .sort_by(|a, b| b.last_activity.cmp(&a.last_activity));
-        } else {
-            self.conversations
-                .sort_by(|a, b| a.other_username.cmp(&b.other_username));
-        }
+        // Sort conversations with unread messages first
+        self.conversations.sort_by(|a, b| {
+            // First priority: unread messages (unread conversations first)
+            let unread_cmp = (b.unread_count > 0).cmp(&(a.unread_count > 0));
+            if unread_cmp != std::cmp::Ordering::Equal {
+                return unread_cmp;
+            }
+
+            // Second priority: within unread conversations, sort by unread count (highest first)
+            if a.unread_count > 0 && b.unread_count > 0 {
+                let count_cmp = b.unread_count.cmp(&a.unread_count);
+                if count_cmp != std::cmp::Ordering::Equal {
+                    return count_cmp;
+                }
+            }
+
+            // Third priority: use the configured sort preference
+            if self.sort_by_activity {
+                b.last_activity.cmp(&a.last_activity)
+            } else {
+                a.other_username.cmp(&b.other_username)
+            }
+        });
 
         // Reset selection if it's out of bounds
         if let Some(index) = self.selected_index {
@@ -626,38 +641,74 @@ impl NavigationPanel {
     fn create_conversation_item(&self, conversation: &ConversationSummary) -> ListItem {
         let mut lines = Vec::new();
 
+        // Check if this is a "new" conversation (activity within last 5 minutes)
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let is_recent = (now - conversation.last_activity) < 300; // 5 minutes
+
         // First line: Username and status
         let mut first_line = Vec::new();
 
-        // Unread indicator
+        // Enhanced unread indicator with different colors based on count
         if conversation.unread_count > 0 {
+            let (indicator, color) = if conversation.unread_count > 10 {
+                ("●● ", Color::Red) // High priority: many unread
+            } else if conversation.unread_count > 3 {
+                ("● ", Color::Magenta) // Medium priority
+            } else {
+                ("● ", Color::Green) // Normal priority
+            };
+
             first_line.push(Span::styled(
-                "● ",
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
+                indicator,
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
             ));
         } else {
             first_line.push(Span::styled("  ", Style::default()));
         }
 
-        // Username
+        // "NEW" badge for recent messages
+        if is_recent && conversation.unread_count > 0 {
+            first_line.push(Span::styled(
+                "NEW ",
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+
+        // Username with enhanced styling
+        let username_style = if conversation.unread_count > 0 {
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Gray)
+        };
+
         first_line.push(Span::styled(
             conversation.other_username.clone(),
-            if conversation.unread_count > 0 {
-                Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::White)
-            },
+            username_style,
         ));
 
-        // Unread count
-        if conversation.unread_count > 1 {
+        // Enhanced unread count with color coding
+        if conversation.unread_count > 0 {
+            let count_color = if conversation.unread_count > 10 {
+                Color::Red
+            } else if conversation.unread_count > 3 {
+                Color::Magenta
+            } else {
+                Color::Yellow
+            };
+
             first_line.push(Span::styled(
                 format!(" ({})", conversation.unread_count),
-                Style::default().fg(Color::Red),
+                Style::default()
+                    .fg(count_color)
+                    .add_modifier(Modifier::BOLD),
             ));
         }
 
@@ -669,15 +720,20 @@ impl NavigationPanel {
         // Timestamp
         if self.state.show_timestamps {
             let time_text = self.format_timestamp(conversation.last_activity);
-            first_line.push(Span::styled(
-                format!(" - {}", time_text),
-                Style::default().fg(Color::DarkGray),
-            ));
+            let time_style = if is_recent {
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
+
+            first_line.push(Span::styled(format!(" - {}", time_text), time_style));
         }
 
         lines.push(Line::from(first_line));
 
-        // Second line: Last message preview
+        // Second line: Last message preview with enhanced styling
         if self.state.show_message_preview {
             if let Some(preview) = &conversation.last_message {
                 let preview_text = if preview.len() > 60 {
@@ -686,10 +742,13 @@ impl NavigationPanel {
                     format!("  {}", preview)
                 };
 
-                lines.push(Line::from(vec![Span::styled(
-                    preview_text,
-                    Style::default().fg(Color::DarkGray),
-                )]));
+                let preview_style = if conversation.unread_count > 0 {
+                    Style::default().fg(Color::White)
+                } else {
+                    Style::default().fg(Color::DarkGray)
+                };
+
+                lines.push(Line::from(vec![Span::styled(preview_text, preview_style)]));
             } else {
                 lines.push(Line::from(vec![Span::styled(
                     "  No messages yet",

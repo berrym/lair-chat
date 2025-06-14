@@ -18,7 +18,10 @@ enum MessageStyle {
     DMReceived, // DM messages from other users
 }
 
-use super::{Component, NavigationPanel, UserListEvent, UserListPanel};
+use super::{
+    Component, MessageNotification, NavigationPanel, NotificationOverlay, UserListEvent,
+    UserListPanel,
+};
 use crate::{
     action::Action,
     app::Mode,
@@ -101,6 +104,9 @@ pub struct Home {
 
     // Accessibility options
     text_only_mode: bool,
+
+    // Notification overlay for cross-conversation messages
+    notification_overlay: NotificationOverlay,
 }
 
 // Static state variables for scrolling
@@ -208,6 +214,9 @@ impl Default for Home {
 
             // Accessibility options
             text_only_mode: false,
+
+            // Initialize notification overlay
+            notification_overlay: NotificationOverlay::new(),
         }
     }
 }
@@ -727,6 +736,14 @@ impl Home {
     pub fn tick(&mut self) {
         //log::info!("Tick");
         self.app_ticker = self.app_ticker.saturating_add(1);
+
+        // Update unread DM count in status bar
+        if let Some(dm_manager) = &self.dm_conversation_manager {
+            let unread_count = dm_manager.get_total_unread_count();
+            if let Some(tx) = &self.command_tx {
+                let _ = tx.send(Action::UpdateUnreadDMCount(unread_count));
+            }
+        }
     }
 
     pub fn render_tick(&mut self) {
@@ -758,6 +775,13 @@ impl Component for Home {
     }
 
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
+        // Handle notification overlay first (highest priority)
+        if self.notification_overlay.is_visible() {
+            if self.notification_overlay.handle_input(key) {
+                return Ok(Some(Action::Render));
+            }
+        }
+
         // Handle chat sidebar navigation
         if self.show_chat_sidebar {
             match key.code {
@@ -1237,7 +1261,11 @@ impl Component for Home {
         self.handle_user_list_events();
 
         match action {
-            Action::Tick => self.tick(),
+            Action::Tick => {
+                self.tick();
+                // Clean up expired notifications
+                self.notification_overlay.cleanup_expired();
+            }
             Action::Render => self.render_tick(),
             Action::ToggleShowHelp => {
                 self.show_help = !self.show_help;
@@ -1345,6 +1373,13 @@ impl Component for Home {
 
                 // Show info message about returning to Lobby
                 show_info("Returned to Lobby");
+            }
+            Action::MarkAllDMsRead => {
+                // Mark all DM conversations as read
+                if let Some(dm_manager) = &mut self.dm_conversation_manager {
+                    dm_manager.mark_all_read();
+                    show_info("All DM conversations marked as read");
+                }
             }
             // DisconnectClient is now handled by the main app using modern ConnectionManager
             // No need to handle it here anymore
@@ -1850,7 +1885,7 @@ impl Component for Home {
                 .wrap(Wrap { trim: false })
                 .block(
                     Block::default()
-                        .title_top(Line::from("v0.6.1".white()).left_aligned())
+                        .title_top(Line::from("v0.6.2".white()).left_aligned())
                         .title_top(
                             Line::from(vec![Span::styled(
                                 "THE LAIR",
@@ -2268,6 +2303,11 @@ impl Component for Home {
             self.user_list.render(frame, area);
         }
 
+        // Render notification overlay (highest priority overlay)
+        if self.notification_overlay.is_visible() {
+            self.notification_overlay.render(frame, area);
+        }
+
         Ok(())
     }
 }
@@ -2432,9 +2472,24 @@ impl Home {
     /// Add a received DM message to the conversation manager
     pub fn add_dm_received_message(&mut self, sender: String, content: String) {
         if let Some(dm_manager) = &mut self.dm_conversation_manager {
-            if let Err(e) = dm_manager.receive_message(sender, content) {
+            if let Err(e) = dm_manager.receive_message(sender.clone(), content.clone()) {
                 tracing::error!("Failed to add received DM message: {}", e);
             }
+        }
+
+        // Show notification if not currently viewing this conversation
+        let should_notify = !self.dm_mode || self.current_dm_partner.as_ref() != Some(&sender);
+
+        if should_notify {
+            let notification = MessageNotification::new(
+                sender.clone(),
+                content.clone(),
+                sender.clone(),                    // Use sender as conversation ID
+                std::time::Duration::from_secs(5), // Auto-dismiss after 5 seconds
+            );
+
+            self.notification_overlay.add_notification(notification);
+            tracing::info!("Added cross-conversation notification from {}", sender);
         }
     }
 

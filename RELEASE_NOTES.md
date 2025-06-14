@@ -1,5 +1,34 @@
 # LAIR-CHAT Release Notes
 
+## Version 0.6.2
+
+### Overview
+The v0.6.2 release introduces a comprehensive unread messages enhancement system that significantly improves user experience by providing better visibility and management of unread messages across conversations. This release focuses on cross-conversation awareness and interactive elements.
+
+### Major New Features
+- **Global Status Bar Unread Indicator**: Always-visible unread DM count with clickable functionality
+- **Cross-Conversation Notification System**: Smart temporary overlay notifications for messages from other conversations
+- **Enhanced DM Navigation Visual Indicators**: Priority-based sorting with color-coded unread indicators
+- **Interactive Status Bar Elements**: Click-to-open functionality for instant DM navigation
+- **Mark All as Read**: Single-action functionality to clear all unread messages
+
+### Key Improvements
+- **Real-time Updates**: Unread counts update automatically at 4Hz via tick events
+- **Smart Notification Logic**: Context-aware notifications only when not viewing active conversation
+- **Anti-spam Protection**: Intelligent notification deduplication from same sender
+- **Color-coded Indicators**: Green (1-3), Magenta (4-10), Red (>10) unread messages
+- **NEW Badges**: Visual indicators for messages received within last 5 minutes
+- **Performance Optimized**: Minimal CPU overhead with efficient rendering
+
+### Technical Enhancements
+- **3 New Actions**: UpdateUnreadDMCount, OpenDMNavigation, MarkAllDMsRead
+- **NotificationOverlay Component**: Modular temporary notification system
+- **Mouse Event Support**: StatusBar component handles interactive clicks
+- **Enhanced Sorting Algorithm**: Priority-based conversation ordering
+- **Comprehensive Test Coverage**: 8 test cases covering all new functionality
+
+For detailed implementation information, see `RELEASE_NOTES_v0.6.2.md` and `UNREAD_MESSAGES_IMPLEMENTATION_SUMMARY.md`.
+
 ## Version 0.6.1
 
 ### Overview

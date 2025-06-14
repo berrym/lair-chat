@@ -331,6 +331,15 @@ impl App {
                 );
                 Ok(None)
             }
+            Action::UpdateUnreadDMCount(count) => {
+                // Update the status bar with unread DM count
+                self.status_bar.set_unread_dm_count(*count);
+                tracing::info!(
+                    "DEBUG: App processed UpdateUnreadDMCount action - count now: {}",
+                    count
+                );
+                Ok(None)
+            }
             Action::Quit => {
                 self.should_quit = true;
                 Ok(None)
@@ -566,6 +575,19 @@ impl App {
             Action::ToggleDM => {
                 // Toggle DM navigation panel
                 self.home_component.update(action.clone())?;
+                Ok(None)
+            }
+            Action::OpenDMNavigation => {
+                // Open DM navigation panel (from status bar click)
+                self.home_component.update(Action::ToggleDM)?;
+                Ok(None)
+            }
+            Action::MarkAllDMsRead => {
+                // Mark all DM conversations as read
+                self.home_component.update(action.clone())?;
+                // Update status bar to show 0 unread
+                self.status_bar.set_unread_dm_count(0);
+                tracing::info!("Marked all DM conversations as read");
                 Ok(None)
             }
 

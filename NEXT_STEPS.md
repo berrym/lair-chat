@@ -2,9 +2,19 @@
 
 ## Overview
 
-With the successful completion of v0.6.1, which introduced complete Direct Messaging functionality alongside the v0.6.0 architectural modernization, Lair-Chat now has a solid foundation for advanced features. This document outlines the recommended next steps for further improvement.
+With the successful completion of v0.6.2, which introduced comprehensive unread messages enhancements alongside the v0.6.1 Direct Messaging functionality and v0.6.0 architectural modernization, Lair-Chat now has a solid foundation for advanced features. This document outlines the recommended next steps for further improvement.
 
-## Recent Accomplishments (v0.6.1 - Released)
+## Recent Accomplishments (v0.6.2 - Released)
+
+✅ **Unread Messages Enhancement System Complete**
+- **Global Status Bar Indicator**: Always-visible unread DM count with click-to-open functionality
+- **Cross-Conversation Notifications**: Smart temporary overlay notifications for messages from other conversations
+- **Enhanced Visual Indicators**: Priority-based sorting with color-coded unread indicators (Green/Magenta/Red)
+- **Interactive Elements**: Clickable status bar elements for instant DM navigation
+- **Real-time Updates**: Automatic unread count synchronization across all components
+- **Performance Optimized**: Minimal CPU overhead with efficient rendering and smart updates
+
+## Previous Accomplishments (v0.6.1 - Released)
 
 ✅ **Security Infrastructure Modernization**
 - **AES-256-GCM Encryption Migration**: Eliminated insecure MD5 key derivation, replaced with SHA-256 + domain separation

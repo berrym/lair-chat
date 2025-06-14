@@ -44,6 +44,9 @@ pub enum Action {
     MessageSent(String),
     // Direct Message actions
     ToggleDM,
+    OpenDMNavigation,            // Open DM navigation from status bar
+    UpdateUnreadDMCount(u32),    // Update unread DM count in status bar
+    MarkAllDMsRead,              // Mark all DM conversations as read
     StartDMConversation(String), // Start DM with username
     ReturnToLobby,               // Exit DM mode and return to Lobby
     // Connection status actions
