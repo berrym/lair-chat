@@ -1,14 +1,14 @@
 //! Lair-Chat Library
 //!
-//! This is the main library crate that exposes all client functionality
-//! for use by binaries, tests, and other consumers.
+//! This is the main library crate that exposes functionality for both client and server
+//! components, along with shared common utilities.
+
+// Common modules shared between client and server
+pub mod common;
 
 // Include all client modules directly
 #[path = "client/action.rs"]
 pub mod action;
-
-#[path = "client/aes_gcm_encryption.rs"]
-pub mod aes_gcm_encryption;
 
 #[path = "client/app.rs"]
 pub mod app;
@@ -31,12 +31,6 @@ pub mod config;
 #[path = "client/connection_manager.rs"]
 pub mod connection_manager;
 
-#[path = "client/encryption.rs"]
-pub mod encryption;
-
-#[path = "client/encrypted_transport.rs"]
-pub mod encrypted_transport;
-
 #[path = "client/errors.rs"]
 pub mod errors;
 
@@ -46,23 +40,26 @@ pub mod history;
 #[path = "client/logging.rs"]
 pub mod logging;
 
-#[path = "client/tcp_transport.rs"]
-pub mod tcp_transport;
-
-#[path = "client/transport.rs"]
-pub mod transport;
-
-#[path = "client/protocol.rs"]
-pub mod protocol;
-
 #[path = "client/tui.rs"]
 pub mod tui;
+
+// Re-export common modules for backward compatibility
+pub use common::crypto as aes_gcm_encryption;
+pub use common::crypto as encryption;
+pub use common::protocol;
+pub use common::transport as encrypted_transport;
+pub use common::transport as tcp_transport;
+pub use common::transport;
 
 // Group client modules under a client namespace for cleaner imports
 pub mod client {
     pub use super::{
-        action::*, aes_gcm_encryption::*, app::*, auth::*, chat::*, cli::*, components::*,
-        config::*, connection_manager::*, encrypted_transport::*, encryption::*, errors::*,
-        history::*, logging::*, protocol::*, tcp_transport::*, transport::*, tui::*,
+        action::*, app::*, auth::*, chat::*, cli::*, components::*, config::*,
+        connection_manager::*, errors::*, history::*, logging::*, tui::*,
+    };
+
+    // Re-export common functionality through client namespace
+    pub use super::common::{
+        crypto, errors as common_errors, protocol as common_protocol, transport as common_transport,
     };
 }
