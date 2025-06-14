@@ -317,17 +317,7 @@ impl Home {
                         .get_messages()
                         .iter()
                         .map(|dm_msg| {
-                            let formatted = if dm_msg.message_type == MessageType::System {
-                                // System messages in DMs get "Lair Chat:" prefix
-                                let content = dm_msg.format_for_display(current_user);
-                                if content.starts_with("Lair Chat:") {
-                                    content
-                                } else {
-                                    format!("Lair Chat: {}", content)
-                                }
-                            } else {
-                                dm_msg.format_for_display(current_user)
-                            };
+                            let formatted = dm_msg.format_for_display(current_user);
                             let style = if dm_msg.sender == current_user {
                                 MessageStyle::DMSent
                             } else if dm_msg.message_type == MessageType::System {
@@ -369,13 +359,7 @@ impl Home {
                     .iter()
                     .map(|msg| {
                         if msg.message_type == MessageType::System {
-                            // System messages get "Lair Chat:" prefix and special styling
-                            let prefixed_content = if msg.content.starts_with("Lair Chat:") {
-                                msg.content.clone()
-                            } else {
-                                format!("Lair Chat: {}", msg.content)
-                            };
-                            (prefixed_content, MessageStyle::System)
+                            (msg.content.clone(), MessageStyle::System)
                         } else {
                             // Check if the content already has a username prefix
                             if msg.content.starts_with("You: ") {
@@ -1455,21 +1439,7 @@ impl Component for Home {
         // Calculate available width for proper alignment (subtract borders)
         let available_width = content_area.width.saturating_sub(4) as usize; // -4 for borders and padding
         let message_max_width = (available_width * 75) / 100; // 75% of available width for messages
-
-        // Calculate centering margins - more centering as width increases
-        let center_margin = if available_width <= 80 {
-            (available_width * 2) / 100 // 2% centering for narrow terminals
-        } else if available_width <= 120 {
-            (available_width * 8) / 100 // 8% centering for medium terminals
-        } else if available_width <= 160 {
-            (available_width * 15) / 100 // 15% centering for wide terminals
-        } else {
-            // For very wide terminals, increase centering significantly
-            (available_width * 20) / 100 // 20% centering for ultra-wide terminals
-        };
-
-        // Calculate message area width after centering
-        let message_area_width = available_width.saturating_sub(center_margin * 2);
+        let edge_margin = (available_width * 5) / 100; // 5% margin from edges
 
         // Helper function to wrap text to a specified width
         let wrap_text = |text: &str, max_width: usize| -> Vec<String> {
@@ -1554,8 +1524,8 @@ impl Component for Home {
                             let content_len = bubble_content.len();
 
                             // Right-align the bubble
-                            let padding = if content_len < message_area_width {
-                                center_margin + message_area_width.saturating_sub(content_len)
+                            let padding = if content_len < available_width {
+                                available_width.saturating_sub(content_len)
                             } else {
                                 0
                             };
@@ -1580,28 +1550,28 @@ impl Component for Home {
 
                         for wrapped_line in wrapped_lines.iter() {
                             let bubble_content = format!("  {}  ", wrapped_line);
-                            // Create line with left centering margin and colored content
+                            // Create line with left margin and colored content
                             let line = Line::from(vec![
-                                Span::raw(" ".repeat(center_margin)), // Left centering margin
-                                Span::styled(bubble_content, style),  // Colored content only
+                                Span::raw(" ".repeat(edge_margin)),  // Left margin
+                                Span::styled(bubble_content, style), // Colored content only
                             ]);
                             lines.push(line);
                         }
                     }
                     MessageStyle::System => {
-                        // System messages: Distinctive amber/orange notification style
+                        // System messages: Subtle centered notification style
                         let style = Style::default()
-                            .fg(Color::Rgb(245, 158, 11)) // Amber-500 (#F59E0B)
-                            .add_modifier(Modifier::BOLD);
+                            .fg(Color::Rgb(156, 163, 175)) // Gray-400 (#9CA3AF)
+                            .add_modifier(Modifier::ITALIC);
 
-                        // Don't add bullets - content already has "Lair Chat:" prefix
-                        let content_len = content.len();
-                        let padding = if content_len < message_area_width {
-                            center_margin + (message_area_width.saturating_sub(content_len)) / 2
+                        let system_content = format!("• {} •", content);
+                        let content_len = system_content.len();
+                        let padding = if content_len < available_width {
+                            (available_width.saturating_sub(content_len)) / 2
                         } else {
                             0
                         };
-                        let centered_content = format!("{}{}", " ".repeat(padding), content);
+                        let centered_content = format!("{}{}", " ".repeat(padding), system_content);
                         lines.push(Line::from(centered_content).style(style));
                     }
                     MessageStyle::DMSent => {
@@ -1620,8 +1590,8 @@ impl Component for Home {
                             let content_len = bubble_content.len();
 
                             // Right-align the bubble
-                            let padding = if content_len < message_area_width {
-                                center_margin + message_area_width.saturating_sub(content_len)
+                            let padding = if content_len < available_width {
+                                available_width.saturating_sub(content_len)
                             } else {
                                 0
                             };
@@ -1648,8 +1618,8 @@ impl Component for Home {
                         for wrapped_line in wrapped_lines {
                             let bubble_content = format!("  {}  ", wrapped_line);
                             lines.push(Line::from(vec![
-                                Span::raw(" ".repeat(center_margin)), // Left centering margin
-                                Span::styled(bubble_content, style),  // Colored content
+                                Span::raw(" ".repeat(edge_margin)),  // Left margin
+                                Span::styled(bubble_content, style), // Colored content
                             ]));
                         }
                     }
