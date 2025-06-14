@@ -7,32 +7,43 @@ use uuid::Uuid;
 
 /// Authentication request message (server-compatible format)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuthRequest {
-    pub username: String,
-    pub password: String,
-    pub fingerprint: String,
-    /// Whether this is a registration request
-    pub is_registration: bool,
+#[serde(tag = "type")]
+pub enum AuthRequest {
+    /// Login with existing credentials
+    #[serde(rename = "login")]
+    Login {
+        username: String,
+        password: String,
+        #[serde(default)]
+        fingerprint: String,
+    },
+
+    /// Register a new user account
+    #[serde(rename = "register")]
+    Register {
+        username: String,
+        password: String,
+        #[serde(default)]
+        fingerprint: String,
+    },
 }
 
 impl AuthRequest {
     /// Create a login request
     pub fn login(credentials: Credentials) -> Self {
-        Self {
+        Self::Login {
             username: credentials.username,
             password: credentials.password,
             fingerprint: DeviceInfo::current().fingerprint,
-            is_registration: false,
         }
     }
 
     /// Create a registration request
     pub fn register(credentials: Credentials) -> Self {
-        Self {
+        Self::Register {
             username: credentials.username,
             password: credentials.password,
             fingerprint: DeviceInfo::current().fingerprint,
-            is_registration: true,
         }
     }
 }

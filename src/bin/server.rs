@@ -15,8 +15,9 @@ use tokio_util::codec::{Framed, LinesCodec};
 use tracing_subscriber::fmt::format::FmtSpan;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
+use lair_chat::auth::AuthRequest;
 use lair_chat::server::auth::{
-    AuthRequest, AuthService, MemorySessionStorage, MemoryUserStorage, User, UserStorage,
+    AuthService, MemorySessionStorage, MemoryUserStorage, User, UserStorage,
 };
 
 /// Shorthand for the transmit half of the message channel.
@@ -347,18 +348,37 @@ async fn process(
                         }
                     };
 
-                let username = auth_request.username.clone();
+                let (username, password, is_registration) = match &auth_request {
+                    AuthRequest::Login {
+                        username, password, ..
+                    } => (username.clone(), password.clone(), false),
+                    AuthRequest::Register {
+                        username, password, ..
+                    } => (username.clone(), password.clone(), true),
+                };
+
                 let state_guard = state.lock().await;
 
-                let result = if auth_request.is_registration {
+                // Convert to the format expected by auth service
+                let legacy_auth_request = lair_chat::server::auth::AuthRequest {
+                    username: username.clone(),
+                    password: password.clone(),
+                    fingerprint: match &auth_request {
+                        AuthRequest::Login { fingerprint, .. } => fingerprint.clone(),
+                        AuthRequest::Register { fingerprint, .. } => fingerprint.clone(),
+                    },
+                    is_registration,
+                };
+
+                let result = if is_registration {
                     match state_guard
                         .auth_service
-                        .register(auth_request.username.clone(), &auth_request.password)
+                        .register(username.clone(), &password)
                         .await
                     {
                         Ok(_) => {
                             tracing::info!("User {} registered successfully", username);
-                            match state_guard.auth_service.login(auth_request).await {
+                            match state_guard.auth_service.login(legacy_auth_request).await {
                                 Ok(response) => {
                                     tracing::info!("Auto-login successful for {}", username);
                                     Ok(response.user)
@@ -375,7 +395,7 @@ async fn process(
                         }
                     }
                 } else {
-                    match state_guard.auth_service.login(auth_request).await {
+                    match state_guard.auth_service.login(legacy_auth_request).await {
                         Ok(response) => {
                             tracing::info!("Login successful for {}", username);
                             Ok(response.user)
