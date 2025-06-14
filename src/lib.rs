@@ -43,6 +43,34 @@ pub mod logging;
 #[path = "client/tui.rs"]
 pub mod tui;
 
+// Include server modules
+pub mod server {
+    pub mod app {
+        pub use crate::server_app::*;
+    }
+    pub mod auth {
+        pub use crate::server_auth::*;
+    }
+    pub mod chat {
+        pub use crate::server_chat::*;
+    }
+    pub mod network {
+        pub use crate::server_network::*;
+    }
+}
+
+#[path = "server/app/mod.rs"]
+pub mod server_app;
+
+#[path = "server/auth/mod.rs"]
+pub mod server_auth;
+
+#[path = "server/chat/mod.rs"]
+pub mod server_chat;
+
+#[path = "server/network/mod.rs"]
+pub mod server_network;
+
 // Re-export common modules for backward compatibility
 pub use common::crypto as aes_gcm_encryption;
 pub use common::crypto as encryption;

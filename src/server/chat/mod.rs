@@ -9,5 +9,5 @@ pub mod users;
 
 // Re-export commonly used types
 pub use messages::*;
-pub use rooms::*;
-pub use users::*;
+pub use rooms::{Room, RoomManager};
+pub use users::{ConnectedUser, PresenceStatus, UserManager};

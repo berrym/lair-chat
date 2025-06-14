@@ -67,11 +67,11 @@ tempfile = "3.9"
 
 [[bin]]
 name = "lair-chat-client"
-path = "src/client/main.rs"
+path = "src/bin/client.rs"
 
 [[bin]]
 name = "lair-chat-server"
-path = "src/server/main.rs"
+path = "src/bin/server.rs"
 
 [[bench]]
 name = "transport_benchmarks"

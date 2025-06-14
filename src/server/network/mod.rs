@@ -7,5 +7,5 @@ pub mod connection_handler;
 pub mod session_manager;
 
 // Re-export commonly used types
-pub use connection_handler::*;
-pub use session_manager::*;
+pub use connection_handler::ConnectionHandler;
+pub use session_manager::{Session, SessionManager, SessionStats};

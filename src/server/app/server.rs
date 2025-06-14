@@ -4,26 +4,24 @@
 //! for the lair-chat server, including encryption, authentication, and message processing.
 
 use aes_gcm::{
-    aead::{Aead, AeadCore, KeyInit, OsRng},
+    aead::{Aead, KeyInit},
     Aes256Gcm, Key, Nonce,
 };
 use base64::prelude::*;
-use futures::SinkExt;
+use futures::{SinkExt, StreamExt};
 use sha2::{Digest, Sha256};
-use std::{env, error::Error, io, net::SocketAddr, sync::Arc};
+use std::{error::Error, net::SocketAddr, sync::Arc};
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::Mutex,
 };
-use tokio_stream::StreamExt;
+use tokio_stream::StreamExt as TokioStreamExt;
 use tokio_util::codec::{Framed, LinesCodec};
 use tracing::{debug, error, info, warn};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
-use super::state::{SharedState, Tx};
-use crate::server::auth::{
-    AuthService, MemorySessionStorage, MemoryUserStorage, User, UserStorage,
-};
+use super::state::SharedState;
+use crate::server::auth::{AuthService, MemorySessionStorage, MemoryUserStorage};
 
 /// Main server configuration
 #[derive(Debug, Clone)]
@@ -56,7 +54,7 @@ impl ChatServer {
     pub fn new(config: ServerConfig) -> Self {
         let user_storage = Arc::new(MemoryUserStorage::new());
         let session_storage = Arc::new(MemorySessionStorage::new());
-        let auth_service = Arc::new(AuthService::new(user_storage, session_storage));
+        let auth_service = Arc::new(AuthService::new(user_storage, session_storage, None));
         let state = Arc::new(Mutex::new(SharedState::new(auth_service)));
 
         Self { config, state }
@@ -105,7 +103,8 @@ async fn handle_connection(
     state: Arc<Mutex<SharedState>>,
     config: ServerConfig,
 ) -> Result<(), Box<dyn Error>> {
-    let mut lines = Framed::new(stream, LinesCodec::new());
+    let lines = Framed::new(stream, LinesCodec::new());
+    let (mut sink, mut stream) = lines.split();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
     // Add peer to shared state
@@ -116,10 +115,9 @@ async fn handle_connection(
 
     // Spawn task to handle outgoing messages
     let mut send_task = {
-        let mut lines = lines.clone();
         tokio::spawn(async move {
             while let Some(msg) = rx.recv().await {
-                if lines.send(msg).await.is_err() {
+                if sink.send(msg).await.is_err() {
                     break;
                 }
             }
@@ -131,7 +129,7 @@ async fn handle_connection(
     let mut encryption_key: Option<[u8; 32]> = None;
 
     // Handle incoming messages
-    while let Some(result) = lines.next().await {
+    while let Some(result) = futures::StreamExt::next(&mut stream).await {
         match result {
             Ok(mut msg) => {
                 debug!("Received from {}: {}", addr, msg);
@@ -208,7 +206,7 @@ async fn handle_handshake(
     let client_public_key = PublicKey::from(client_public_key_array);
 
     // Generate server key pair
-    let server_secret = EphemeralSecret::random(&mut OsRng);
+    let server_secret = EphemeralSecret::random();
     let server_public = PublicKey::from(&server_secret);
 
     // Compute shared secret
@@ -251,7 +249,7 @@ async fn handle_auth(
     let pass = parts[2];
 
     let state_guard = state.lock().await;
-    let auth_service = Arc::clone(&state_guard.auth_service);
+    let _auth_service = Arc::clone(&state_guard.auth_service);
     drop(state_guard);
 
     match auth_type {
@@ -350,7 +348,9 @@ fn decrypt_message(encrypted_msg: &str, key: &[u8; 32]) -> Result<String, Box<dy
     let key = Key::<Aes256Gcm>::from_slice(key);
     let cipher = Aes256Gcm::new(key);
 
-    let plaintext = cipher.decrypt(nonce, ciphertext)?;
+    let plaintext = cipher
+        .decrypt(nonce, ciphertext)
+        .map_err(|e| format!("Decryption failed: {:?}", e))?;
     Ok(String::from_utf8(plaintext)?)
 }
 
@@ -376,10 +376,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_encryption_handshake() {
+    #[test]
+    fn test_encryption_handshake() {
         // Test the encryption key derivation logic
-        let secret1 = EphemeralSecret::random(&mut OsRng);
-        let secret2 = EphemeralSecret::random(&mut OsRng);
+        let secret1 = EphemeralSecret::random();
+        let secret2 = EphemeralSecret::random();
         let public1 = PublicKey::from(&secret1);
         let public2 = PublicKey::from(&secret2);
 
