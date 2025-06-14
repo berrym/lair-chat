@@ -183,7 +183,8 @@ impl App {
     pub async fn run(&mut self) -> Result<()> {
         let mut tui = Tui::new()?
             .tick_rate(self.tick_rate)
-            .frame_rate(self.frame_rate);
+            .frame_rate(self.frame_rate)
+            .mouse(true);
         tui.enter()?;
 
         // Initialize components
@@ -237,6 +238,10 @@ impl App {
             .register_config_handler(self.config.clone())?;
         self.fps_counter.init(size)?;
 
+        // Register status bar for mouse events
+        self.status_bar
+            .register_action_handler(self.action_tx.clone())?;
+
         Ok(())
     }
 
@@ -271,6 +276,12 @@ impl App {
                     }
                 }
             }
+            Event::Mouse(mouse) => {
+                // Handle mouse events based on auth state
+                if let Some(action) = self.handle_mouse_event(mouse) {
+                    action_tx.send(action)?;
+                }
+            }
             _ => {}
         }
         Ok(())
@@ -279,18 +290,32 @@ impl App {
     fn handle_key_event(&mut self, key: KeyEvent) -> Option<Action> {
         match self.auth_state {
             AuthState::Unauthenticated | AuthState::Failed { .. } => {
-                // In auth mode, send events to login screen
+                // In unauthenticated mode, send to login screen
                 self.login_screen.handle_key(key)
             }
             AuthState::Authenticated { .. } => {
                 // In authenticated mode, send to home component
                 self.home_component.handle_key(key)
             }
-            AuthState::Authenticating => {
-                // During authentication, ignore key events
-                None
-            }
+            AuthState::Authenticating => None,
         }
+    }
+
+    fn handle_mouse_event(&mut self, mouse: crossterm::event::MouseEvent) -> Option<Action> {
+        match self.auth_state {
+            AuthState::Authenticated { .. } => {
+                // In authenticated mode, check status bar first for mouse events
+                if let Ok(Some(action)) = self.status_bar.handle_mouse_event(mouse) {
+                    return Some(action);
+                }
+                // Then try home component
+                if let Ok(Some(action)) = self.home_component.handle_mouse_event(mouse) {
+                    return Some(action);
+                }
+            }
+            _ => {}
+        }
+        None
     }
 
     fn handle_actions(&mut self, tui: &mut Tui) -> Result<()> {
