@@ -22,7 +22,27 @@
 
 ## Overview
 
-The Lair Chat API provides a modern, async-first interface for building secure chat applications. The API is built around the `ConnectionManager` which orchestrates transport, encryption, and authentication services.
+The Lair Chat API provides a modern, async-first interface for building secure chat applications. The API follows a modular architecture with clear separation between common functionality (shared between client/server), client-specific logic, and server-specific logic. The API is built around modular components that can be composed together for different use cases.
+
+### Module Structure
+
+- **`src/common/`**: Shared functionality between client and server
+  - `protocol/`: Message types and protocol definitions
+  - `crypto/`: Encryption utilities and cryptographic services
+  - `transport/`: Network abstractions and transport layer
+  - `errors/`: Common error types and utilities
+
+- **`src/client/`**: Client-specific functionality
+  - `ui/components/`: Terminal UI components and interfaces
+  - `chat/`: Chat functionality and conversation management
+  - `auth/`: Client-side authentication handling
+  - `app.rs`: Main application logic and state management
+
+- **`src/server/`**: Server-specific functionality
+  - `app/`: Server application logic and configuration
+  - `chat/`: Message handling and room management
+  - `auth/`: Server-side authentication and session management
+  - `network/`: Connection handling and session management
 
 ### Architecture Overview
 
@@ -30,24 +50,30 @@ The Lair Chat API provides a modern, async-first interface for building secure c
 graph TB
     subgraph "Application Layer"
         A[Your Application] --> B[ConnectionManager]
-        B --> C[RoomManager]
-        B --> D[DMConversationManager]
+        B --> C[ChatManager]
+        B --> D[DMManager]
     end
     
-    subgraph "Core Services"
-        B --> E[AuthService]
-        B --> F[TransportService]
-        B --> G[EncryptionService]
+    subgraph "Common Layer (src/common/)"
+        E[Protocol] --> F[Transport]
+        G[Crypto] --> F
+        H[Errors] --> F
+    end
+    
+    subgraph "Client Layer (src/client/)"
+        B --> I[UI Components]
+        B --> J[Auth Manager]
+        B --> K[App Logic]
     end
     
     subgraph "Transport Layer"
-        F --> H[TcpTransport]
-        F --> I[EncryptedTransport]
+        F --> L[TcpTransport]
+        F --> M[EncryptedTransport]
     end
     
     subgraph "Network"
-        H --> J[TCP Connection]
-        I --> J
+        L --> N[TCP Connection]
+        M --> N
     end
 ```
 

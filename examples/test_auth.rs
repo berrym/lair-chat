@@ -2,8 +2,8 @@
 //! This tests the client-server authentication protocol
 //! Run with: cargo run --example test_auth
 
-use lair_chat::client::{ConnectionManager, Credentials, TcpTransport};
-use lair_chat::transport::{ConnectionConfig, ConnectionStatus};
+use lair_chat::client::{ConnectionManager, Credentials};
+use lair_chat::common::transport::{ConnectionConfig, ConnectionStatus, TcpTransport};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     connection_manager.with_transport(transport);
 
     // Add secure AES-GCM encryption
-    let encryption = lair_chat::client::create_aes_gcm_encryption_with_random_key();
+    let encryption = lair_chat::common::crypto::create_aes_gcm_encryption_with_random_key();
     connection_manager.with_encryption(encryption);
 
     println!("📡 Connecting to server...");

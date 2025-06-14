@@ -4,8 +4,8 @@
 use std::time::Duration;
 use tokio::time::timeout;
 
-use lair_chat::client::{ConnectionManager, Credentials, TcpTransport};
-use lair_chat::transport::ConnectionConfig;
+use lair_chat::client::{ConnectionManager, Credentials};
+use lair_chat::common::transport::{ConnectionConfig, TcpTransport};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

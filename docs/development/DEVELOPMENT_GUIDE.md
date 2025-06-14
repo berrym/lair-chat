@@ -82,22 +82,37 @@ Plug 'neoclide/coc.nvim', {'branch': 'release'}
 ```
 lair-chat/
 ├── src/
-│   ├── client/              # Client-side code
-│   │   ├── main.rs         # Client binary entry point
-│   │   ├── app.rs          # Main application logic
-│   │   ├── tui.rs          # Terminal UI framework
-│   │   ├── components/     # UI components
-│   │   ├── auth/           # Authentication handling
+│   ├── bin/                # Binary entry points
+│   │   ├── client.rs       # Client application entry
+│   │   └── server.rs       # Server application entry
+│   ├── common/             # Shared functionality
+│   │   ├── protocol/       # Message types & protocols
+│   │   ├── crypto/         # Encryption utilities
+│   │   ├── transport/      # Network abstractions
+│   │   └── errors/         # Common error types
+│   ├── client/             # Client-specific code
+│   │   ├── ui/components/  # UI components & TUI
 │   │   ├── chat/           # Chat functionality
-│   │   └── transport/      # Network transport layer
-│   ├── server/             # Server-side code
-│   │   ├── main.rs         # Server binary entry point
-│   │   └── auth/           # Server authentication
-│   └── lib.rs              # Library exports
+│   │   ├── auth/           # Client authentication
+│   │   ├── app.rs          # Application logic
+│   │   ├── config.rs       # Configuration
+│   │   ├── connection_manager.rs # Network management
+│   │   └── errors.rs       # Client errors
+│   └── server/             # Server-specific code
+│       ├── app/            # Server application logic
+│       ├── chat/           # Message & room handling
+│       ├── auth/           # Server authentication
+│       └── network/        # Connection management
 ├── tests/                  # Integration tests
-├── benches/                # Benchmarks
-├── examples/               # Example code
-├── docs/                   # Documentation
+│   ├── integration/        # End-to-end tests
+│   └── stress/             # Performance tests
+├── benches/                # Performance benchmarks
+├── examples/               # Example implementations
+└── docs/                   # Comprehensive documentation
+    ├── architecture/       # System design docs
+    ├── development/        # Development guides
+    ├── guides/             # User guides
+    └── releases/           # Release notes
 │   ├── api/               # API documentation
 │   ├── guides/            # User and developer guides
 │   ├── architecture/      # Architecture documents

@@ -23,13 +23,17 @@ Lair Chat is a distributed, real-time chat application built with Rust, featurin
 
 ```mermaid
 graph TB
-    subgraph "Client Tier"
+    subgraph "Client Applications"
         C1[Client 1]
         C2[Client 2]
         C3[Client N]
     end
     
-    subgraph "Application Tier"
+    subgraph "Common Layer"
+        COMMON[Protocol • Crypto • Transport • Errors]
+    end
+    
+    subgraph "Server Tier"
         LB[Load Balancer]
         S1[Server Instance 1]
         S2[Server Instance 2]
@@ -42,9 +46,11 @@ graph TB
         FS[(File Storage)]
     end
     
-    C1 <--> LB
-    C2 <--> LB
-    C3 <--> LB
+    C1 <--> COMMON
+    C2 <--> COMMON
+    C3 <--> COMMON
+    
+    COMMON <--> LB
     
     LB <--> S1
     LB <--> S2
@@ -61,6 +67,30 @@ graph TB
     S1 <--> FS
     S2 <--> FS
     S3 <--> FS
+```
+
+### Modular Project Structure
+
+```
+src/
+├── bin/                    # Binary entry points
+│   ├── client.rs          # Client application entry
+│   └── server.rs          # Server application entry
+├── common/                 # Shared functionality
+│   ├── protocol/          # Message types & protocols  
+│   ├── crypto/            # Encryption utilities
+│   ├── transport/         # Network abstractions
+│   └── errors/            # Common error types
+├── client/                 # Client-specific code
+│   ├── ui/components/     # UI components & TUI
+│   ├── chat/              # Chat functionality
+│   ├── auth/              # Client authentication
+│   └── app/               # Application logic
+└── server/                 # Server-specific code
+    ├── app/               # Server application logic
+    ├── chat/              # Message & room handling
+    ├── auth/              # Server authentication
+    └── network/           # Connection management
 ```
 
 ### Technology Stack
@@ -116,8 +146,41 @@ graph TB
 
 ### Client Architecture
 
+The client follows a layered architecture with clear separation of concerns:
+
 ```mermaid
 graph TD
+    subgraph "Client Application (src/client/)"
+        UI[UI Layer - components/]
+        CHAT[Chat Layer - chat/]
+        AUTH[Auth Layer - auth/]
+        APP[App Layer - app/]
+        NET[Network Layer - network/]
+    end
+    
+    subgraph "Common Layer (src/common/)"
+        PROTO[Protocol]
+        CRYPTO[Crypto]
+        TRANS[Transport]
+        ERR[Errors]
+    end
+    
+    UI --> CHAT
+    UI --> AUTH
+    UI --> APP
+    CHAT --> NET
+    AUTH --> NET
+    APP --> NET
+    
+    NET --> PROTO
+    NET --> CRYPTO
+    NET --> TRANS
+    NET --> ERR
+    
+    PROTO --> Server
+    CRYPTO --> Server
+    TRANS --> Server
+```
     subgraph "Presentation Layer"
         TUI[Terminal UI]
         COMP[UI Components]
@@ -194,79 +257,130 @@ graph TD
 
 ### Server Architecture
 
+The server follows a modular architecture with clear separation of concerns:
+
 ```mermaid
 graph TD
-    subgraph "API Layer"
-        LISTEN[Connection Listener]
-        HANDLER[Connection Handler]
-        ROUTER[Message Router]
+    subgraph "Server Application (src/server/)"
+        APP_LAYER[App Layer - app/]
+        CHAT_LAYER[Chat Layer - chat/]
+        AUTH_LAYER[Auth Layer - auth/]
+        NET_LAYER[Network Layer - network/]
     end
     
-    subgraph "Service Layer"
-        AUTH_SVC[Auth Service]
-        ROOM_SVC[Room Service]
-        USER_SVC[User Service]
-        MSG_SVC[Message Service]
+    subgraph "Common Layer (src/common/)"
+        PROTO[Protocol]
+        CRYPTO[Crypto]
+        TRANS[Transport]
+        ERR[Errors]
     end
     
-    subgraph "Domain Layer"
-        ROOM_MGR[Room Manager]
-        USER_MGR[User Manager]
-        SESSION_MGR[Session Manager]
+    subgraph "Infrastructure"
+        DB[(Database)]
+        CACHE[(Cache)]
+        STORAGE[(File Storage)]
     end
     
-    subgraph "Infrastructure Layer"
-        DB[Database]
-        CACHE[Cache]
-        STORAGE[File Storage]
-        CRYPTO_SVC[Crypto Service]
+    APP_LAYER --> CHAT_LAYER
+    APP_LAYER --> AUTH_LAYER
+    APP_LAYER --> NET_LAYER
+    
+    CHAT_LAYER --> PROTO
+    AUTH_LAYER --> PROTO
+    NET_LAYER --> TRANS
+    
+    PROTO --> CRYPTO
+    TRANS --> CRYPTO
+    
+    AUTH_LAYER --> DB
+    CHAT_LAYER --> DB
+    NET_LAYER --> CACHE
+    
+    CHAT_LAYER --> STORAGE
+```
+
+#### Detailed Server Components
+
+```mermaid
+graph TD
+    subgraph "app/ - Application Logic"
+        SERVER[ChatServer]
+        STATE[SharedState]
+        CONFIG[ServerConfig]
     end
     
-    LISTEN --> HANDLER
-    HANDLER --> ROUTER
-    ROUTER --> AUTH_SVC
-    ROUTER --> ROOM_SVC
-    ROUTER --> USER_SVC
-    ROUTER --> MSG_SVC
+    subgraph "chat/ - Message Handling"
+        MSG_STORE[MessageStore]
+        ROOM_MGR[RoomManager]
+        USER_MGR[UserManager]
+    end
     
-    AUTH_SVC --> SESSION_MGR
-    ROOM_SVC --> ROOM_MGR
-    USER_SVC --> USER_MGR
-    MSG_SVC --> ROOM_MGR
+    subgraph "auth/ - Authentication"
+        AUTH_SVC[AuthService]
+        USER_STORE[UserStorage]
+        SESSION_STORE[SessionStorage]
+    end
     
-    SESSION_MGR --> DB
-    ROOM_MGR --> DB
-    USER_MGR --> DB
+    subgraph "network/ - Connection Management"
+        CONN_HANDLER[ConnectionHandler]
+        SESSION_MGR[SessionManager]
+    end
     
-    AUTH_SVC --> CACHE
-    ROOM_SVC --> CACHE
-    USER_SVC --> CACHE
+    SERVER --> STATE
+    SERVER --> CONFIG
+    STATE --> ROOM_MGR
+    STATE --> USER_MGR
+    STATE --> AUTH_SVC
     
-    MSG_SVC --> STORAGE
-    CRYPTO_SVC --> STORAGE
+    CONN_HANDLER --> SESSION_MGR
+    CONN_HANDLER --> AUTH_SVC
+    CONN_HANDLER --> MSG_STORE
+    
+    AUTH_SVC --> USER_STORE
+    AUTH_SVC --> SESSION_STORE
 ```
 
 #### Server Components
 
-1. **Connection Listener**
-   - Accepts incoming TCP connections
-   - Handles SSL/TLS termination
-   - Manages connection pools
+1. **ChatServer (src/server/app/server.rs)**
+   - Main server application entry point
+   - Manages server configuration and lifecycle
+   - Coordinates all server components
 
-2. **Message Router**
-   - Routes messages to appropriate handlers
-   - Handles protocol negotiation
-   - Manages message queuing
+2. **SharedState (src/server/app/state.rs)**
+   - Central state management for the server
+   - Manages peer connections and user sessions
+   - Handles room assignments and user tracking
 
-3. **Room Manager**
+3. **RoomManager (src/server/chat/rooms.rs)**
    - Manages chat rooms and participants
-   - Handles room permissions
-   - Broadcasts messages to room members
+   - Handles room creation, deletion, and permissions
+   - Coordinates room-based message broadcasting
 
-4. **Authentication Service**
-   - Handles user authentication
+4. **UserManager (src/server/chat/users.rs)**
+   - Tracks connected users and their presence
+   - Manages user sessions and activity
+   - Handles user movement between rooms
+
+5. **MessageStore (src/server/chat/messages.rs)**
+   - Persists and retrieves chat messages
+   - Handles message validation and lifecycle
+   - Supports direct messages and room messages
+
+6. **AuthService (src/server/auth/service.rs)**
+   - Handles user authentication and authorization
    - Manages sessions and tokens
-   - Implements rate limiting
+   - Implements rate limiting and security policies
+
+7. **ConnectionHandler (src/server/network/connection_handler.rs)**
+   - Manages individual client connections
+   - Handles connection lifecycle and cleanup
+   - Coordinates authentication and message processing
+
+8. **SessionManager (src/server/network/session_manager.rs)**
+   - Tracks active user sessions
+   - Manages session timeouts and cleanup
+   - Provides session statistics and monitoring
 
 ## Data Flow Diagrams
 

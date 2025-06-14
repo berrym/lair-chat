@@ -1,12 +1,12 @@
-# Migration Guide: Upgrading to Lair Chat v0.6.0
+# Migration Guide: Upgrading to Lair Chat v0.6.0+
 
-**Version**: 0.6.0  
-**Last Updated**: December 12, 2025  
+**Version**: 0.6.0+  
+**Last Updated**: June 2025  
 **Migration Difficulty**: Moderate to High
 
 ## Overview
 
-Lair Chat v0.6.0 introduces a complete architectural modernization that removes all legacy code and implements modern async/await patterns. This guide helps you migrate from v0.5.x to v0.6.0.
+Lair Chat v0.6.0+ introduces a complete architectural modernization that removes all legacy code, implements modern async/await patterns, and includes a comprehensive project reorganization. This guide helps you migrate from v0.5.x to v0.6.0+ and understand the new modular structure.
 
 ## Table of Contents
 
@@ -27,15 +27,17 @@ Lair Chat v0.6.0 introduces a complete architectural modernization that removes 
 
 - **🔄 Global State Removed**: No more `CLIENT_STATUS`, `MESSAGES`, `ACTION_SENDER`
 - **🏗️ Modern Architecture**: New `ConnectionManager` with dependency injection
+- **📁 Project Reorganization**: Complete codebase restructure with `common/`, `client/`, and `server/` separation
 - **⚡ Async/Await**: All I/O operations are now properly async
 - **🛡️ Type Safety**: Comprehensive error types replace string errors
 - **👁️ Observer Pattern**: Event-driven communication replaces direct calls
+- **🔗 Shared Modules**: Common functionality extracted to reusable modules
 
 ### Migration Impact
 
-- **High Impact**: Applications using global state directly
-- **Medium Impact**: Applications using compatibility layers
-- **Low Impact**: Applications already using modern patterns
+- **High Impact**: Applications using global state directly, importing from old module paths
+- **Medium Impact**: Applications using compatibility layers, custom transport implementations
+- **Low Impact**: Applications already using modern patterns with proper module imports
 
 ### Timeline Estimate
 
@@ -45,7 +47,63 @@ Lair Chat v0.6.0 introduces a complete architectural modernization that removes 
 
 ## Breaking Changes
 
-### 1. Global State Removal
+### 1. Project Structure Reorganization
+
+**What Changed:**
+The entire project structure has been reorganized into a clean, modular architecture.
+
+**Old Structure (v0.5.x):**
+```
+src/
+├── client/
+│   ├── main.rs
+│   ├── app.rs
+│   ├── components/
+│   ├── transport.rs
+│   ├── encryption.rs
+│   └── protocol.rs
+└── server/
+    ├── main.rs
+    └── auth/
+```
+
+**New Structure (v0.6.0+):**
+```
+src/
+├── bin/
+│   ├── client.rs
+│   └── server.rs
+├── common/
+│   ├── protocol/
+│   ├── crypto/
+│   ├── transport/
+│   └── errors/
+├── client/
+│   ├── ui/components/
+│   ├── chat/
+│   ├── auth/
+│   └── app.rs
+└── server/
+    ├── app/
+    ├── chat/
+    ├── auth/
+    └── network/
+```
+
+**Import Path Changes:**
+```rust
+// v0.5.x imports
+use lair_chat::client::transport::TcpTransport;
+use lair_chat::client::encryption::encrypt;
+use lair_chat::client::protocol::ProtocolMessage;
+
+// v0.6.0+ imports
+use lair_chat::common::transport::TcpTransport;
+use lair_chat::common::crypto::encrypt;
+use lair_chat::common::protocol::ProtocolMessage;
+```
+
+### 2. Global State Removal
 
 **What Changed:**
 All global state variables have been removed from the public API.
@@ -58,10 +116,10 @@ let status = CLIENT_STATUS.lock().unwrap();
 add_text_message("Hello, World!".to_string());
 ```
 
-**v0.6.0 Replacement:**
+**v0.6.0+ Replacement:**
 ```rust
-use lair_chat::client::{ConnectionManager, TcpTransport};
-use lair_chat::transport::ConnectionConfig;
+use lair_chat::client::connection_manager::ConnectionManager;
+use lair_chat::common::transport::{TcpTransport, ConnectionConfig};
 
 let config = ConnectionConfig::new("127.0.0.1:8080".parse()?);
 let mut connection_manager = ConnectionManager::new(config);
@@ -69,7 +127,7 @@ let status = connection_manager.get_status().await;
 connection_manager.send_message("Hello, World!").await?;
 ```
 
-### 2. Function Signatures
+### 3. Function Signatures
 
 **What Changed:**
 Most functions are now async and return typed errors.
@@ -80,13 +138,13 @@ fn connect_client(addr: &str) -> Result<(), String>
 fn send_message(msg: String) -> Result<(), String>
 ```
 
-**v0.6.0 Replacement:**
+**v0.6.0+ Replacement:**
 ```rust
 async fn connect(&mut self) -> Result<(), TransportError>
 async fn send_message(&mut self, msg: &str) -> Result<(), MessageError>
 ```
 
-### 3. Authentication API
+### 4. Authentication API
 
 **What Changed:**
 Authentication now uses structured credentials and typed responses.

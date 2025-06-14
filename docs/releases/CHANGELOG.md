@@ -31,7 +31,7 @@ Major release introducing secure file sharing capabilities and rich content supp
 ## Version 0.6.2
 
 ### Overview
-The v0.6.2 release introduces a comprehensive unread messages enhancement system that significantly improves user experience by providing better visibility and management of unread messages across conversations. This release focuses on cross-conversation awareness and interactive elements.
+The v0.6.2 release introduces a comprehensive unread messages enhancement system and a complete project reorganization. This release significantly improves user experience by providing better visibility and management of unread messages across conversations, while establishing a modern, scalable architecture foundation for future development.
 
 ### Major New Features
 - **Global Status Bar Unread Indicator**: Always-visible unread DM count with clickable functionality
@@ -40,6 +40,14 @@ The v0.6.2 release introduces a comprehensive unread messages enhancement system
 - **Interactive Status Bar Elements**: Click-to-open functionality for instant DM navigation
 - **Mark All as Read**: Single-action functionality to clear all unread messages
 
+### Architecture Improvements
+- **🏗️ Complete Project Reorganization**: Systematic 5-phase migration to modern architecture
+- **📁 Modular Structure**: Clean separation with `common/`, `client/`, and `server/` directories
+- **🔗 Shared Modules**: Common functionality extracted for better code reuse
+- **🚀 Enhanced Maintainability**: Logical grouping improves developer navigation and understanding
+- **📦 Binary Reorganization**: Entry points moved to `src/bin/` for cleaner structure
+- **🧪 Improved Testing**: Test organization now matches source structure
+
 ### Key Improvements
 - **Real-time Updates**: Unread counts update automatically at 4Hz via tick events
 - **Smart Notification Logic**: Context-aware notifications only when not viewing active conversation
@@ -47,6 +55,12 @@ The v0.6.2 release introduces a comprehensive unread messages enhancement system
 - **Color-coded Indicators**: Green (1-3), Magenta (4-10), Red (>10) unread messages
 - **NEW Badges**: Visual indicators for messages received within last 5 minutes
 - **Performance Optimized**: Minimal CPU overhead with efficient rendering
+
+### Developer Experience
+- **📚 Updated Documentation**: All docs reflect new project structure
+- **🔄 Migration Guide**: Comprehensive guide for adapting to new module paths
+- **🛠️ Enhanced Development**: Improved code organization for easier contribution
+- **📈 Future-Ready**: Foundation prepared for plugin system and advanced features
 
 ### Technical Enhancements
 - **3 New Actions**: UpdateUnreadDMCount, OpenDMNavigation, MarkAllDMsRead
