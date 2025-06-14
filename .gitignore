@@ -1,2 +1,23 @@
 /target
 Cargo.lock
+
+# Debug logs
+*.log
+debug.log
+client_debug.log
+server_debug.log
+
+# Development scripts (if temporary)
+debug_client.sh
+show_real_logs.sh
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
