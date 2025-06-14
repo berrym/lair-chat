@@ -1,25 +1,14 @@
 //! Client authentication module for Lair-Chat
 //! Provides client-side authentication functionality and state management.
 
-mod types;
-mod protocol;
 mod manager;
+mod protocol;
 pub mod storage;
+mod types;
 
-pub use types::{
-    AuthError,
-    AuthResult,
-    AuthState,
-    Credentials,
-    Session,
-    UserProfile,
-};
+pub use types::{AuthError, AuthResult, AuthState, Credentials, Session, UserProfile};
 
-pub use protocol::{
-    AuthProtocol,
-    AuthRequest,
-    AuthResponse,
-};
+pub use protocol::{AuthProtocol, AuthRequest, AuthResponse};
 
 pub use manager::AuthManager;
 
@@ -79,8 +68,8 @@ pub(crate) mod testing {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::testing::*;
+    use super::*;
 
     #[test]
     fn test_auth_test_utilities() {

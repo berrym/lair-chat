@@ -10,7 +10,7 @@ mod tests {
 
     // Common test timeout - shared across all test modules
     const DEFAULT_TEST_TIMEOUT: Duration = Duration::from_secs(5);
-    
+
     // Longer timeout for stress tests
     const STRESS_TEST_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -19,14 +19,14 @@ mod tests {
         ($test_fn:expr) => {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
-                tokio::time::timeout(DEFAULT_TEST_TIMEOUT, $test_fn).await.unwrap()
+                tokio::time::timeout(DEFAULT_TEST_TIMEOUT, $test_fn)
+                    .await
+                    .unwrap()
             })
         };
         ($test_fn:expr, $timeout:expr) => {
             let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(async {
-                tokio::time::timeout($timeout, $test_fn).await.unwrap()
-            })
+            rt.block_on(async { tokio::time::timeout($timeout, $test_fn).await.unwrap() })
         };
     }
 

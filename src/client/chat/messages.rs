@@ -1,11 +1,11 @@
 //! Chat message structures for Lair-Chat
 //! Handles message creation, editing, reactions, and metadata.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
-use serde::{Deserialize, Serialize};
 
-use super::{MessageId, UserId, RoomId};
+use super::{MessageId, RoomId, UserId};
 
 /// Message type enumeration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -346,7 +346,8 @@ impl ChatMessage {
         if let Some(reaction) = self.reactions.get_mut(&emoji) {
             reaction.add_user(user_id)
         } else {
-            self.reactions.insert(emoji.clone(), MessageReaction::new(emoji, user_id));
+            self.reactions
+                .insert(emoji.clone(), MessageReaction::new(emoji, user_id));
             true
         }
     }
@@ -432,7 +433,7 @@ impl ChatMessage {
     /// Get human-readable age
     pub fn human_age(&self) -> String {
         let age = self.age_seconds();
-        
+
         if age < 60 {
             format!("{}s", age)
         } else if age < 3600 {
@@ -462,9 +463,9 @@ impl ChatMessage {
     /// Check if message can be edited by user
     pub fn can_edit(&self, user_id: &UserId) -> bool {
         // Only sender can edit their own messages
-        self.sender_id == *user_id && 
-        !self.is_deleted() && 
-        matches!(self.message_type, MessageType::Text | MessageType::Reply)
+        self.sender_id == *user_id
+            && !self.is_deleted()
+            && matches!(self.message_type, MessageType::Text | MessageType::Reply)
     }
 
     /// Check if message can be deleted by user
@@ -509,7 +510,7 @@ impl MessageThread {
     /// Add a message to the thread
     pub fn add_message(&mut self, message_id: MessageId, sender_id: UserId) {
         self.messages.push(message_id);
-        
+
         if !self.participants.contains(&sender_id) {
             self.participants.push(sender_id);
         }
@@ -557,12 +558,12 @@ mod tests {
         let room_id = uuid::Uuid::new_v4();
         let sender_id = uuid::Uuid::new_v4();
         let user_id = uuid::Uuid::new_v4();
-        
+
         let mut message = ChatMessage::new_text(
-            room_id, 
-            sender_id, 
-            "sender".to_string(), 
-            "Test message".to_string()
+            room_id,
+            sender_id,
+            "sender".to_string(),
+            "Test message".to_string(),
         );
 
         // Add reaction
@@ -584,18 +585,18 @@ mod tests {
     fn test_message_editing() {
         let room_id = uuid::Uuid::new_v4();
         let sender_id = uuid::Uuid::new_v4();
-        
+
         let mut message = ChatMessage::new_text(
-            room_id, 
-            sender_id, 
-            "sender".to_string(), 
-            "Original content".to_string()
+            room_id,
+            sender_id,
+            "sender".to_string(),
+            "Original content".to_string(),
         );
 
         assert!(!message.is_edited());
 
         message.edit("Edited content".to_string());
-        
+
         assert_eq!(message.content, "Edited content");
         assert!(message.is_edited());
         assert_eq!(message.status, MessageStatus::Edited);
@@ -621,12 +622,12 @@ mod tests {
         let room_id = uuid::Uuid::new_v4();
         let sender_id = uuid::Uuid::new_v4();
         let reader_id = uuid::Uuid::new_v4();
-        
+
         let mut message = ChatMessage::new_text(
-            room_id, 
-            sender_id, 
-            "sender".to_string(), 
-            "Test message".to_string()
+            room_id,
+            sender_id,
+            "sender".to_string(),
+            "Test message".to_string(),
         );
 
         // Add read receipt

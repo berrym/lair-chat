@@ -28,15 +28,11 @@ pub enum AuthenticationMessage {
 
     /// Logout request
     #[serde(rename = "logout")]
-    Logout {
-        token: String,
-    },
+    Logout { token: String },
 
     /// Refresh session token
     #[serde(rename = "refresh")]
-    RefreshToken {
-        token: String,
-    },
+    RefreshToken { token: String },
 }
 
 /// Server authentication response
@@ -184,10 +180,7 @@ mod tests {
 
     #[test]
     fn test_challenge_response() {
-        let challenge = AuthenticationResponse::challenge(
-            "totp",
-            "Please enter your 2FA code",
-        );
+        let challenge = AuthenticationResponse::challenge("totp", "Please enter your 2FA code");
 
         let json = serde_json::to_string(&challenge).unwrap();
         assert!(json.contains(r#""type":"challenge""#));

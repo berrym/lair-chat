@@ -1,14 +1,14 @@
+use color_eyre::Result;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Borders, Paragraph};
-use color_eyre::Result;
 
 use crate::action::Action;
 use crate::auth::AuthState;
 use crate::components::Component;
-use crate::components::{AuthStatusBar, LoginScreen, ChatView, StatusBar};
-use ratatui::Frame;
+use crate::components::{AuthStatusBar, ChatView, LoginScreen, StatusBar};
 use crossterm::event::KeyEvent;
+use ratatui::Frame;
 
 /// Main application state and UI component
 pub struct App {
@@ -65,7 +65,8 @@ impl App {
 
     /// Handle authentication error
     pub fn handle_auth_error(&mut self, error: String) {
-        self.login_screen.handle_error(crate::auth::AuthError::InternalError(error));
+        self.login_screen
+            .handle_error(crate::auth::AuthError::InternalError(error));
     }
 }
 
@@ -73,7 +74,11 @@ impl Component for App {
     fn handle_key(&mut self, key: KeyEvent) -> Option<Action> {
         // Global key handlers
         match key.code {
-            crossterm::event::KeyCode::Char('c') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+            crossterm::event::KeyCode::Char('c')
+                if key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL) =>
+            {
                 self.should_quit = true;
                 return Some(Action::Quit);
             }
@@ -85,9 +90,7 @@ impl Component for App {
             AuthState::Unauthenticated | AuthState::Failed { .. } => {
                 self.login_screen.handle_key(key)
             }
-            AuthState::Authenticated { .. } => {
-                self.chat_view.handle_key(key)
-            }
+            AuthState::Authenticated { .. } => self.chat_view.handle_key(key),
             AuthState::Authenticating => None,
         }
     }
@@ -97,23 +100,29 @@ impl Component for App {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1),  // Status bar
-                Constraint::Min(0),     // Main content
-                Constraint::Length(1),  // Bottom status bar
+                Constraint::Length(1), // Status bar
+                Constraint::Min(0),    // Main content
+                Constraint::Length(1), // Bottom status bar
             ])
             .split(area);
 
         // Draw the auth status
-        self.auth_status.draw(f, chunks[0]).map_err(|e| color_eyre::eyre::eyre!("Draw error: {}", e))?;
+        self.auth_status
+            .draw(f, chunks[0])
+            .map_err(|e| color_eyre::eyre::eyre!("Draw error: {}", e))?;
 
         // Draw the main content based on authentication state
         // Draw main content
         match self.auth_state {
             AuthState::Unauthenticated | AuthState::Failed { .. } => {
-                self.login_screen.draw(f, chunks[1]).map_err(|e| color_eyre::eyre::eyre!("Draw error: {}", e))?;
+                self.login_screen
+                    .draw(f, chunks[1])
+                    .map_err(|e| color_eyre::eyre::eyre!("Draw error: {}", e))?;
             }
             AuthState::Authenticated { .. } => {
-                self.chat_view.draw(f, chunks[1]).map_err(|e| color_eyre::eyre::eyre!("Draw error: {}", e))?;
+                self.chat_view
+                    .draw(f, chunks[1])
+                    .map_err(|e| color_eyre::eyre::eyre!("Draw error: {}", e))?;
             }
             AuthState::Authenticating => {
                 // Show loading screen
@@ -125,7 +134,9 @@ impl Component for App {
         }
 
         // Draw the status bar
-        self.status_bar.draw(f, chunks[2]).map_err(|e| color_eyre::eyre::eyre!("Draw error: {}", e))?;
+        self.status_bar
+            .draw(f, chunks[2])
+            .map_err(|e| color_eyre::eyre::eyre!("Draw error: {}", e))?;
 
         Ok(())
     }
@@ -148,7 +159,7 @@ mod tests {
     fn test_app_quit() {
         let mut app = App::new();
         assert!(!app.should_quit());
-        
+
         app.quit();
         assert!(app.should_quit());
     }
@@ -156,25 +167,22 @@ mod tests {
     #[test]
     fn test_auth_state_update() {
         let mut app = App::new();
-        
+
         let profile = crate::auth::UserProfile {
             id: Uuid::new_v4(),
             username: "testuser".to_string(),
             roles: vec!["user".to_string()],
         };
-        
+
         let session = crate::auth::Session {
             id: Uuid::new_v4(),
             token: "test_token".to_string(),
             created_at: 0,
             expires_at: u64::MAX,
         };
-        
-        app.update_auth_state(AuthState::Authenticated {
-            profile,
-            session,
-        });
-        
+
+        app.update_auth_state(AuthState::Authenticated { profile, session });
+
         match app.auth_state {
             AuthState::Authenticated { ref profile, .. } => {
                 assert_eq!(profile.username, "testuser");
@@ -186,12 +194,9 @@ mod tests {
     #[test]
     fn test_ctrl_c_handling() {
         let mut app = App::new();
-        
-        let action = app.handle_key(KeyEvent::new(
-            KeyCode::Char('c'),
-            KeyModifiers::CONTROL,
-        ));
-        
+
+        let action = app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+
         assert!(matches!(action, Some(Action::Quit)));
         assert!(app.should_quit());
     }

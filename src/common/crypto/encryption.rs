@@ -40,7 +40,8 @@ pub fn encrypt(key_str: String, plaintext: String) -> Result<String, EncryptionE
 
 /// Decrypt strings that were encrypted with the encrypt function
 pub fn decrypt(key_str: String, encrypted_data: String) -> Result<String, EncryptionError> {
-    let encrypted_data = BASE64_STANDARD.decode(encrypted_data)
+    let encrypted_data = BASE64_STANDARD
+        .decode(encrypted_data)
         .map_err(|e| EncryptionError::EncodingError(format!("Base64 decode error: {}", e)))?;
     let key = Key::<Aes256Gcm>::from_slice(key_str.as_bytes());
     let (nonce_arr, ciphered_data) = encrypted_data.split_at(12);
@@ -61,10 +62,11 @@ mod tests {
     fn test_encrypt_decrypt_roundtrip() {
         let key = "test_key_32_bytes_exactly_here!!";
         let message = "Hello, World!";
-        
-        let encrypted = encrypt(key.to_string(), message.to_string()).expect("Encryption should succeed");
+
+        let encrypted =
+            encrypt(key.to_string(), message.to_string()).expect("Encryption should succeed");
         let decrypted = decrypt(key.to_string(), encrypted).expect("Decryption should succeed");
-        
+
         assert_eq!(message, decrypted);
     }
 
@@ -72,7 +74,7 @@ mod tests {
     fn test_decrypt_invalid_base64() {
         let key = "test_key_32_bytes_exactly_here!!";
         let invalid_base64 = "not_valid_base64!@#$";
-        
+
         match decrypt(key.to_string(), invalid_base64.to_string()) {
             Err(EncryptionError::EncodingError(msg)) => {
                 assert!(msg.contains("Base64 decode error"));
@@ -86,7 +88,7 @@ mod tests {
         let key = "test_key_32_bytes_exactly_here!!";
         // Valid base64 but corrupted encrypted data (needs to be at least 12 bytes for nonce)
         let corrupted_data = "SGVsbG8gV29ybGQxMjM0NTY3ODkwMTI="; // Long enough base64, but not properly encrypted
-        
+
         match decrypt(key.to_string(), corrupted_data.to_string()) {
             Err(EncryptionError::DecryptionError(_)) => {
                 // This is expected - the data is valid base64 but not properly encrypted

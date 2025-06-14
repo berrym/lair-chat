@@ -1,8 +1,8 @@
 //! Room user structures for Lair-Chat
 //! Handles user roles, status, and permissions within chat rooms.
 
-use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::UserId;
 
@@ -91,7 +91,10 @@ impl UserStatus {
 
     /// Check if user is present in the room
     pub fn is_present(&self) -> bool {
-        !matches!(self, UserStatus::Offline | UserStatus::Banned | UserStatus::Left)
+        !matches!(
+            self,
+            UserStatus::Offline | UserStatus::Banned | UserStatus::Left
+        )
     }
 }
 
@@ -438,7 +441,7 @@ impl UserStats {
     pub fn human_time_in_room(&self) -> String {
         let hours = self.time_in_room / 3600;
         let minutes = (self.time_in_room % 3600) / 60;
-        
+
         if hours > 0 {
             format!("{}h {}m", hours, minutes)
         } else {
@@ -457,7 +460,7 @@ mod tests {
         assert!(UserRole::Moderator.can_perform("kick_user"));
         assert!(!UserRole::User.can_perform("kick_user"));
         assert!(!UserRole::Guest.can_perform("upload_file"));
-        
+
         assert!(UserRole::Admin.can_modify(&UserRole::User));
         assert!(!UserRole::User.can_modify(&UserRole::Admin));
     }
@@ -468,7 +471,7 @@ mod tests {
         assert!(UserStatus::Idle.is_available());
         assert!(!UserStatus::Away.is_available());
         assert!(!UserStatus::Offline.is_available());
-        
+
         assert!(UserStatus::Online.is_present());
         assert!(!UserStatus::Banned.is_present());
         assert!(!UserStatus::Left.is_present());
@@ -478,9 +481,9 @@ mod tests {
     fn test_room_user_creation() {
         let user_id = uuid::Uuid::new_v4();
         let username = "testuser".to_string();
-        
+
         let user = RoomUser::new(user_id, username.clone(), UserRole::User);
-        
+
         assert_eq!(user.user_id, user_id);
         assert_eq!(user.username, username);
         assert_eq!(user.role, UserRole::User);
@@ -492,12 +495,12 @@ mod tests {
     #[test]
     fn test_user_activity() {
         let mut activity = UserActivity::new();
-        
+
         assert_eq!(activity.message_count, 0);
         assert!(activity.last_message.is_none());
-        
+
         activity.record_message();
-        
+
         assert_eq!(activity.message_count, 1);
         assert!(activity.last_message.is_some());
     }
@@ -506,7 +509,7 @@ mod tests {
     fn test_user_permissions() {
         let admin_perms = UserPermissions::for_role(&UserRole::Admin);
         let guest_perms = UserPermissions::for_role(&UserRole::Guest);
-        
+
         assert!(admin_perms.mention_all);
         assert!(!guest_perms.mention_all);
         assert!(!guest_perms.upload_files);
@@ -515,22 +518,18 @@ mod tests {
 
     #[test]
     fn test_user_muting() {
-        let mut user = RoomUser::new(
-            uuid::Uuid::new_v4(),
-            "testuser".to_string(),
-            UserRole::User,
-        );
-        
+        let mut user = RoomUser::new(uuid::Uuid::new_v4(), "testuser".to_string(), UserRole::User);
+
         assert!(!user.is_muted());
         assert!(user.can_perform("send_message"));
-        
+
         user.mute();
-        
+
         assert!(user.is_muted());
         assert!(!user.can_perform("send_message"));
-        
+
         user.unmute();
-        
+
         assert!(!user.is_muted());
         assert!(user.can_perform("send_message"));
     }

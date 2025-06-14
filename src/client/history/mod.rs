@@ -1,12 +1,12 @@
 //! Command history module for Lair-Chat
 //! Provides persistent storage and management of command history.
 
-use std::path::PathBuf;
-use std::collections::VecDeque;
-use serde::{Deserialize, Serialize};
 use directories::ProjectDirs;
-use tokio::fs;
+use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
+use std::path::PathBuf;
 use thiserror::Error;
+use tokio::fs;
 
 /// Maximum number of commands to keep in history
 const MAX_HISTORY_SIZE: usize = 1000;
@@ -58,12 +58,12 @@ pub struct CommandHistory {
 impl CommandHistory {
     /// Create a new command history manager
     pub fn new() -> HistoryResult<Self> {
-        let project_dirs = ProjectDirs::from("com", "lair-chat", "lair-chat")
-            .ok_or_else(|| HistoryError::System("Could not determine project directories".into()))?;
+        let project_dirs = ProjectDirs::from("com", "lair-chat", "lair-chat").ok_or_else(|| {
+            HistoryError::System("Could not determine project directories".into())
+        })?;
 
         let data_dir = project_dirs.data_dir();
-        std::fs::create_dir_all(data_dir)
-            .map_err(HistoryError::DirectoryCreation)?;
+        std::fs::create_dir_all(data_dir).map_err(HistoryError::DirectoryCreation)?;
 
         let history_file = data_dir.join("command_history.json");
 
@@ -97,8 +97,8 @@ impl CommandHistory {
             return Ok(());
         }
 
-        let content = std::fs::read_to_string(&self.history_file)
-            .map_err(HistoryError::FileRead)?;
+        let content =
+            std::fs::read_to_string(&self.history_file).map_err(HistoryError::FileRead)?;
 
         let entries: Vec<HistoryEntry> = serde_json::from_str(&content)?;
         self.entries = VecDeque::from(entries);
@@ -268,7 +268,7 @@ mod tests {
         assert_eq!(history.previous(), Some("third".to_string()));
         assert_eq!(history.previous(), Some("second".to_string()));
         assert_eq!(history.next(), Some("third".to_string()));
-        
+
         // Reset should clear position
         history.reset_position();
         assert_eq!(history.previous(), Some("third".to_string()));

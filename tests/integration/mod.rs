@@ -1,10 +1,10 @@
 mod transport_tests;
 
-use tokio;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{Mutex, mpsc};
+use tokio;
+use tokio::sync::{mpsc, Mutex};
 use tokio::time::timeout;
 
 // Re-export commonly used test utilities
@@ -12,8 +12,8 @@ pub(crate) use crate::client::{
     aes_gcm_encryption::AesGcmEncryption,
     config::ConnectionConfig,
     connection_manager::{ConnectionManager, ConnectionStatus},
-    tcp_transport::TcpTransport,
     encryption::Encryption,
+    tcp_transport::TcpTransport,
     transport::Transport,
 };
 
@@ -33,13 +33,13 @@ pub async fn create_test_manager() -> (ConnectionManager, SocketAddr) {
     let config = create_test_config().await;
     let addr = config.address().clone();
     let mut manager = ConnectionManager::new(config.clone());
-    
+
     let transport = TcpTransport::new(config);
     let encryption = AesGcmEncryption::new("test_password");
-    
+
     manager.set_transport(Box::new(transport));
     manager.set_encryption(Box::new(encryption));
-    
+
     (manager, addr)
 }
 
@@ -66,7 +66,7 @@ pub async fn collect_messages(
     timeout_duration: Duration,
 ) -> Vec<TestMessage> {
     let mut messages = Vec::with_capacity(count);
-    
+
     for _ in 0..count {
         match timeout(timeout_duration, rx.recv()).await {
             Ok(Some(msg)) => messages.push(TestMessage::new(msg)),
@@ -74,6 +74,6 @@ pub async fn collect_messages(
             Err(_) => break,
         }
     }
-    
+
     messages
 }

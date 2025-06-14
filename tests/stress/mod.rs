@@ -1,5 +1,5 @@
 //! Stress testing module for Lair-Chat
-//! 
+//!
 //! This module contains stress tests designed to verify system behavior under heavy load
 //! and extreme conditions. These tests are more intensive than regular integration tests
 //! and may take longer to run.
@@ -38,14 +38,18 @@ impl Default for StressTestConfig {
             max_connections: 1000,
             batch_size: 50,
             sustained_duration: Duration::from_secs(30),
-            message_size: 1024, // 1KB
+            message_size: 1024,   // 1KB
             max_error_rate: 0.05, // 5% error rate allowed
         }
     }
 }
 
 /// Helper function to determine if a test result meets performance criteria
-pub fn meets_performance_criteria(success_count: usize, total_attempts: usize, required_success_rate: f64) -> bool {
+pub fn meets_performance_criteria(
+    success_count: usize,
+    total_attempts: usize,
+    required_success_rate: f64,
+) -> bool {
     let success_rate = success_count as f64 / total_attempts as f64;
     success_rate >= required_success_rate
 }

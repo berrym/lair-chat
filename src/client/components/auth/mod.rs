@@ -4,12 +4,12 @@
 mod login;
 pub use login::{LoginMode, LoginScreen};
 
+use color_eyre::Result;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
-use color_eyre::Result;
 
 use crate::auth::AuthState;
 use crate::components::Component;
@@ -34,22 +34,12 @@ impl AuthStatusBar {
 impl Component for AuthStatusBar {
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
         let (status_text, style) = match &self.state {
-            AuthState::Unauthenticated => (
-                "Not logged in",
-                Style::default().fg(Color::Red),
-            ),
-            AuthState::Authenticating => (
-                "Authenticating...",
-                Style::default().fg(Color::Yellow),
-            ),
-            AuthState::Authenticated { profile, .. } => (
-                profile.username.as_str(),
-                Style::default().fg(Color::Green),
-            ),
-            AuthState::Failed { reason } => (
-                reason.as_str(),
-                Style::default().fg(Color::Red),
-            ),
+            AuthState::Unauthenticated => ("Not logged in", Style::default().fg(Color::Red)),
+            AuthState::Authenticating => ("Authenticating...", Style::default().fg(Color::Yellow)),
+            AuthState::Authenticated { profile, .. } => {
+                (profile.username.as_str(), Style::default().fg(Color::Green))
+            }
+            AuthState::Failed { reason } => (reason.as_str(), Style::default().fg(Color::Red)),
         };
 
         let status = Paragraph::new(Span::styled(status_text, style));
@@ -67,7 +57,7 @@ mod tests {
     #[test]
     fn test_auth_status_bar() {
         let mut status_bar = AuthStatusBar::new();
-        
+
         // Test initial state
         assert!(matches!(status_bar.state, AuthState::Unauthenticated));
 
@@ -77,7 +67,7 @@ mod tests {
             username: "testuser".to_string(),
             roles: vec!["user".to_string()],
         };
-        
+
         let session = Session {
             id: Uuid::new_v4(),
             token: "test_token".to_string(),
@@ -85,10 +75,7 @@ mod tests {
             expires_at: u64::MAX,
         };
 
-        status_bar.update_state(AuthState::Authenticated {
-            profile,
-            session,
-        });
+        status_bar.update_state(AuthState::Authenticated { profile, session });
 
         match status_bar.state {
             AuthState::Authenticated { ref profile, .. } => {
