@@ -21,7 +21,6 @@ use crate::{
     transport::{ConnectionConfig, ConnectionObserver, Message, MessageStore},
     tui::{Event, Tui},
 };
-use std::collections::HashMap;
 
 use std::sync::Arc;
 
@@ -150,8 +149,8 @@ impl App {
         let encryption = create_aes_gcm_encryption_with_random_key();
         connection_manager.with_encryption(encryption);
 
-        // Enable authentication for connection manager
-        connection_manager.with_auth();
+        // Authentication will be automatically set up during connect()
+        // after the encryption handshake is complete
 
         let connection_manager = Arc::new(tokio::sync::Mutex::new(connection_manager));
 

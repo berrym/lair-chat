@@ -2013,7 +2013,7 @@ impl Component for Home {
                 .wrap(Wrap { trim: false })
                 .block(
                     Block::default()
-                        .title_top(Line::from("v0.6.2".white()).left_aligned())
+                        .title_top(Line::from("v0.6.3".white()).left_aligned())
                         .title_top(
                             Line::from(vec![Span::styled(
                                 "THE LAIR",

@@ -1,8 +1,26 @@
 # LAIR-CHAT Release Notes
 
-*Last Updated: June 13, 2025*
+*Last Updated: June 14, 2025*
 
-## Current Version: 0.6.2 - Active Development
+## Current Version: 0.6.3 - Active Development
+
+## Version 0.6.3 - June 14, 2025
+
+### Overview
+Critical bug fix release that resolves authentication and encryption handshake issues.
+
+### 🔧 Bug Fixes
+- **Fixed Authentication Transport Issue**: Resolved critical bug where AuthManager was using raw TCP transport instead of encrypted transport for authentication
+- **Fixed Encryption Handshake Sequence**: Corrected the timing of authentication setup to occur after encryption handshake completion
+- **Resolved Server Panic**: Fixed `InvalidByte(0, 123)` error caused by server receiving unencrypted JSON when expecting encrypted data
+- **Fixed Client "No Response" Error**: Resolved authentication timeout issues caused by transport layer mismatch
+
+### 🏗️ Technical Changes
+- Removed premature `with_auth()` call from `App::new()` initialization
+- Authentication now properly uses `EncryptedTransport` after X25519 + AES-GCM handshake
+- Improved connection sequence: TCP → Encryption Handshake → Authentication Setup
+
+### 📊 Previous Version: 0.6.2 - Active Development
 
 ### Upcoming Releases (Projected)
 

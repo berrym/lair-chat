@@ -2,7 +2,7 @@
 
 [![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.6.2-green.svg)](docs/releases/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-0.6.3-green.svg)](docs/releases/CHANGELOG.md)
 
 A secure, terminal-based chat application built with Rust, featuring end-to-end encryption, direct messaging, and real-time communication.
 
