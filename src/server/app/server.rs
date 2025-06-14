@@ -10,12 +10,12 @@ use aes_gcm::{
 use base64::prelude::*;
 use futures::{SinkExt, StreamExt};
 use sha2::{Digest, Sha256};
-use std::{error::Error, net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::Mutex,
 };
-use tokio_stream::StreamExt as TokioStreamExt;
+
 use tokio_util::codec::{Framed, LinesCodec};
 use tracing::{debug, error, info, warn};
 use x25519_dalek::{EphemeralSecret, PublicKey};
@@ -61,7 +61,7 @@ impl ChatServer {
     }
 
     /// Start the server and listen for connections
-    pub async fn run(&self) -> Result<(), Box<dyn Error>> {
+    pub async fn run(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let addr = format!("{}:{}", self.config.host, self.config.port);
         let listener = TcpListener::bind(&addr).await?;
 
@@ -102,7 +102,7 @@ async fn handle_connection(
     addr: SocketAddr,
     state: Arc<Mutex<SharedState>>,
     config: ServerConfig,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let lines = Framed::new(stream, LinesCodec::new());
     let (mut sink, mut stream) = lines.split();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -114,7 +114,7 @@ async fn handle_connection(
     }
 
     // Spawn task to handle outgoing messages
-    let mut send_task = {
+    let send_task = {
         tokio::spawn(async move {
             while let Some(msg) = rx.recv().await {
                 if sink.send(msg).await.is_err() {
@@ -158,8 +158,10 @@ async fn handle_connection(
                             send_message_to_peer(&state, &addr, &response).await;
                         }
                         Err(e) => {
-                            error!("Auth error for {}: {}", addr, e);
-                            send_message_to_peer(&state, &addr, &format!("ERROR: {}", e)).await;
+                            let error_msg = format!("{}", e);
+                            error!("Auth error for {}: {}", addr, error_msg);
+                            send_message_to_peer(&state, &addr, &format!("ERROR: {}", error_msg))
+                                .await;
                         }
                     }
                 } else if authenticated {
@@ -193,7 +195,7 @@ async fn handle_handshake(
     addr: SocketAddr,
     state: &Arc<Mutex<SharedState>>,
     encryption_key: &mut Option<[u8; 32]>,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let client_public_key_b64 = &msg[10..]; // Remove "HANDSHAKE:" prefix
     let client_public_key_bytes = BASE64_STANDARD.decode(client_public_key_b64)?;
 
@@ -236,7 +238,7 @@ async fn handle_auth(
     state: &Arc<Mutex<SharedState>>,
     username: &mut Option<String>,
     authenticated: &mut bool,
-) -> Result<String, Box<dyn Error>> {
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let auth_data = &msg[5..]; // Remove "AUTH:" prefix
     let parts: Vec<&str> = auth_data.split(':').collect();
 
@@ -336,7 +338,10 @@ async fn cleanup_connection(
 }
 
 /// Decrypt a message using AES-256-GCM
-fn decrypt_message(encrypted_msg: &str, key: &[u8; 32]) -> Result<String, Box<dyn Error>> {
+fn decrypt_message(
+    encrypted_msg: &str,
+    key: &[u8; 32],
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let encrypted_data = BASE64_STANDARD.decode(encrypted_msg)?;
 
     if encrypted_data.len() < 12 {
