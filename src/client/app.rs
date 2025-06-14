@@ -7,8 +7,13 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     action::Action,
-    aes_gcm_encryption::create_aes_gcm_encryption_with_random_key,
     auth::{AuthState, Credentials},
+    common::{
+        crypto::create_aes_gcm_encryption_with_random_key,
+        transport::{
+            tcp::TcpTransport, ConnectionConfig, ConnectionObserver, Message, MessageStore,
+        },
+    },
     components::{
         auth::{AuthStatusBar, LoginScreen},
         fps::FpsCounter,
@@ -17,8 +22,6 @@ use crate::{
     },
     config::Config,
     connection_manager::ConnectionManager,
-    tcp_transport::TcpTransport,
-    transport::{ConnectionConfig, ConnectionObserver, Message, MessageStore},
     tui::{Event, Tui},
 };
 
@@ -1653,7 +1656,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transport::{ConnectionStatus, MessageType};
+    use crate::common::transport::{ConnectionStatus, MessageType};
     use tokio::sync::mpsc;
 
     #[test]

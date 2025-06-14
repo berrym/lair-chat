@@ -8,9 +8,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::Instant;
 
+use crate::common::protocol::{protocol_utils, MessageEnvelope, MessageRoute, ProtocolMessage};
+use crate::common::transport::{ConnectionObserver, TransportError};
 use crate::connection_manager::ConnectionManager;
-use crate::protocol::{protocol_utils, MessageEnvelope, MessageRoute, ProtocolMessage};
-use crate::transport::{ConnectionObserver, TransportError};
 
 use super::{
     ConversationId, ConversationSummary, DirectConversation, DirectMessage, MessageDeliveryStatus,

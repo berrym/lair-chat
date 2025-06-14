@@ -7,7 +7,7 @@ use tokio::sync::{Mutex, RwLock};
 use super::protocol::{AuthProtocol, AuthRequest};
 use super::storage::{StoredAuth, TokenStorage};
 use super::types::{AuthError, AuthResult, AuthState, Credentials, Session, UserProfile};
-use crate::transport::Transport;
+use crate::common::transport::Transport;
 
 /// Manages client authentication state and operations
 pub struct AuthManager {

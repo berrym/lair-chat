@@ -1,20 +1,19 @@
 //! Chat view component for Lair-Chat
 //! Provides message display and input functionality.
 
-
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tui_input::Input;
 
+use super::status::StatusBar;
 use crate::action::Action;
+use crate::common::transport::{Message, MessageType};
 use crate::components::Component;
 use ratatui::Frame;
-use crate::transport::{Message, MessageType};
-use super::status::StatusBar;
 
 pub struct ChatView {
     /// Input buffer for new messages
@@ -51,7 +50,7 @@ impl ChatView {
 
     pub fn add_message(&mut self, message: Message) {
         self.messages.push(message.clone());
-        
+
         // Update status bar
         if let Some(status_bar) = &self.status_bar {
             if let Ok(mut bar) = status_bar.try_lock() {
@@ -88,7 +87,9 @@ impl Component for ChatView {
         match key.code {
             crossterm::event::KeyCode::Enter => self.submit_message(),
             crossterm::event::KeyCode::Char('h')
-                if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) =>
+                if key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL) =>
             {
                 self.toggle_help();
                 None
@@ -109,7 +110,10 @@ impl Component for ChatView {
                 } else if key.code == crossterm::event::KeyCode::Backspace {
                     let current = self.input.value();
                     if !current.is_empty() {
-                        self.input = self.input.clone().with_value(current[..current.len()-1].to_string());
+                        self.input = self
+                            .input
+                            .clone()
+                            .with_value(current[..current.len() - 1].to_string());
                     }
                 }
                 None
@@ -122,8 +126,8 @@ impl Component for ChatView {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Min(1),     // Messages
-                Constraint::Length(3),  // Input
+                Constraint::Min(1),    // Messages
+                Constraint::Length(3), // Input
             ])
             .split(area);
 
@@ -141,7 +145,8 @@ impl Component for ChatView {
             })
             .collect();
 
-        let messages = List::new(messages).block(Block::default().borders(Borders::ALL).title("Chat"));
+        let messages =
+            List::new(messages).block(Block::default().borders(Borders::ALL).title("Chat"));
         f.render_widget(messages, chunks[0]);
 
         // Draw input box
@@ -196,7 +201,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transport::{Message, MessageType};
+    use crate::common::transport::{Message, MessageType};
     // use crossterm::event::KeyEvent;
 
     #[test]
@@ -210,13 +215,13 @@ mod tests {
     #[test]
     fn test_message_submission() {
         let mut view = ChatView::new();
-        
+
         // Empty message should not create action
         assert!(view.submit_message().is_none());
-        
+
         // Add text to input
         view.input = Input::new("Hello, world!".into());
-        
+
         // Submit should create SendMessage action
         match view.submit_message() {
             Some(Action::SendMessage(msg)) => {
@@ -224,7 +229,7 @@ mod tests {
             }
             _ => panic!("Expected SendMessage action"),
         }
-        
+
         // Input should be cleared
         assert!(view.input.value().is_empty());
     }
@@ -233,11 +238,11 @@ mod tests {
     fn test_help_toggle() {
         let mut view = ChatView::new();
         assert!(!view.show_help);
-        
+
         // Toggle help on
         view.toggle_help();
         assert!(view.show_help);
-        
+
         // Toggle help off
         view.toggle_help();
         assert!(!view.show_help);
@@ -246,14 +251,14 @@ mod tests {
     #[test]
     fn test_message_display() {
         let mut view = ChatView::new();
-        
+
         // Add different types of messages
         view.add_message(Message::system_message("System message".into()));
         view.add_message(Message::user_message("User message".into()));
         view.add_message(Message::error_message("Error message".into()));
-        
+
         assert_eq!(view.messages.len(), 3);
-        
+
         // Verify message types
         assert_eq!(view.messages[0].message_type, MessageType::SystemMessage);
         assert_eq!(view.messages[1].message_type, MessageType::UserMessage);
