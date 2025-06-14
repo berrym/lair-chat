@@ -2,7 +2,7 @@
 name = "lair-chat"
 version = "0.6.2"
 edition = "2021"
-description = "Simple terminal client/server chat application with encryption written in Rust"
+description = "A secure, terminal-based chat application built with Rust, featuring end-to-end encryption, direct messaging, and real-time communication."
 license = "MIT"
 authors = ["Michael Berry <trismegustis@gmail.com>"]
 build = "build.rs"

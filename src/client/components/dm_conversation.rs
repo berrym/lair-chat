@@ -3,13 +3,12 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
-    backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{
-        block::Title, Block, Borders, List, ListItem, ListState, Paragraph, Scrollbar,
-        ScrollbarOrientation, ScrollbarState, Wrap,
+        Block, Borders, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation,
+        ScrollbarState, Wrap,
     },
     Frame,
 };

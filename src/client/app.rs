@@ -21,7 +21,7 @@ use crate::{
     transport::{ConnectionConfig, ConnectionObserver, Message, MessageStore},
     tui::{Event, Tui},
 };
-use std::collections::HashMap;
+
 use std::sync::Arc;
 
 pub struct App {
@@ -437,7 +437,7 @@ impl App {
 
                 // Add logout message to UI
                 self.home_component
-                    .add_message_to_room("Logged out successfully".to_string(), false);
+                    .add_message_to_room("Logged out successfully".to_string(), true);
 
                 Ok(None)
             }
@@ -475,7 +475,7 @@ impl App {
                 // Add success message to UI
                 self.home_component.add_message_to_room(
                     format!("Registration successful for user: {}", username),
-                    false,
+                    true,
                 );
                 // Keep in authenticating state, will transition when auth completes
                 Ok(None)
@@ -494,7 +494,7 @@ impl App {
 
                 // Add error message to UI for better user feedback
                 self.home_component
-                    .add_message_to_room(format!("Authentication failed: {}", error), false);
+                    .add_message_to_room(format!("Authentication failed: {}", error), true);
 
                 Ok(None)
             }
@@ -624,6 +624,12 @@ impl App {
             }
 
             Action::ReceiveMessage(message) => {
+                // Filter out user list requests immediately - these should never be displayed
+                if message == "REQUEST_USER_LIST" {
+                    info!("Filtered out user list request from display");
+                    return Ok(None);
+                }
+
                 // Check if this is a server user list update
                 if message.starts_with("USER_LIST:") {
                     let user_list_str = message.strip_prefix("USER_LIST:").unwrap_or("");
@@ -727,10 +733,14 @@ impl App {
 
                 // Make sure the message appears in the chat regardless of source
                 if !message.is_empty() && self.auth_state.is_authenticated() {
-                    // Add all non-system messages to chat (including sent messages starting with "You:")
-                    if !self.home_component.is_system_message(&message) {
+                    // Filter out protocol messages and add messages to chat with proper system classification
+                    if !message.starts_with("USER_LIST:")
+                        && !message.starts_with("ROOM_STATUS:")
+                        && message != "REQUEST_USER_LIST"
+                    {
+                        let is_system_msg = self.home_component.is_system_message(&message);
                         self.home_component
-                            .add_message_to_room(message.clone(), false);
+                            .add_message_to_room(message.clone(), is_system_msg);
                     }
                 }
 
@@ -876,7 +886,7 @@ impl App {
             Action::Error(error) => {
                 // Handle errors from observer pattern and other sources
                 self.home_component
-                    .add_message_to_room(format!("Error: {}", error), false);
+                    .add_message_to_room(format!("Error: {}", error), true);
                 warn!("Error received via action system: {}", error);
                 Ok(None)
             }
@@ -908,7 +918,7 @@ impl App {
 
                 // Add informational message
                 self.home_component
-                    .add_message_to_room("Disconnected from server.".to_string(), false);
+                    .add_message_to_room("Disconnected from server.".to_string(), true);
 
                 Ok(None)
             }

@@ -584,9 +584,19 @@ async fn process(
                             tracing::error!("DEBUG: Invalid DM format from {}: parts={:?}", user.username, parts);
                         }
                     } else if decrypted_message == "REQUEST_USER_LIST" {
-                        // Handle user list request
+                        // Handle user list request silently - no broadcast needed
                         let mut state_guard = state.lock().await;
                         state_guard.broadcast_user_list().await;
+                    } else if decrypted_message.starts_with("SYSTEM:") ||
+                             decrypted_message.starts_with("ERROR:") ||
+                             decrypted_message.contains("has joined") ||
+                             decrypted_message.contains("has left") ||
+                             decrypted_message.contains("Welcome") ||
+                             decrypted_message.starts_with("Connected to") ||
+                             decrypted_message.starts_with("Disconnected from") {
+                        // System messages - broadcast without username prefix
+                        let mut state_guard = state.lock().await;
+                        state_guard.broadcast(addr, &decrypted_message).await;
                     } else {
                         // Regular chat message - broadcast to all users in the Lobby
                         let mut state_guard = state.lock().await;

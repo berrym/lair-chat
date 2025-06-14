@@ -3,7 +3,6 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use super::transport::{EncryptionService, Transport, TransportError};
-use crate::encryption::EncryptionError;
 
 /// Transport wrapper that automatically encrypts outgoing data and decrypts incoming data
 /// using the established encryption service from the handshake
@@ -86,6 +85,7 @@ impl Transport for EncryptedTransport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::encryption::EncryptionError;
     use std::collections::VecDeque;
     use tokio::sync::Mutex;
 

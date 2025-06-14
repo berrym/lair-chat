@@ -5,7 +5,7 @@ use std::time::Duration;
 use tokio::time::timeout;
 
 use lair_chat::client::{ConnectionManager, Credentials, TcpTransport};
-use lair_chat::transport::{ConnectionConfig, ConnectionStatus};
+use lair_chat::transport::ConnectionConfig;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -166,7 +166,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("============================================");
     println!("✅ Modern architecture validation successful");
     println!("✅ ConnectionManager working correctly");
-    println!("✅ ServerCompatibleEncryption working");
+    println!("✅ AesGcmEncryption working");
     println!("✅ TcpTransport working");
     println!("✅ Authentication flow functional");
 

@@ -10,10 +10,8 @@ use tokio::time::sleep;
 use lair_chat::{
     action::Action,
     auth::{AuthState, Session, UserProfile},
-    chat::DMConversationManager,
     components::{home::Home, Component, StatusBar},
     transport::ConnectionStatus,
-    tui::{Event, Tui},
 };
 
 /// Test the unread messages UI integration
@@ -115,7 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create a minimal area for testing
     use ratatui::backend::TestBackend;
-    use ratatui::{buffer::Buffer, layout::Rect, Terminal};
+    use ratatui::{layout::Rect, Terminal};
 
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend)?;

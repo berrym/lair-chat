@@ -14,7 +14,6 @@ pub mod encryption;
 pub mod errors;
 pub mod history;
 pub mod logging;
-pub mod server_compatible_encryption;
 
 pub mod tcp_transport;
 pub mod transport;

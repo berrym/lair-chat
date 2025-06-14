@@ -26,8 +26,7 @@ use crate::{
     action::Action,
     app::Mode,
     chat::{
-        ChatMessage, DMConversationManager, MessageType, RoomManager, RoomSettings, RoomType,
-        RoomUser, UserRole,
+        ChatMessage, DMConversationManager, MessageType, RoomManager, RoomType, RoomUser, UserRole,
     },
     config::Config,
     errors::display::{set_global_error_display_action_sender, show_info, show_validation_error},
@@ -318,13 +317,9 @@ impl Home {
                         .iter()
                         .map(|dm_msg| {
                             let formatted = if dm_msg.message_type == MessageType::System {
-                                // System messages in DMs get "Lair Chat:" prefix
+                                // System messages in DMs get consistent emoji formatting
                                 let content = dm_msg.format_for_display(current_user);
-                                if content.starts_with("Lair Chat:") {
-                                    content
-                                } else {
-                                    format!("Lair Chat: {}", content)
-                                }
+                                self.format_system_message(&content)
                             } else {
                                 dm_msg.format_for_display(current_user)
                             };
@@ -369,13 +364,9 @@ impl Home {
                     .iter()
                     .map(|msg| {
                         if msg.message_type == MessageType::System {
-                            // System messages get "Lair Chat:" prefix and special styling
-                            let prefixed_content = if msg.content.starts_with("Lair Chat:") {
-                                msg.content.clone()
-                            } else {
-                                format!("Lair Chat: {}", msg.content)
-                            };
-                            (prefixed_content, MessageStyle::System)
+                            // System messages get special formatting with emojis and styling
+                            let formatted_content = self.format_system_message(&msg.content);
+                            (formatted_content, MessageStyle::System)
                         } else {
                             // Check if the content already has a username prefix
                             if msg.content.starts_with("You: ") {
@@ -584,16 +575,94 @@ impl Home {
 
     /// Check if a message is a system message
     pub fn is_system_message(&self, content: &str) -> bool {
-        // System messages typically have special formatting or prefixes
+        self.is_explicit_system_message(content) || self.is_server_system_message(content)
+    }
+
+    /// Check for explicitly marked system messages
+    fn is_explicit_system_message(&self, content: &str) -> bool {
         content.starts_with("STATUS:")
             || content.starts_with("SYSTEM:")
             || content.starts_with("Error:")
-            || content.contains("has joined the chat")
-            || content.contains("Welcome back")
-            || content.contains("Connected to server")
+            || content.starts_with("USER_LIST:")
+            || content.starts_with("ROOM_STATUS:")
+            || content.starts_with("Lair Chat:")
+            || content.contains("🔔")
+            || content.starts_with("🔔")
+            || content == "REQUEST_USER_LIST"
+    }
+
+    /// Check for server-generated system messages that may not have explicit prefixes
+    fn is_server_system_message(&self, content: &str) -> bool {
+        // Connection and authentication messages
+        if content.contains("Connected to server")
             || content.contains("Disconnected from server")
+            || content.contains("Key exchange completed")
+            || content.contains("Logged out successfully")
+            || content.contains("Registration successful")
+            || content.contains("Authentication failed")
             || content.contains("Authentication")
             || content.contains("Registration")
+        {
+            return true;
+        }
+
+        // Welcome messages from server
+        if content.contains("Welcome back")
+            || content.contains("Welcome to the Lobby")
+            || content.contains("Welcome to The Lair")
+        {
+            return true;
+        }
+
+        // User join/leave messages - these should be system messages if they don't have username prefixes
+        if content.contains("has joined") || content.contains("has left") {
+            // If it doesn't contain ": " it's likely a server message, not a user chat
+            return !content.contains(": ");
+        }
+
+        // DM notifications
+        if content.contains("NEW DIRECT MESSAGE") {
+            return true;
+        }
+
+        false
+    }
+
+    /// Format system messages with appropriate emojis and styling
+    fn format_system_message(&self, content: &str) -> String {
+        // Don't double-format if already formatted
+        if content.starts_with("┌─") || content.starts_with("🏠") || content.starts_with("🔔")
+        {
+            return content.to_string();
+        }
+
+        // Add appropriate emoji based on message type
+        if content.contains("has joined") {
+            format!("🏠 {}", content)
+        } else if content.contains("has left") {
+            format!("👋 {}", content)
+        } else if content.contains("Welcome") {
+            format!("🎉 {}", content)
+        } else if content.contains("Connected to") {
+            format!("🔗 {}", content)
+        } else if content.contains("Disconnected") {
+            format!("🔌 {}", content)
+        } else if content.contains("Authentication") || content.contains("Login") {
+            format!("🔐 {}", content)
+        } else if content.contains("Registration") {
+            format!("📝 {}", content)
+        } else if content.contains("Error") || content.contains("failed") {
+            format!("❌ {}", content)
+        } else if content.contains("successful") {
+            format!("✅ {}", content)
+        } else if content.contains("NEW DIRECT MESSAGE") {
+            format!("📨 {}", content)
+        } else if content.contains("Key exchange") {
+            format!("🔑 {}", content)
+        } else {
+            // Generic system message
+            format!("ℹ️ {}", content)
+        }
     }
 
     /// Normalize message content to detect duplicates
@@ -1589,20 +1658,44 @@ impl Component for Home {
                         }
                     }
                     MessageStyle::System => {
-                        // System messages: Distinctive amber/orange notification style
-                        let style = Style::default()
+                        // System messages: Distinctive notification style with decorative borders
+                        let _style = Style::default()
                             .fg(Color::Rgb(245, 158, 11)) // Amber-500 (#F59E0B)
-                            .add_modifier(Modifier::BOLD);
+                            .add_modifier(Modifier::BOLD | Modifier::ITALIC);
 
-                        // Don't add bullets - content already has "Lair Chat:" prefix
-                        let content_len = content.len();
+                        // Add decorative border and center the system message
+                        let decorated_content = format!("╭─ {} ─╮", content);
+                        let content_len = decorated_content.len();
                         let padding = if content_len < message_area_width {
                             center_margin + (message_area_width.saturating_sub(content_len)) / 2
                         } else {
                             0
                         };
-                        let centered_content = format!("{}{}", " ".repeat(padding), content);
-                        lines.push(Line::from(centered_content).style(style));
+
+                        // Create a visually distinctive system message with background
+                        let bg_style = Style::default()
+                            .fg(Color::Rgb(245, 158, 11)) // Amber-500
+                            .bg(Color::Rgb(20, 20, 20)) // Dark background
+                            .add_modifier(Modifier::BOLD | Modifier::ITALIC);
+
+                        let centered_content =
+                            format!("{}{}", " ".repeat(padding), decorated_content);
+                        lines.push(Line::from(centered_content).style(bg_style));
+
+                        // Add a subtle separator line after system messages
+                        let separator =
+                            "╌".repeat(std::cmp::min(content.len() + 6, message_area_width));
+                        let sep_padding = if separator.len() < message_area_width {
+                            center_margin + (message_area_width.saturating_sub(separator.len())) / 2
+                        } else {
+                            0
+                        };
+                        let centered_separator =
+                            format!("{}{}", " ".repeat(sep_padding), separator);
+                        lines.push(
+                            Line::from(centered_separator)
+                                .style(Style::default().fg(Color::Rgb(100, 100, 100))),
+                        );
                     }
                     MessageStyle::DMSent => {
                         // DM sent messages: Purple bubble, right-aligned with width limit

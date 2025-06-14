@@ -10,7 +10,7 @@ use std::time::Duration;
 use lair_chat::{
     action::Action,
     auth::AuthState,
-    chat::{DMConversationManager, MessageType},
+    chat::DMConversationManager,
     components::{MessageNotification, NotificationOverlay, StatusBar},
     transport::ConnectionStatus,
 };

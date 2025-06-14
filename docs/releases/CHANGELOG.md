@@ -1,5 +1,33 @@
 # LAIR-CHAT Release Notes
 
+*Last Updated: June 13, 2025*
+
+## Current Version: 0.6.2 - Active Development
+
+### Upcoming Releases (Projected)
+
+## Version 0.7.0 - September 2025 (Planned)
+
+### Overview
+Enhanced user experience and stability release focusing on polish and reliability improvements.
+
+### Planned Major Features
+- **Theme System**: Configurable color schemes and visual customization
+- **Enhanced Navigation**: Improved keyboard shortcuts and context-sensitive help
+- **Error Recovery**: Automatic reconnection with exponential backoff
+- **Message Management**: Basic message editing and deletion capabilities
+
+## Version 0.8.0 - December 2025 (Planned)
+
+### Overview
+Major release introducing secure file sharing capabilities and rich content support. This release represents a significant step toward the v1.0 production-ready milestone.
+
+### Planned Major Features
+- **Secure File Transfer**: End-to-end encrypted file sharing with progress indicators
+- **Rich Content Support**: Image preview in compatible terminals (Sixel, Kitty)
+- **Drag-and-Drop**: File sharing support in modern terminal emulators
+- **Content Management**: File size limits, bandwidth throttling, and storage management
+
 ## Version 0.6.2
 
 ### Overview

@@ -3,11 +3,10 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
-    backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{block::Title, Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
     Frame,
 };
 use std::collections::HashMap;
