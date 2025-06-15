@@ -57,6 +57,12 @@ pub mod server {
     pub mod network {
         pub use crate::server_network::*;
     }
+    pub mod config {
+        pub use crate::server_config::*;
+    }
+    pub mod storage {
+        pub use crate::server_storage::*;
+    }
 }
 
 #[path = "server/app/mod.rs"]
@@ -70,6 +76,12 @@ pub mod server_chat;
 
 #[path = "server/network/mod.rs"]
 pub mod server_network;
+
+#[path = "server/config/mod.rs"]
+pub mod server_config;
+
+#[path = "server/storage/mod.rs"]
+pub mod server_storage;
 
 // Re-export common modules for backward compatibility
 pub use common::crypto as aes_gcm_encryption;

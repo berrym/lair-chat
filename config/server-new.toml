@@ -1,0 +1,106 @@
+[server]
+host = "127.0.0.1"
+port = 8080
+max_connections = 1000
+connection_timeout = 30
+keep_alive_timeout = 60
+enable_tls = false
+tls_versions = [
+    "1.2",
+    "1.3",
+]
+
+[database]
+database_type = "sqlite"
+url = "data/lair-chat.db"
+max_connections = 10
+min_connections = 1
+connection_timeout = 30
+idle_timeout = 600
+auto_migrate = true
+
+[database.settings]
+
+[security]
+enable_encryption = true
+session_timeout = 86400
+max_login_attempts = 5
+lockout_duration = 900
+password_min_length = 8
+password_require_special = true
+password_require_numbers = true
+password_require_uppercase = true
+enable_2fa = false
+
+[security.argon2]
+memory_cost = 65536
+time_cost = 3
+parallelism = 4
+hash_length = 32
+
+[logging]
+level = "info"
+format = "pretty"
+enable_file_logging = true
+file_path = "logs/server.log"
+max_file_size = 10
+max_files = 5
+compress_logs = true
+enable_stdout = true
+enable_json = false
+
+[logging.targets]
+
+[features]
+enable_direct_messages = true
+enable_user_room_creation = true
+enable_file_uploads = false
+max_file_size = 10
+allowed_file_types = [
+    "txt",
+    "md",
+    "pdf",
+    "png",
+    "jpg",
+    "jpeg",
+    "gif",
+]
+enable_message_history = true
+message_history_retention = 0
+enable_message_search = true
+enable_user_profiles = true
+enable_presence = true
+enable_typing_indicators = true
+enable_reactions = true
+enable_threading = false
+
+[limits]
+messages_per_minute = 60
+max_message_length = 4000
+max_username_length = 32
+max_room_name_length = 50
+max_rooms_per_user = 50
+max_users_per_room = 100
+max_connections_per_ip = 10
+rate_limit_window = 60
+memory_limit = 512
+cpu_limit = 80.0
+
+[admin]
+enable_admin_api = true
+admin_host = "127.0.0.1"
+admin_port = 8081
+enable_metrics = true
+metrics_path = "/metrics"
+enable_health_check = true
+health_check_path = "/health"
+enable_debug_endpoints = false
+
+[admin.audit_log]
+enabled = true
+file_path = "logs/audit.log"
+format = "json"
+log_admin_actions = true
+log_auth_events = true
+log_security_events = true
+log_data_access = false
