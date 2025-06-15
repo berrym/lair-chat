@@ -64,8 +64,9 @@ impl Default for SecurityConfig {
             password_require_numbers: true,
             password_require_uppercase: true,
             enable_2fa: false,
-            jwt_secret: None, // Should be generated or provided
+            jwt_secret: None,
             argon2: Argon2Config::default(),
+            rotate_refresh_tokens: true,
         }
     }
 }

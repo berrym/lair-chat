@@ -138,6 +138,9 @@ pub struct SecurityConfig {
 
     /// Argon2 configuration
     pub argon2: Argon2Config,
+
+    /// Whether to rotate refresh tokens on each use
+    pub rotate_refresh_tokens: bool,
 }
 
 /// Argon2 password hashing configuration

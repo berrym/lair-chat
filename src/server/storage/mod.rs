@@ -17,6 +17,7 @@ pub mod sqlite;
 pub mod traits;
 
 pub use models::*;
+pub use sqlite::SqliteStorage;
 pub use traits::*;
 
 /// Storage layer errors

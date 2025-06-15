@@ -8,6 +8,7 @@
 //! - Configuration management
 //! - Storage and persistence layer
 
+pub mod api;
 pub mod app;
 pub mod auth;
 pub mod chat;
@@ -16,6 +17,7 @@ pub mod network;
 pub mod storage;
 
 // Re-export commonly used types and functions
+pub use api::{create_api_router, start_api_server, ApiState};
 pub use app::{ChatServer, ServerStats};
 pub use config::{load_config, load_config_from_file, ConfigBuilder, ConfigError, ServerConfig};
 pub use storage::{StorageError, StorageManager, StorageResult};
