@@ -254,7 +254,7 @@ mod tests {
     fn create_test_state() -> SharedState {
         let user_storage = Arc::new(MemoryUserStorage::new());
         let session_storage = Arc::new(MemorySessionStorage::new());
-        let auth_service = Arc::new(AuthService::new(user_storage, session_storage));
+        let auth_service = Arc::new(AuthService::new(user_storage, session_storage, None));
         SharedState::new(auth_service)
     }
 

@@ -355,7 +355,7 @@ mod tests {
         let config = ServerConfig::default();
 
         // Network settings
-        assert!(config.server.port > 0 && config.server.port < 65536);
+        assert!(config.server.port > 0 && config.server.port <= 65535);
         assert!(config.server.max_connections > 0);
         assert!(config.server.connection_timeout > 0);
 

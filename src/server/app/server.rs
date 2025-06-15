@@ -381,8 +381,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[test]
-    fn test_encryption_handshake() {
+    async fn test_encryption_handshake() {
         // Test the encryption key derivation logic
         let secret1 = EphemeralSecret::random();
         let secret2 = EphemeralSecret::random();

@@ -736,6 +736,30 @@ impl SqliteStorage {
             settings,
         })
     }
+
+    /// Convert a database row to a Session struct
+    fn row_to_session(&self, row: sqlx::sqlite::SqliteRow) -> StorageResult<Session> {
+        use sqlx::Row;
+
+        let metadata_json: String = row.get("metadata");
+        let metadata: SessionMetadata =
+            serde_json::from_str(&metadata_json).map_err(|e| StorageError::SerializationError {
+                message: e.to_string(),
+            })?;
+
+        Ok(Session {
+            id: row.get("id"),
+            user_id: row.get("user_id"),
+            token: row.get("token"),
+            created_at: row.get::<i64, _>("created_at") as u64,
+            expires_at: row.get::<i64, _>("expires_at") as u64,
+            last_activity: row.get::<i64, _>("last_activity") as u64,
+            ip_address: row.get("ip_address"),
+            user_agent: row.get("user_agent"),
+            is_active: row.get("is_active"),
+            metadata,
+        })
+    }
 }
 
 // Note: For brevity, I'm implementing a basic version of MessageStorage, RoomStorage, and SessionStorage
@@ -2028,48 +2052,166 @@ impl RoomStorage for SqliteStorage {
 
 #[async_trait]
 impl SessionStorage for SqliteStorage {
-    async fn create_session(&self, _session: Session) -> StorageResult<Session> {
-        todo!()
+    async fn create_session(&self, session: Session) -> StorageResult<Session> {
+        let metadata_json = serde_json::to_string(&session.metadata).map_err(|e| {
+            StorageError::SerializationError {
+                message: e.to_string(),
+            }
+        })?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO sessions (
+                id, user_id, token, created_at, expires_at, last_activity,
+                ip_address, user_agent, is_active, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&session.id)
+        .bind(&session.user_id)
+        .bind(&session.token)
+        .bind(session.created_at as i64)
+        .bind(session.expires_at as i64)
+        .bind(session.last_activity as i64)
+        .bind(&session.ip_address)
+        .bind(&session.user_agent)
+        .bind(session.is_active)
+        .bind(&metadata_json)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(session)
     }
-    async fn get_session_by_id(&self, _id: &str) -> StorageResult<Option<Session>> {
-        todo!()
+
+    async fn get_session_by_id(&self, id: &str) -> StorageResult<Option<Session>> {
+        let row = sqlx::query("SELECT * FROM sessions WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+
+        match row {
+            Some(row) => Ok(Some(self.row_to_session(row)?)),
+            None => Ok(None),
+        }
     }
-    async fn get_session_by_token(&self, _token: &str) -> StorageResult<Option<Session>> {
-        todo!()
+
+    async fn get_session_by_token(&self, token: &str) -> StorageResult<Option<Session>> {
+        let row = sqlx::query("SELECT * FROM sessions WHERE token = ?")
+            .bind(token)
+            .fetch_optional(&self.pool)
+            .await?;
+
+        match row {
+            Some(row) => Ok(Some(self.row_to_session(row)?)),
+            None => Ok(None),
+        }
     }
-    async fn update_session_activity(
-        &self,
-        _session_id: &str,
-        _timestamp: u64,
-    ) -> StorageResult<()> {
-        todo!()
+
+    async fn update_session_activity(&self, session_id: &str, timestamp: u64) -> StorageResult<()> {
+        sqlx::query("UPDATE sessions SET last_activity = ? WHERE id = ?")
+            .bind(timestamp as i64)
+            .bind(session_id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
     }
+
     async fn update_session_metadata(
         &self,
-        _session_id: &str,
-        _metadata: SessionMetadata,
+        session_id: &str,
+        metadata: SessionMetadata,
     ) -> StorageResult<()> {
-        todo!()
+        let metadata_json =
+            serde_json::to_string(&metadata).map_err(|e| StorageError::SerializationError {
+                message: e.to_string(),
+            })?;
+
+        sqlx::query("UPDATE sessions SET metadata = ? WHERE id = ?")
+            .bind(&metadata_json)
+            .bind(session_id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
     }
-    async fn deactivate_session(&self, _session_id: &str) -> StorageResult<()> {
-        todo!()
+
+    async fn deactivate_session(&self, session_id: &str) -> StorageResult<()> {
+        sqlx::query("UPDATE sessions SET is_active = 0 WHERE id = ?")
+            .bind(session_id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
     }
-    async fn delete_session(&self, _session_id: &str) -> StorageResult<()> {
-        todo!()
+
+    async fn delete_session(&self, session_id: &str) -> StorageResult<()> {
+        sqlx::query("DELETE FROM sessions WHERE id = ?")
+            .bind(session_id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
     }
+
     async fn get_user_sessions(
         &self,
-        _user_id: &str,
-        _pagination: Pagination,
+        user_id: &str,
+        pagination: Pagination,
     ) -> StorageResult<Vec<Session>> {
-        todo!()
+        let rows = sqlx::query(
+            r#"
+            SELECT * FROM sessions
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+            "#,
+        )
+        .bind(user_id)
+        .bind(pagination.limit as i64)
+        .bind(pagination.offset as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut sessions = Vec::new();
+        for row in rows {
+            sessions.push(self.row_to_session(row)?);
+        }
+
+        Ok(sessions)
     }
-    async fn get_active_user_sessions(&self, _user_id: &str) -> StorageResult<Vec<Session>> {
-        todo!()
+
+    async fn get_active_user_sessions(&self, user_id: &str) -> StorageResult<Vec<Session>> {
+        let now = super::current_timestamp();
+        let rows = sqlx::query(
+            r#"
+            SELECT * FROM sessions
+            WHERE user_id = ? AND is_active = 1 AND expires_at > ?
+            ORDER BY last_activity DESC
+            "#,
+        )
+        .bind(user_id)
+        .bind(now as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut sessions = Vec::new();
+        for row in rows {
+            sessions.push(self.row_to_session(row)?);
+        }
+
+        Ok(sessions)
     }
-    async fn deactivate_user_sessions(&self, _user_id: &str) -> StorageResult<()> {
-        todo!()
+
+    async fn deactivate_user_sessions(&self, user_id: &str) -> StorageResult<()> {
+        sqlx::query("UPDATE sessions SET is_active = 0 WHERE user_id = ?")
+            .bind(user_id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
     }
+
     async fn cleanup_expired_sessions(&self) -> StorageResult<u64> {
         let now = super::current_timestamp();
         let result = sqlx::query("DELETE FROM sessions WHERE expires_at < ?")
@@ -2078,6 +2220,7 @@ impl SessionStorage for SqliteStorage {
             .await?;
         Ok(result.rows_affected())
     }
+
     async fn count_active_sessions(&self) -> StorageResult<u64> {
         let now = super::current_timestamp();
         let count: i64 = sqlx::query_scalar(
@@ -2088,10 +2231,85 @@ impl SessionStorage for SqliteStorage {
         .await?;
         Ok(count as u64)
     }
-    async fn count_user_sessions(&self, _user_id: &str) -> StorageResult<u64> {
-        todo!()
+
+    async fn count_user_sessions(&self, user_id: &str) -> StorageResult<u64> {
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sessions WHERE user_id = ?")
+            .bind(user_id)
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(count as u64)
     }
+
     async fn get_session_stats(&self) -> StorageResult<SessionStats> {
-        todo!()
+        let now = super::current_timestamp();
+        let today_start = now - (24 * 60 * 60); // 24 hours ago
+        let week_start = now - (7 * 24 * 60 * 60); // 7 days ago
+
+        // Total sessions
+        let total_sessions: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sessions")
+            .fetch_one(&self.pool)
+            .await?;
+
+        // Active sessions
+        let active_sessions: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sessions WHERE is_active = 1 AND expires_at > ?",
+        )
+        .bind(now as i64)
+        .fetch_one(&self.pool)
+        .await?;
+
+        // Sessions today
+        let sessions_today: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM sessions WHERE created_at > ?")
+                .bind(today_start as i64)
+                .fetch_one(&self.pool)
+                .await?;
+
+        // Sessions this week
+        let sessions_this_week: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM sessions WHERE created_at > ?")
+                .bind(week_start as i64)
+                .fetch_one(&self.pool)
+                .await?;
+
+        // Sessions by client type
+        let client_rows = sqlx::query(
+            r#"
+            SELECT
+                COALESCE(JSON_EXTRACT(metadata, '$.client_type'), 'unknown') as client_type,
+                COUNT(*) as count
+            FROM sessions
+            GROUP BY JSON_EXTRACT(metadata, '$.client_type')
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut sessions_by_client = std::collections::HashMap::new();
+        for row in client_rows {
+            let client_type: String = row.get("client_type");
+            let count: i64 = row.get("count");
+            sessions_by_client.insert(client_type, count as u64);
+        }
+
+        // Average session duration (for completed sessions)
+        let avg_duration: Option<f64> = sqlx::query_scalar(
+            r#"
+            SELECT AVG(last_activity - created_at)
+            FROM sessions
+            WHERE is_active = 0 AND last_activity > created_at
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(SessionStats {
+            total_sessions: total_sessions as u64,
+            active_sessions: active_sessions as u64,
+            sessions_today: sessions_today as u64,
+            sessions_this_week: sessions_this_week as u64,
+            sessions_by_client,
+            average_session_duration: avg_duration.unwrap_or(0.0),
+        })
     }
 }
