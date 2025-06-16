@@ -51,21 +51,60 @@ pub async fn get_server_statistics(
         user_context.username
     );
 
-    // TODO: Implement actual statistics gathering
+    // Gather actual statistics from storage layer
+    let total_users = state.storage.users().count_users().await.map_err(|e| {
+        error!("Failed to count users: {}", e);
+        ApiError::internal_error("Failed to retrieve server statistics")
+    })? as u64;
+
+    let total_rooms = state.storage.rooms().count_rooms().await.map_err(|e| {
+        error!("Failed to count rooms: {}", e);
+        ApiError::internal_error("Failed to retrieve server statistics")
+    })? as u64;
+
+    let total_messages = state
+        .storage
+        .messages()
+        .count_messages()
+        .await
+        .map_err(|e| {
+            error!("Failed to count messages: {}", e);
+            ApiError::internal_error("Failed to retrieve server statistics")
+        })? as u64;
+
+    let session_stats = state
+        .storage
+        .sessions()
+        .get_session_stats()
+        .await
+        .map_err(|e| {
+            error!("Failed to get session statistics: {}", e);
+            ApiError::internal_error("Failed to retrieve server statistics")
+        })?;
+
+    // Calculate messages today (last 24 hours)
+    let today_start = chrono::Utc::now().timestamp() - (24 * 60 * 60);
+    let messages_today = state
+        .storage
+        .messages()
+        .count_messages_since(today_start as u64)
+        .await
+        .unwrap_or(0) as u64;
+
     let stats = ServerStatistics {
-        total_users: 100,
-        active_users: 25,
-        online_users: 10,
-        total_rooms: 50,
-        active_rooms: 15,
-        total_messages: 10000,
-        messages_today: 500,
-        total_sessions: 1000,
-        active_sessions: 30,
-        uptime_seconds: 86400,
-        database_size: 1024 * 1024 * 100, // 100MB
-        memory_usage: 1024 * 1024 * 256,  // 256MB
-        cpu_usage: 15.5,
+        total_users,
+        active_users: total_users, // TODO: Implement active user tracking
+        online_users: session_stats.active_sessions as u64,
+        total_rooms,
+        active_rooms: total_rooms, // TODO: Implement active room tracking
+        total_messages,
+        messages_today,
+        total_sessions: session_stats.total_sessions,
+        active_sessions: session_stats.active_sessions,
+        uptime_seconds: 86400, // TODO: Implement actual uptime tracking
+        database_size: 1024 * 1024 * 100, // TODO: Get actual database size
+        memory_usage: 1024 * 1024 * 256, // TODO: Get actual memory usage
+        cpu_usage: 15.5,       // TODO: Get actual CPU usage
         updated_at: chrono::Utc::now(),
     };
 

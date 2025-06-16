@@ -2203,13 +2203,60 @@ impl SessionStorage for SqliteStorage {
         Ok(sessions)
     }
 
-    async fn deactivate_user_sessions(&self, user_id: &str) -> StorageResult<()> {
-        sqlx::query("UPDATE sessions SET is_active = 0 WHERE user_id = ?")
+    async fn deactivate_user_sessions(&self, user_id: &str) -> StorageResult<u64> {
+        let result = sqlx::query("UPDATE sessions SET is_active = 0 WHERE user_id = ?")
             .bind(user_id)
             .execute(&self.pool)
             .await?;
 
+        Ok(result.rows_affected())
+    }
+
+    async fn deactivate_user_sessions_except(
+        &self,
+        user_id: &str,
+        except_session_id: &str,
+    ) -> StorageResult<u64> {
+        let result = sqlx::query("UPDATE sessions SET is_active = 0 WHERE user_id = ? AND id != ?")
+            .bind(user_id)
+            .bind(except_session_id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(result.rows_affected())
+    }
+
+    async fn update_session(&self, session: &Session) -> StorageResult<()> {
+        let metadata_json = serde_json::to_string(&session.metadata).map_err(|e| {
+            StorageError::SerializationError {
+                message: e.to_string(),
+            }
+        })?;
+
+        sqlx::query(
+            r#"
+            UPDATE sessions SET
+                token = ?, expires_at = ?, last_activity = ?,
+                ip_address = ?, user_agent = ?, is_active = ?, metadata = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(&session.token)
+        .bind(session.expires_at as i64)
+        .bind(session.last_activity as i64)
+        .bind(&session.ip_address)
+        .bind(&session.user_agent)
+        .bind(session.is_active)
+        .bind(&metadata_json)
+        .bind(&session.id)
+        .execute(&self.pool)
+        .await?;
+
         Ok(())
+    }
+
+    async fn get_session(&self, session_id: &str) -> StorageResult<Option<Session>> {
+        self.get_session_by_id(session_id).await
     }
 
     async fn cleanup_expired_sessions(&self) -> StorageResult<u64> {

@@ -117,26 +117,28 @@ pub async fn register(
     };
 
     // Store user in database
-    let user_id = state
+    let created_user = state
         .storage
         .users()
-        .create_user(&new_user)
+        .create_user(new_user.clone())
         .await
         .map_err(|e| {
             error!("Failed to create user: {}", e);
             match e {
-                StorageError::AlreadyExists(_) => ApiError::conflict_error("User already exists"),
+                StorageError::DuplicateError { .. } => {
+                    ApiError::conflict_error("User already exists")
+                }
                 _ => ApiError::internal_error("Failed to create user account"),
             }
         })?;
 
-    info!("User created successfully with ID: {}", user_id);
+    info!("User created successfully with ID: {}", created_user.id);
 
     // Create session
     let now_timestamp = Utc::now().timestamp() as u64;
     let session = Session {
         id: Uuid::new_v4().to_string(),
-        user_id: user_id.to_string(),
+        user_id: created_user.id.clone(),
         token: "".to_string(), // Will be set by storage layer
         created_at: now_timestamp,
         expires_at: (Utc::now() + Duration::days(30)).timestamp() as u64,
@@ -153,10 +155,10 @@ pub async fn register(
         },
     };
 
-    let session_id = state
+    let created_session = state
         .storage
         .sessions()
-        .create_session(&session)
+        .create_session(session)
         .await
         .map_err(|e| {
             error!("Failed to create session: {}", e);
@@ -168,12 +170,15 @@ pub async fn register(
         user_id,
         new_user.username.clone(),
         convert_user_role(&new_user.role),
-        session_id,
+        created_session.id.parse().unwrap_or(Uuid::new_v4()),
         &state.jwt_secret,
     )?;
 
-    let refresh_token =
-        auth_helpers::generate_refresh_token(user_id, session_id, &state.jwt_secret)?;
+    let refresh_token = auth_helpers::generate_refresh_token(
+        user_id,
+        created_session.id.parse().unwrap_or(Uuid::new_v4()),
+        &state.jwt_secret,
+    )?;
 
     // Create response
     let auth_response = AuthResponse::new(
@@ -181,23 +186,24 @@ pub async fn register(
         refresh_token,
         3600, // 1 hour
         AuthUserInfo {
-            id: user_id,
-            username: new_user.username.clone(),
-            email: new_user.email.clone().unwrap_or_default(),
-            display_name: new_user
+            id: uuid::Uuid::parse_str(&created_user.id).unwrap_or_else(|_| Uuid::new_v4()),
+            username: created_user.username.clone(),
+            email: created_user.email.clone().unwrap_or_default(),
+            display_name: created_user
                 .profile
                 .display_name
-                .clone()
-                .unwrap_or_else(|| new_user.username.clone()),
-            role: convert_user_role(new_user.role.clone()),
-            status: UserStatus::Active,
-            created_at: chrono::DateTime::from_timestamp(new_user.created_at as i64, 0)
+                .unwrap_or_else(|| created_user.username.clone()),
+            role: convert_user_role(&created_user.role),
+            status: convert_user_status(&created_user.is_active),
+            created_at: chrono::DateTime::from_timestamp(created_user.created_at as i64, 0)
                 .unwrap_or_else(|| chrono::Utc::now()),
         },
         SessionInfo {
-            id: session_id,
-            created_at: chrono::DateTime::from_timestamp(session.created_at as i64, 0).unwrap_or_else(|| chrono::Utc::now()),
-            expires_at: chrono::DateTime::from_timestamp(session.expires_at as i64, 0).unwrap_or_else(|| chrono::Utc::now()),
+            id: created_session.id.parse().unwrap_or(Uuid::new_v4()),
+            created_at: chrono::DateTime::from_timestamp(created_session.created_at as i64, 0)
+                .unwrap_or_else(|| chrono::Utc::now()),
+            expires_at: chrono::DateTime::from_timestamp(created_session.expires_at as i64, 0)
+                .unwrap_or_else(|| chrono::Utc::now()),
             device: None,
         },
     );
@@ -279,15 +285,15 @@ pub async fn login(
         return Err(ApiError::auth_error("Invalid username or password"));
     }
 
-    // Update last login time
+    // Update last seen time
     let mut updated_user = user.clone();
-    updated_user.last_login = Some(Utc::now());
-    updated_user.updated_at = Utc::now();
+    updated_user.last_seen = Some(chrono::Utc::now().timestamp() as u64);
+    updated_user.updated_at = chrono::Utc::now().timestamp() as u64;
 
     state
         .storage
         .users()
-        .update_user(&updated_user)
+        .update_user(updated_user)
         .await
         .map_err(|e| {
             error!("Failed to update user last login: {}", e);
@@ -316,16 +322,16 @@ pub async fn login(
         metadata: crate::server::storage::models::SessionMetadata {
             client_type: Some("api_client".to_string()),
             client_version: None,
-            device_info: request.device_info.clone(),
+            device_info: request.device_info.as_ref().map(|d| d.name.clone()),
             location: None,
             custom: std::collections::HashMap::new(),
         },
     };
 
-    let session_id = state
+    let created_session = state
         .storage
         .sessions()
-        .create_session(&session)
+        .create_session(session)
         .await
         .map_err(|e| {
             error!("Failed to create session: {}", e);
@@ -334,15 +340,18 @@ pub async fn login(
 
     // Generate tokens
     let access_token = auth_helpers::generate_access_token(
-        user.id,
+        uuid::Uuid::parse_str(&user.id).unwrap_or_else(|_| Uuid::new_v4()),
         user.username.clone(),
         convert_user_role(&user.role),
-        session_id,
+        created_session.id.parse().unwrap_or(Uuid::new_v4()),
         &state.jwt_secret,
     )?;
 
-    let refresh_token =
-        auth_helpers::generate_refresh_token(user.id, session_id, &state.jwt_secret)?;
+    let refresh_token = auth_helpers::generate_refresh_token(
+        uuid::Uuid::parse_str(&user.id).unwrap_or_else(|_| Uuid::new_v4()),
+        created_session.id.parse().unwrap_or(Uuid::new_v4()),
+        &state.jwt_secret,
+    )?;
 
     // Create response
     let auth_response = AuthResponse::new(
@@ -368,10 +377,12 @@ pub async fn login(
                 .unwrap_or_else(|| chrono::Utc::now()),
         },
         SessionInfo {
-            id: session_id,
-            created_at: chrono::DateTime::from_timestamp(session.created_at as i64, 0).unwrap_or_else(|| chrono::Utc::now()),
-            expires_at: chrono::DateTime::from_timestamp(session.expires_at as i64, 0).unwrap_or_else(|| chrono::Utc::now()),
-            device: request.device_info,
+            id: created_session.id.parse().unwrap_or(Uuid::new_v4()),
+            created_at: chrono::DateTime::from_timestamp(created_session.created_at as i64, 0)
+                .unwrap_or_else(|| chrono::Utc::now()),
+            expires_at: chrono::DateTime::from_timestamp(created_session.expires_at as i64, 0)
+                .unwrap_or_else(|| chrono::Utc::now()),
+            device: None,
         },
     );
 
@@ -664,7 +675,7 @@ pub async fn change_password(
     state
         .storage
         .users()
-        .update_user(&updated_user)
+        .update_user(updated_user)
         .await
         .map_err(|e| {
             error!("Failed to update user password: {}", e);
@@ -675,7 +686,10 @@ pub async fn change_password(
     match state
         .storage
         .sessions()
-        .deactivate_user_sessions_except(&user_context.user_id, &user_context.session_id)
+        .deactivate_user_sessions_except(
+            &user_context.user_id.to_string(),
+            &user_context.session_id.to_string(),
+        )
         .await
     {
         Ok(count) => {
@@ -700,12 +714,21 @@ pub async fn change_password(
 // Helper functions
 
 /// Convert storage UserRole to API UserRole
-fn convert_user_role(role: StorageUserRole) -> UserRole {
+fn convert_user_role(role: &StorageUserRole) -> UserRole {
     match role {
-        StorageUserRole::Admin => UserRole::Admin,
-        StorageUserRole::Moderator => UserRole::Moderator,
-        StorageUserRole::User => UserRole::User,
-        StorageUserRole::Guest => UserRole::Guest,
+        &StorageUserRole::Admin => UserRole::Admin,
+        &StorageUserRole::Moderator => UserRole::Moderator,
+        &StorageUserRole::User => UserRole::User,
+        &StorageUserRole::Guest => UserRole::Guest,
+    }
+}
+
+/// Convert storage user active status to API UserStatus
+fn convert_user_status(is_active: &bool) -> UserStatus {
+    if *is_active {
+        UserStatus::Active
+    } else {
+        UserStatus::Suspended
     }
 }
 

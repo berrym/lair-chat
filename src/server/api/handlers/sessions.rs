@@ -5,13 +5,11 @@
 
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
     response::Json,
     Extension,
 };
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
-use validator::Validate;
 
 use crate::server::api::{
     handlers::{responses, validation},
@@ -44,21 +42,49 @@ use crate::server::api::{
 pub async fn get_sessions(
     State(state): State<ApiState>,
     Extension(user_context): Extension<UserContext>,
-    Query(params): Query<PaginationParams>,
+    Query(_params): Query<PaginationParams>,
 ) -> ApiResult<Json<SuccessResponse<Vec<ActiveSession>>>> {
     debug!("Get sessions request for user: {}", user_context.username);
 
-    // TODO: Implement session listing
-    let sessions = vec![ActiveSession {
-        id: user_context.session_id,
-        device_name: Some("Current Device".to_string()),
-        device_type: Some("desktop".to_string()),
-        ip_address_masked: Some("192.168.1.***".to_string()),
-        location: Some("Local Network".to_string()),
-        is_current: true,
-        last_activity: chrono::Utc::now(),
-        created_at: chrono::Utc::now() - chrono::Duration::hours(2),
-    }];
+    // Get active sessions for user
+    let user_sessions = state
+        .storage
+        .sessions()
+        .get_active_user_sessions(&user_context.user_id.to_string())
+        .await
+        .map_err(|e| {
+            error!("Failed to get user sessions: {}", e);
+            ApiError::internal_error("Failed to retrieve sessions")
+        })?;
+
+    // Convert to API response format
+    let mut sessions = Vec::new();
+    for session in user_sessions {
+        let is_current = session.id == user_context.session_id.to_string();
+
+        // Mask IP address for privacy
+        let ip_address_masked = session.ip_address.as_ref().map(|ip| {
+            let parts: Vec<&str> = ip.split('.').collect();
+            if parts.len() == 4 {
+                format!("{}.{}.{}.***", parts[0], parts[1], parts[2])
+            } else {
+                "***".to_string()
+            }
+        });
+
+        sessions.push(ActiveSession {
+            id: Uuid::parse_str(&session.id).unwrap_or_else(|_| Uuid::new_v4()),
+            device_name: session.metadata.device_info.clone(),
+            device_type: session.metadata.client_type.clone(),
+            ip_address_masked,
+            location: session.metadata.location.clone(),
+            is_current,
+            last_activity: chrono::DateTime::from_timestamp(session.last_activity as i64, 0)
+                .unwrap_or_else(chrono::Utc::now),
+            created_at: chrono::DateTime::from_timestamp(session.created_at as i64, 0)
+                .unwrap_or_else(chrono::Utc::now),
+        });
+    }
 
     info!(
         "Retrieved {} sessions for user: {}",
@@ -97,7 +123,7 @@ pub async fn get_current_session(
     let session = state
         .storage
         .sessions()
-        .get_session(&user_context.session_id)
+        .get_session(&user_context.session_id.to_string())
         .await
         .map_err(|e| {
             error!("Failed to get current session: {}", e);
@@ -105,19 +131,7 @@ pub async fn get_current_session(
         })?
         .ok_or_else(|| ApiError::not_found_error("Session"))?;
 
-    let session_info = SessionInfo {
-        id: session.id,
-        user_id: session.user_id,
-        device_name: session.device_name,
-        device_type: session.device_type,
-        ip_address: session.ip_address,
-        user_agent: session.user_agent,
-        is_active: session.is_active,
-        last_activity: session.last_activity,
-        expires_at: session.expires_at,
-        created_at: session.created_at,
-        metadata: session.metadata,
-    };
+    let session_info = session_to_session_info(&session)?;
 
     info!(
         "Current session retrieved for user: {}",
@@ -158,7 +172,7 @@ pub async fn update_current_session(
     let mut session = state
         .storage
         .sessions()
-        .get_session(&user_context.session_id)
+        .get_session(&user_context.session_id.to_string())
         .await
         .map_err(|e| {
             error!("Failed to get session for update: {}", e);
@@ -167,37 +181,30 @@ pub async fn update_current_session(
         .ok_or_else(|| ApiError::not_found_error("Session"))?;
 
     // Update session metadata
+    let mut updated = false;
     if let Some(device_name) = request.device_name {
-        session.device_name = Some(device_name);
+        session.metadata.device_info = Some(device_name);
+        updated = true;
     }
     if let Some(device_type) = request.device_type {
-        session.device_type = Some(device_type);
+        session.metadata.client_type = Some(device_type);
+        updated = true;
     }
 
-    // Save updated session
-    state
-        .storage
-        .sessions()
-        .update_session(&session)
-        .await
-        .map_err(|e| {
-            error!("Failed to update session: {}", e);
-            ApiError::internal_error("Session update failed")
-        })?;
+    // Save updated session only if changes were made
+    if updated {
+        state
+            .storage
+            .sessions()
+            .update_session(&session)
+            .await
+            .map_err(|e| {
+                error!("Failed to update session: {}", e);
+                ApiError::internal_error("Session update failed")
+            })?;
+    }
 
-    let session_info = SessionInfo {
-        id: session.id,
-        user_id: session.user_id,
-        device_name: session.device_name,
-        device_type: session.device_type,
-        ip_address: session.ip_address,
-        user_agent: session.user_agent,
-        is_active: session.is_active,
-        last_activity: session.last_activity,
-        expires_at: session.expires_at,
-        created_at: session.created_at,
-        metadata: session.metadata,
-    };
+    let session_info = session_to_session_info(&session)?;
 
     info!(
         "Session updated successfully for user: {}",
@@ -242,7 +249,7 @@ pub async fn terminate_session(
     let session = state
         .storage
         .sessions()
-        .get_session(&session_id)
+        .get_session(&session_id.to_string())
         .await
         .map_err(|e| {
             error!("Failed to get session for termination: {}", e);
@@ -250,7 +257,7 @@ pub async fn terminate_session(
         })?
         .ok_or_else(|| ApiError::not_found_error("Session"))?;
 
-    if session.user_id != user_context.user_id {
+    if session.user_id != user_context.user_id.to_string() {
         warn!(
             "User {} attempted to terminate session belonging to user {}",
             user_context.user_id, session.user_id
@@ -264,7 +271,7 @@ pub async fn terminate_session(
     state
         .storage
         .sessions()
-        .deactivate_session(&session_id)
+        .deactivate_session(&session_id.to_string())
         .await
         .map_err(|e| {
             error!("Failed to deactivate session: {}", e);
@@ -310,7 +317,10 @@ pub async fn terminate_all_sessions(
         state
             .storage
             .sessions()
-            .deactivate_user_sessions_except(&user_context.user_id, &user_context.session_id)
+            .deactivate_user_sessions_except(
+                &user_context.user_id.to_string(),
+                &user_context.session_id.to_string(),
+            )
             .await
             .map_err(|e| {
                 error!("Failed to terminate other sessions: {}", e);
@@ -321,7 +331,7 @@ pub async fn terminate_all_sessions(
         state
             .storage
             .sessions()
-            .deactivate_user_sessions(&user_context.user_id)
+            .deactivate_user_sessions(&user_context.user_id.to_string())
             .await
             .map_err(|e| {
                 error!("Failed to terminate all sessions: {}", e);
@@ -364,14 +374,64 @@ pub async fn get_session_statistics(
         user_context.username
     );
 
-    // TODO: Implement session statistics gathering
+    // Get session statistics from storage
+    let global_stats = state
+        .storage
+        .sessions()
+        .get_session_stats()
+        .await
+        .map_err(|e| {
+            error!("Failed to get session statistics: {}", e);
+            ApiError::internal_error("Failed to retrieve session statistics")
+        })?;
+
+    // Get user-specific session count
+    let user_active_sessions = state
+        .storage
+        .sessions()
+        .get_active_user_sessions(&user_context.user_id.to_string())
+        .await
+        .map_err(|e| {
+            error!("Failed to get user active sessions: {}", e);
+            ApiError::internal_error("Failed to retrieve session statistics")
+        })?;
+
+    let user_total_sessions = state
+        .storage
+        .sessions()
+        .count_user_sessions(&user_context.user_id.to_string())
+        .await
+        .map_err(|e| {
+            error!("Failed to count user sessions: {}", e);
+            ApiError::internal_error("Failed to retrieve session statistics")
+        })?;
+
+    // Find most recent session for last login
+    let last_login = if !user_active_sessions.is_empty() {
+        let mut sessions_clone = user_active_sessions.clone();
+        sessions_clone.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        Some(
+            chrono::DateTime::from_timestamp(sessions_clone[0].created_at as i64, 0)
+                .unwrap_or_else(chrono::Utc::now),
+        )
+    } else {
+        None
+    };
+
+    // Find most common device type
+    let most_common_device = global_stats
+        .sessions_by_client
+        .into_iter()
+        .max_by_key(|(_, count)| *count)
+        .map(|(device, _)| device);
+
     let stats = SessionStatistics {
         user_id: user_context.user_id,
-        active_sessions: 1,
-        total_sessions: 10,
-        last_login: Some(chrono::Utc::now() - chrono::Duration::hours(2)),
-        most_common_device: Some("desktop".to_string()),
-        unique_locations: 3,
+        active_sessions: user_active_sessions.len() as u32,
+        total_sessions: user_total_sessions,
+        last_login,
+        most_common_device,
+        unique_locations: 1, // TODO: Calculate unique locations from session data
         updated_at: chrono::Utc::now(),
     };
 
@@ -382,13 +442,76 @@ pub async fn get_session_statistics(
     Ok(responses::success(stats))
 }
 
+/// Helper function to convert storage Session to API SessionInfo
+fn session_to_session_info(
+    session: &crate::server::storage::models::Session,
+) -> Result<SessionInfo, ApiError> {
+    let id = Uuid::parse_str(&session.id)
+        .map_err(|_| ApiError::internal_error("Invalid session ID format"))?;
+    let user_id = Uuid::parse_str(&session.user_id)
+        .map_err(|_| ApiError::internal_error("Invalid user ID format"))?;
+
+    let last_activity = chrono::DateTime::from_timestamp(session.last_activity as i64, 0)
+        .unwrap_or_else(chrono::Utc::now);
+    let expires_at = chrono::DateTime::from_timestamp(session.expires_at as i64, 0)
+        .unwrap_or_else(chrono::Utc::now);
+    let created_at = chrono::DateTime::from_timestamp(session.created_at as i64, 0)
+        .unwrap_or_else(chrono::Utc::now);
+
+    let metadata = serde_json::to_value(&session.metadata)
+        .map_err(|_| ApiError::internal_error("Failed to serialize session metadata"))?;
+
+    Ok(SessionInfo {
+        id,
+        user_id,
+        device_name: session.metadata.device_info.clone(),
+        device_type: session.metadata.client_type.clone(),
+        ip_address: session.ip_address.clone(),
+        user_agent: session.user_agent.clone(),
+        is_active: session.is_active,
+        last_activity,
+        expires_at,
+        created_at,
+        metadata,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
 
     #[test]
-    fn test_placeholder() {
-        // Placeholder test to satisfy module structure
-        assert!(true);
+    fn test_session_to_session_info_conversion() {
+        use crate::server::storage::models::{Session, SessionMetadata};
+        use std::collections::HashMap;
+
+        let session = Session {
+            id: Uuid::new_v4().to_string(),
+            user_id: Uuid::new_v4().to_string(),
+            token: "test_token".to_string(),
+            created_at: 1640995200, // 2022-01-01 00:00:00 UTC
+            expires_at: 1641081600, // 2022-01-02 00:00:00 UTC
+            last_activity: 1641000000,
+            ip_address: Some("127.0.0.1".to_string()),
+            user_agent: Some("Test User Agent".to_string()),
+            is_active: true,
+            metadata: SessionMetadata {
+                client_type: Some("desktop".to_string()),
+                client_version: Some("1.0.0".to_string()),
+                device_info: Some("Test Device".to_string()),
+                location: Some("Test Location".to_string()),
+                custom: HashMap::new(),
+            },
+        };
+
+        let result = session_to_session_info(&session);
+        assert!(result.is_ok());
+
+        let session_info = result.unwrap();
+        assert_eq!(session_info.device_name, Some("Test Device".to_string()));
+        assert_eq!(session_info.device_type, Some("desktop".to_string()));
+        assert_eq!(session_info.ip_address, Some("127.0.0.1".to_string()));
+        assert!(session_info.is_active);
     }
 }

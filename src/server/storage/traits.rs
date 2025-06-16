@@ -373,7 +373,20 @@ pub trait SessionStorage: Send + Sync {
     async fn get_active_user_sessions(&self, user_id: &str) -> StorageResult<Vec<Session>>;
 
     /// Deactivate all user sessions
-    async fn deactivate_user_sessions(&self, user_id: &str) -> StorageResult<()>;
+    async fn deactivate_user_sessions(&self, user_id: &str) -> StorageResult<u64>;
+
+    /// Deactivate all user sessions except specified one
+    async fn deactivate_user_sessions_except(
+        &self,
+        user_id: &str,
+        except_session_id: &str,
+    ) -> StorageResult<u64>;
+
+    /// Update entire session
+    async fn update_session(&self, session: &Session) -> StorageResult<()>;
+
+    /// Get session by UUID
+    async fn get_session(&self, session_id: &str) -> StorageResult<Option<Session>>;
 
     /// Clean up expired sessions
     async fn cleanup_expired_sessions(&self) -> StorageResult<u64>;

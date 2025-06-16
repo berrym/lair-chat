@@ -1,206 +1,246 @@
-# Next Sprint Plan - Sprint 2: User Management & Profile APIs
+# Next Sprint Plan - Sprint 4: Session Management & Admin APIs
 
-**Document Version:** 1.0  
-**Created:** June 16, 2025  
-**Sprint Timeline:** June 16-22, 2025  
-**Sprint Duration:** 7 days  
-**Previous Sprint:** Sprint 1 - Authentication & Server Integration (✅ Complete)
+**Document Version:** 4.0  
+**Created:** June 17, 2025  
+**Updated:** June 18, 2025  
+**Sprint Timeline:** June 18-25, 2025  
+**Sprint Duration:** 8 days  
+**Previous Sprint:** Sprint 3 - Room & Message Management APIs (✅ Complete)
 
-## 🎯 Sprint 2 Goals
+## 🎯 Sprint 4 Goals
 
-**Primary Objective:** Implement comprehensive user management APIs including profile management, user settings, search functionality, and avatar handling.
+**Primary Objective:** Implement comprehensive session management for multi-device support and administrative APIs for server monitoring, user management, and moderation tools.
 
 **Success Criteria:**
-- All user profile endpoints operational and tested
-- User settings management with proper validation
-- User search and discovery functionality working
-- Avatar upload and management system functional
-- Integration tests achieving >90% coverage
-- API documentation complete and accurate
+- All session management endpoints operational and tested
+- Admin user management APIs functional
+- Server monitoring and statistics endpoints working
+- User moderation and reporting system implemented
+- Advanced user features (avatar upload, blocking) operational
+- Integration tests achieving >95% coverage
+- Complete API documentation and testing suite ready
 
 ## 📊 Sprint Overview
 
-**Capacity:** 7 developer days  
-**Story Points Planned:** 32 points  
-**Complexity:** Medium-High (building on established patterns)  
-**Risk Level:** Low (leveraging proven authentication foundation)
+**Capacity:** 7 developer days remaining  
+**Story Points Planned:** 30 points  
+**Story Points Completed:** 12 points (40%)  
+**Complexity:** Medium (building on proven API patterns from Sprints 2-3)  
+**Risk Level:** Low (session foundation complete, minor compilation issues to resolve)
 
 ## 📋 Sprint Backlog
 
-### 🏆 Epic 1: User Profile Management (12 points)
+### 🏆 Epic 1: Session Management (10 points)
 
-#### USER-001: Get Current User Profile
-**Story:** As an authenticated user, I want to retrieve my profile information so I can view my current settings and details.
-- **Endpoint:** `GET /api/v1/users/profile`
+#### SESSION-001: Create Session ✅ COMPLETE
+**Story:** As a user, I want to track my active sessions so I can manage my devices and security.
+- **Endpoint:** `POST /api/v1/sessions`
 - **Points:** 3
 - **Priority:** High
-- **Dependencies:** Authentication middleware (✅ Complete)
-- **Acceptance Criteria:**
-  - Returns user profile with all non-sensitive fields
-  - Proper JWT validation and user context extraction
-  - Handles missing/invalid user gracefully
-  - Returns standardized JSON response format
+- **Dependencies:** Authentication APIs (✅ Complete)
+- **Status:** ✅ Complete (June 18)
+- **Acceptance Criteria:** ✅ All criteria met
+  - ✅ Creates new session with device information
+  - ✅ Tracks IP address, user agent, and location
+  - ✅ Returns session token for device identification
+  - ✅ Supports session expiration and refresh
 
-#### USER-002: Update User Profile
-**Story:** As an authenticated user, I want to update my profile information so I can keep my details current.
-- **Endpoint:** `PUT /api/v1/users/profile`
-- **Points:** 5
-- **Priority:** High
-- **Dependencies:** USER-001
-- **Acceptance Criteria:**
-  - Accepts display_name, bio, timezone, language updates
-  - Validates input data with proper error responses
-  - Updates storage layer and returns updated profile
-  - Prevents modification of immutable fields (username, email)
-
-#### USER-003: Get User Profile by ID
-**Story:** As an authenticated user, I want to view other users' public profiles so I can learn about community members.
-- **Endpoint:** `GET /api/v1/users/{user_id}`
-- **Points:** 2
-- **Priority:** Medium
-- **Dependencies:** USER-001
-- **Acceptance Criteria:**
-  - Returns public profile information only
-  - Respects privacy settings
-  - Handles non-existent users with 404
-  - Rate limited to prevent scraping
-
-#### USER-004: Get User by Username
-**Story:** As an authenticated user, I want to find users by username so I can connect with specific people.
-- **Endpoint:** `GET /api/v1/users/username/{username}`
-- **Points:** 2
-- **Priority:** Medium
-- **Dependencies:** USER-003
-- **Acceptance Criteria:**
-  - Case-insensitive username lookup
-  - Returns public profile or 404
-  - Respects user privacy settings
-  - Includes user activity status if permitted
-
-### 🏆 Epic 2: User Settings Management (10 points)
-
-#### SETTINGS-001: Get User Settings
-**Story:** As an authenticated user, I want to retrieve my settings so I can see my current preferences.
-- **Endpoint:** `GET /api/v1/users/settings`
+#### SESSION-002: List User Sessions ✅ COMPLETE
+**Story:** As a user, I want to see all my active sessions so I can monitor security.
+- **Endpoint:** `GET /api/v1/sessions`
 - **Points:** 2
 - **Priority:** High
-- **Dependencies:** Authentication system
-- **Acceptance Criteria:**
-  - Returns complete user settings object
-  - Includes theme, notifications, privacy, and chat preferences
-  - Merges default settings with user customizations
-  - Proper error handling for missing settings
+- **Dependencies:** SESSION-001 ✅
+- **Status:** ✅ Complete (June 18)
+- **Acceptance Criteria:** ✅ All criteria met
+  - ✅ Returns paginated list of user's sessions
+  - ✅ Shows device info, last activity, and location
+  - ✅ Marks current session clearly
+  - ✅ Supports filtering by active/expired status
 
-#### SETTINGS-002: Update User Settings
-**Story:** As an authenticated user, I want to update my settings so I can customize my experience.
-- **Endpoint:** `PUT /api/v1/users/settings`
-- **Points:** 5
+#### SESSION-003: Revoke Session ✅ COMPLETE
+**Story:** As a user, I want to revoke sessions so I can secure my account.
+- **Endpoint:** `DELETE /api/v1/sessions/{session_id}`
+- **Points:** 2
 - **Priority:** High
-- **Dependencies:** SETTINGS-001
-- **Acceptance Criteria:**
-  - Accepts partial or complete settings updates
-  - Validates settings values (theme names, notification preferences)
-  - Updates storage and returns updated settings
-  - Maintains settings structure integrity
+- **Dependencies:** SESSION-002 ✅
+- **Status:** ✅ Complete (June 18)
+- **Acceptance Criteria:** ✅ All criteria met
+  - ✅ Revokes specific session immediately
+  - ✅ Invalidates session tokens
+  - ✅ Logs security action for audit
+  - ✅ Supports bulk revocation of all sessions
 
-#### SETTINGS-003: Reset Settings to Default
-**Story:** As an authenticated user, I want to reset my settings to defaults so I can start fresh if needed.
-- **Endpoint:** `POST /api/v1/users/settings/reset`
+#### SESSION-004: Session Activity Tracking ✅ COMPLETE
+**Story:** As a user, I want to see session activity so I can detect suspicious behavior.
+- **Endpoint:** `GET /api/v1/sessions/stats`
 - **Points:** 3
-- **Priority:** Low
-- **Dependencies:** SETTINGS-002
-- **Acceptance Criteria:**
-  - Resets all settings to system defaults
-  - Preserves critical preferences (language, timezone)
-  - Returns confirmation and new settings
-  - Auditable action for user history
-
-### 🏆 Epic 3: User Search & Discovery (6 points)
-
-#### SEARCH-001: Search Users
-**Story:** As an authenticated user, I want to search for users so I can find people to connect with.
-- **Endpoint:** `POST /api/v1/users/search`
-- **Points:** 4
 - **Priority:** Medium
-- **Dependencies:** USER-001
-- **Acceptance Criteria:**
-  - Search by username, display name, or email (if permitted)
-  - Supports pagination and sorting
-  - Respects user privacy settings
-  - Returns ranked results based on relevance
+- **Dependencies:** SESSION-001 ✅
+- **Status:** ✅ Complete (June 18)
+- **Acceptance Criteria:** ✅ All criteria met
+  - ✅ Tracks session statistics and activity metrics
+  - ✅ Shows activity timeline with timestamps
+  - ✅ Includes device and usage context
+  - ✅ Supports comprehensive session analytics
 
-#### SEARCH-002: Get Online Users
-**Story:** As an authenticated user, I want to see who's currently online so I can engage with active community members.
-- **Endpoint:** `GET /api/v1/users/online`
+### 🏆 Epic 2: Admin User Management (8 points)
+
+#### ADMIN-001: List All Users 🔄 IN PROGRESS
+**Story:** As an admin, I want to see all users so I can manage the community.
+- **Endpoint:** `GET /api/v1/admin/users`
 - **Points:** 2
-- **Priority:** Low
-- **Dependencies:** Session management
+- **Priority:** High
+- **Dependencies:** User Management APIs (✅ Complete)
+- **Status:** 🔄 In Progress (Started June 18)
+- **Blockers:** Storage method compilation errors need resolution
 - **Acceptance Criteria:**
-  - Returns list of currently active users
-  - Respects privacy settings for online status
-  - Includes last activity timestamp
-  - Paginated response for large communities
+  - Returns paginated list of all users
+  - Includes user status, role, and activity metrics
+  - Supports filtering by role, status, and registration date
+  - Shows user engagement statistics
 
-### 🏆 Epic 4: Avatar Management (4 points)
+#### ADMIN-002: Update User Status
+**Story:** As an admin, I want to manage user accounts so I can moderate the platform.
+- **Endpoint:** `PUT /api/v1/admin/users/{user_id}/status`
+- **Points:** 3
+- **Priority:** High
+- **Dependencies:** ADMIN-001
+- **Acceptance Criteria:**
+  - Activate, deactivate, or suspend user accounts
+  - Validates admin has sufficient permissions
+  - Logs all status changes for audit
+  - Notifies user of account status changes
 
-#### AVATAR-001: Upload User Avatar
-**Story:** As an authenticated user, I want to upload a profile picture so I can personalize my account.
+#### ADMIN-003: User Activity Reports
+**Story:** As an admin, I want to see user activity reports so I can understand platform usage.
+- **Endpoint:** `GET /api/v1/admin/users/{user_id}/activity`
+- **Points:** 3
+- **Priority:** Medium
+- **Dependencies:** ADMIN-001
+- **Acceptance Criteria:**
+  - Shows comprehensive user activity metrics
+  - Includes message counts, room participation, and login patterns
+  - Supports date range filtering and export
+  - Provides moderation-relevant activity indicators
+
+### 🏆 Epic 3: Server Monitoring & Statistics (7 points)
+
+#### MONITOR-001: Server Statistics 🔄 IN PROGRESS
+**Story:** As an admin, I want to see server statistics so I can monitor performance.
+- **Endpoint:** `GET /api/v1/admin/stats`
+- **Points:** 3
+- **Priority:** High
+- **Dependencies:** All core APIs (✅ Complete)
+- **Status:** 🔄 In Progress (Started June 18)
+- **Progress:** 60% - Real storage integration started, compilation fixes needed
+- **Acceptance Criteria:**
+  - ✅ Returns comprehensive server metrics
+  - ✅ Shows user, room, and message counts
+  - 🔄 Includes performance metrics and error rates
+  - 📅 Supports real-time and historical data
+
+#### MONITOR-002: System Health Check
+**Story:** As an admin, I want to monitor system health so I can ensure reliability.
+- **Endpoint:** `GET /api/v1/admin/health`
+- **Points:** 2
+- **Priority:** High
+- **Dependencies:** Storage layer (✅ Complete)
+- **Acceptance Criteria:**
+  - Checks database connectivity and performance
+  - Monitors storage usage and capacity
+  - Tests all critical system components
+  - Provides detailed health status and alerts
+
+#### MONITOR-003: Audit Logs
+**Story:** As an admin, I want to access audit logs so I can track important system events.
+- **Endpoint:** `GET /api/v1/admin/audit`
+- **Points:** 2
+- **Priority:** Medium
+- **Dependencies:** All APIs with audit logging
+- **Acceptance Criteria:**
+  - Returns comprehensive audit trail
+  - Includes user actions, admin operations, and system events
+  - Supports filtering by user, action type, and date range
+  - Provides secure log export functionality
+
+### 🏆 Epic 4: Advanced User Features (5 points)
+
+#### USER-001: Avatar Upload
+**Story:** As a user, I want to upload an avatar so I can personalize my profile.
 - **Endpoint:** `POST /api/v1/users/avatar`
-- **Points:** 4
+- **Points:** 3
 - **Priority:** Medium
-- **Dependencies:** USER-002, File upload middleware
+- **Dependencies:** User Management APIs (✅ Complete)
 - **Acceptance Criteria:**
-  - Accepts image files (PNG, JPG, WebP)
-  - Validates file size (max 5MB) and dimensions
-  - Generates optimized sizes (32px, 64px, 128px)
+  - Accepts image file uploads (PNG, JPG, GIF)
+  - Validates file size and dimensions
+  - Resizes and optimizes images automatically
   - Updates user profile with avatar URL
-  - Handles storage errors gracefully
+
+#### USER-002: Block/Report Users
+**Story:** As a user, I want to block and report other users so I can maintain a safe environment.
+- **Endpoint:** `POST /api/v1/users/{user_id}/block`, `POST /api/v1/users/{user_id}/report`
+- **Points:** 2
+- **Priority:** Medium
+- **Dependencies:** User Management APIs (✅ Complete)
+- **Acceptance Criteria:**
+  - Blocks user from sending messages or invitations
+  - Creates reports for admin review
+  - Supports different report categories
+  - Maintains user privacy and prevents harassment
 
 ## 🗓️ Sprint Timeline
 
-### Day 1 (June 16): Foundation Setup
-**Focus:** Core profile endpoints and testing framework
-- Implement USER-001 (Get Current User Profile)
-- Set up integration testing framework for user APIs
-- Create comprehensive test data and fixtures
+### Day 1 (June 18): Session Foundation ✅ COMPLETE
+**Focus:** Core session management endpoints
+- ✅ Implement SESSION-001 (Create Session)
+- ✅ Implement SESSION-002 (List User Sessions)
+- ✅ Set up session storage and tracking
 
-### Day 2 (June 17): Profile Management
-**Focus:** Complete profile CRUD operations
-- Implement USER-002 (Update User Profile)
-- Implement USER-003 (Get User Profile by ID)
-- Add validation and error handling
+### Day 2 (June 19): Admin API Implementation
+**Focus:** Complete admin APIs and fix compilation issues
+- Fix admin statistics compilation errors
+- Complete ADMIN-001 (List All Users)
+- Implement ADMIN-002 (Update User Status)
+- Add admin permission validation
 
-### Day 3 (June 18): Settings Implementation
-**Focus:** User settings management
-- Implement SETTINGS-001 (Get User Settings)
-- Implement SETTINGS-002 (Update User Settings)
-- Validate settings schema and defaults
+### Day 3 (June 20): Admin Reporting & Monitoring
+**Focus:** User activity reporting and system monitoring
+- Complete ADMIN-003 (User Activity Reports)
+- Implement MONITOR-002 (System Health Check)
+- Add comprehensive audit logging foundations
 
-### Day 4 (June 19): Search & Discovery
-**Focus:** User search functionality
-- Implement SEARCH-001 (Search Users)
-- Implement USER-004 (Get User by Username)
-- Add privacy-aware search logic
+### Day 4 (June 21): Server Monitoring Complete
+**Focus:** System monitoring and health infrastructure
+- Complete MONITOR-001 (Server Statistics)
+- Finalize MONITOR-002 (System Health Check)
+- Set up performance metrics collection
 
-### Day 5 (June 20): Avatar Management
-**Focus:** File upload and image processing
-- Implement AVATAR-001 (Upload User Avatar)
-- Set up image processing pipeline
-- Configure file storage (local/cloud)
+### Day 5 (June 22): Audit & Advanced Features
+**Focus:** Audit trails and advanced user features
+- Implement MONITOR-003 (Audit Logs)
+- Complete logging infrastructure
+- Begin USER-001 (Avatar Upload)
 
-### Day 6 (June 21): Testing & Polish
-**Focus:** Integration testing and edge cases
-- Implement SETTINGS-003 (Reset Settings)
-- Implement SEARCH-002 (Get Online Users)
-- Comprehensive integration testing
-- Performance testing and optimization
+### Day 6 (June 23): Advanced User Features
+**Focus:** Enhanced user capabilities
+- Complete USER-001 (Avatar Upload)
+- Implement USER-002 (Block/Report Users)
+- Add file upload handling infrastructure
 
-### Day 7 (June 22): Documentation & Sprint Close
-**Focus:** Documentation and sprint retrospective
+### Day 7 (June 24): Integration Testing
+**Focus:** Comprehensive testing and validation
+- Integration testing for all Sprint 4 endpoints
+- Security testing for admin privileges and session management
+- Performance testing for session operations under load
+
+### Day 8 (June 25): Sprint 4 Completion
+**Focus:** Final validation and documentation
+- End-to-end system testing
 - Complete API documentation updates
-- Sprint retrospective and lessons learned
-- Prepare Sprint 3 planning materials
-- Deploy to staging environment for testing
+- Performance optimization and final validation
+- Sprint 4 retrospective and Sprint 5 planning
 
 ## 📋 Definition of Done
 
@@ -233,25 +273,38 @@ For each user story to be considered complete, it must:
 
 ### Data Models
 ```rust
-// Core user profile structure
-pub struct UserProfile {
-    pub user_id: Uuid,
-    pub username: String,
-    pub display_name: Option<String>,
-    pub bio: Option<String>,
-    pub avatar_url: Option<String>,
-    pub timezone: String,
-    pub language: String,
+// Core room structure
+pub struct RoomInfo {
+    pub id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub room_type: RoomType,
+    pub privacy: RoomPrivacy,
+    pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
-    pub last_active: Option<DateTime<Utc>>,
+    pub member_count: u32,
+    pub settings: RoomSettings,
 }
 
-// User settings structure
-pub struct UserSettings {
-    pub theme: ThemeSettings,
-    pub notifications: NotificationSettings,
-    pub privacy: PrivacySettings,
-    pub chat: ChatSettings,
+// Message structure
+pub struct MessageInfo {
+    pub id: Uuid,
+    pub room_id: Uuid,
+    pub user_id: Uuid,
+    pub content: String,
+    pub message_type: MessageType,
+    pub timestamp: DateTime<Utc>,
+    pub edited_at: Option<DateTime<Utc>>,
+    pub reactions: Vec<MessageReaction>,
+}
+
+// Room membership structure
+pub struct RoomMembership {
+    pub room_id: Uuid,
+    pub user_id: Uuid,
+    pub role: RoomRole,
+    pub joined_at: DateTime<Utc>,
+    pub permissions: Vec<Permission>,
 }
 ```
 
@@ -262,90 +315,98 @@ pub struct UserSettings {
 - Handle storage layer errors gracefully
 
 ### Performance Considerations
-- Implement caching for frequently accessed profiles
-- Use pagination for all list endpoints
-- Optimize database queries with proper indexing
-- Consider rate limiting for search operations
+- Implement caching for frequently accessed rooms and messages
+- Use cursor-based pagination for message history
+- Optimize database queries with proper indexing on room_id and timestamp
+- Consider rate limiting for message sending and search operations
+- Implement message batching for bulk operations
 
 ## 🧪 Testing Strategy
 
 ### Unit Testing
-- Test all handlers with mock storage
-- Validate request/response serialization
-- Test error conditions and edge cases
-- Mock external dependencies (file storage, etc.)
+- Test all room and message handlers with mock storage
+- Validate request/response serialization for complex nested data
+- Test permission and role validation logic
+- Mock real-time notification dependencies
 
 ### Integration Testing
 - End-to-end API testing with real storage
-- Test authentication and authorization flows
-- Validate data persistence and retrieval
-- Test file upload functionality
+- Test room membership workflows and permissions
+- Validate message ordering and pagination
+- Test concurrent message sending scenarios
 
 ### Load Testing
-- Profile endpoints under normal load
-- Search functionality with large datasets
-- Avatar upload with multiple concurrent users
-- Identify performance bottlenecks
+- Message sending under high concurrent load
+- Room listing with large member counts
+- Message search with large message history
+- Identify bottlenecks in permission checking
 
 ## 🚨 Risk Assessment
 
 ### Low Risk
-- Profile CRUD operations (similar to auth patterns)
-- Settings management (standard key-value operations)
-- Basic search functionality
+- Room CRUD operations (leveraging proven user management patterns)
+- Basic message sending and retrieval
+- Room membership management
 
 ### Medium Risk
-- Avatar upload and file handling
-- Search performance with large user base
-- Privacy setting enforcement
+- Message search performance with large history
+- Real-time notification foundations
+- Complex permission validation across room roles
 
 ### Mitigation Strategies
-- Start with simple file upload, enhance later
-- Implement search indexing early
-- Create comprehensive privacy test cases
-- Monitor performance metrics continuously
+- Implement message indexing early for search performance
+- Start with polling-based updates, add WebSocket later
+- Create comprehensive permission test matrix
+- Monitor message throughput and database performance
 
 ## 📊 Success Metrics
 
 ### Functional Metrics
-- All 8 user stories completed and tested
+- All 11 room and message stories completed and tested
 - 100% API endpoint uptime during testing
-- <200ms average response time for profile operations
+- <200ms average response time for room operations
+- <300ms average response time for message operations
 - <500ms average response time for search operations
 
 ### Quality Metrics
 - >90% test coverage for new code
 - Zero critical or major bugs found in testing
-- All security reviews passed
+- All security and permission reviews passed
 - API documentation accuracy validated
 
 ### Team Metrics
-- Sprint velocity maintained or improved
+- Sprint velocity maintained from Sprint 2 success
 - Zero blockers lasting >4 hours
-- All team members contributing effectively
-- Knowledge sharing sessions completed
+- Comprehensive knowledge transfer from user management patterns
+- Effective reuse of established architectural patterns
 
-## 🔮 Preparation for Sprint 3
+## 🔮 Preparation for Sprint 5
 
-**Sprint 3 Focus:** Room & Message APIs
-**Timeline:** June 23-29, 2025
+**Sprint 5 Focus:** WebSocket & Real-time Features
+**Timeline:** June 26 - July 3, 2025
 
 ### Pre-work Required
-- Review room management storage interfaces
-- Design message API endpoints structure
-- Plan real-time notification architecture
-- Prepare WebSocket integration strategy
+- Design WebSocket connection architecture
+- Plan real-time message delivery system
+- Prepare notification infrastructure
+- Design client-server synchronization protocols
 
 ### Dependencies
-- Sprint 2 user management APIs operational
-- Room creation requires user authentication
-- Message posting requires room membership
-- User profiles needed for message display
+- ✅ Sprint 4 session management APIs operational
+- 🔄 Sprint 4 admin APIs completion (June 24)
+- Real-time features require session tracking ✅
+- WebSocket needs comprehensive message history ✅
+- Notifications require user preference system ✅
 
+### Technical Debt: Minimal
+- Proven patterns from Sprints 2, 3, and 4 ✅
+- Complete REST API foundation established ✅
+- Production-ready core feature set ✅
+- Session management infrastructure complete ✅
 ---
 
 **Sprint Lead:** Development Team  
 **Product Owner:** Product Team  
 **Stakeholders:** Full Team  
-**Sprint Review:** June 22, 2025, 4:00 PM UTC  
-**Sprint Retrospective:** June 22, 2025, 4:30 PM UTC
+**Sprint Review:** June 25, 2025, 4:00 PM UTC  
+**Sprint Retrospective:** June 25, 2025, 4:30 PM UTC
