@@ -23,7 +23,7 @@ use crate::server::{
         ApiState,
     },
     storage::{
-        models::{Session, User, UserRole as StorageUserRole, UserStatus as StorageUserStatus},
+        models::{Session, User, UserRole as StorageUserRole},
         StorageError,
     },
 };
@@ -91,22 +91,29 @@ pub async fn register(
     }
 
     // Create new user
+    let user_id = Uuid::new_v4();
+    let now_timestamp = Utc::now().timestamp() as u64;
     let new_user = User {
-        id: Uuid::new_v4(),
+        id: user_id.to_string(),
         username: request.username.clone(),
-        email: request.email.clone(),
+        email: Some(request.email.clone()),
         password_hash,
-        display_name: request
-            .display_name
-            .unwrap_or_else(|| request.username.clone()),
+        salt: "".to_string(), // Salt is generated within the hash
+        created_at: now_timestamp,
+        updated_at: now_timestamp,
+        last_seen: None,
+        is_active: true,
         role: StorageUserRole::User,
-        status: StorageUserStatus::Active,
-        avatar_url: None,
-        timezone: request.timezone.unwrap_or_else(|| "UTC".to_string()),
-        last_login: None,
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-        metadata: serde_json::json!({}),
+        profile: crate::server::storage::models::UserProfile {
+            display_name: request.display_name.clone(),
+            avatar: None,
+            status_message: None,
+            bio: None,
+            timezone: request.timezone.clone(),
+            language: None,
+            custom_fields: std::collections::HashMap::new(),
+        },
+        settings: crate::server::storage::models::UserSettings::default(),
     };
 
     // Store user in database
@@ -126,18 +133,24 @@ pub async fn register(
     info!("User created successfully with ID: {}", user_id);
 
     // Create session
+    let now_timestamp = Utc::now().timestamp() as u64;
     let session = Session {
-        id: Uuid::new_v4(),
-        user_id,
-        device_name: None,
-        device_type: None,
+        id: Uuid::new_v4().to_string(),
+        user_id: user_id.to_string(),
+        token: "".to_string(), // Will be set by storage layer
+        created_at: now_timestamp,
+        expires_at: (Utc::now() + Duration::days(30)).timestamp() as u64,
+        last_activity: now_timestamp,
         ip_address: None, // TODO: Extract from request
         user_agent: None, // TODO: Extract from request
         is_active: true,
-        last_activity: Utc::now(),
-        expires_at: Utc::now() + Duration::days(30),
-        created_at: Utc::now(),
-        metadata: serde_json::json!({}),
+        metadata: crate::server::storage::models::SessionMetadata {
+            client_type: Some("api_client".to_string()),
+            client_version: None,
+            device_info: None,
+            location: None,
+            custom: std::collections::HashMap::new(),
+        },
     };
 
     let session_id = state
@@ -169,17 +182,22 @@ pub async fn register(
         3600, // 1 hour
         AuthUserInfo {
             id: user_id,
-            username: new_user.username,
-            email: new_user.email,
-            display_name: new_user.display_name,
-            role: convert_user_role(&new_user.role),
-            status: convert_user_status(&new_user.status),
-            created_at: new_user.created_at,
+            username: new_user.username.clone(),
+            email: new_user.email.clone().unwrap_or_default(),
+            display_name: new_user
+                .profile
+                .display_name
+                .clone()
+                .unwrap_or_else(|| new_user.username.clone()),
+            role: convert_user_role(new_user.role.clone()),
+            status: UserStatus::Active,
+            created_at: chrono::DateTime::from_timestamp(new_user.created_at as i64, 0)
+                .unwrap_or_else(|| chrono::Utc::now()),
         },
         SessionInfo {
             id: session_id,
-            created_at: session.created_at,
-            expires_at: session.expires_at,
+            created_at: chrono::DateTime::from_timestamp(session.created_at as i64, 0).unwrap_or_else(|| chrono::Utc::now()),
+            expires_at: chrono::DateTime::from_timestamp(session.expires_at as i64, 0).unwrap_or_else(|| chrono::Utc::now()),
             device: None,
         },
     );
@@ -244,30 +262,12 @@ pub async fn login(
     })?;
 
     // Check user status
-    match user.status {
-        StorageUserStatus::Active => {}
-        StorageUserStatus::Suspended => {
-            warn!("Login blocked: user {} is suspended", user.username);
-            return Err(ApiError::forbidden_error("Account is suspended"));
-        }
-        StorageUserStatus::Banned => {
-            warn!("Login blocked: user {} is banned", user.username);
-            return Err(ApiError::forbidden_error("Account is banned"));
-        }
-        StorageUserStatus::PendingVerification => {
-            warn!(
-                "Login blocked: user {} needs email verification",
-                user.username
-            );
-            return Err(ApiError::forbidden_error("Email verification required"));
-        }
-        StorageUserStatus::Deactivated => {
-            warn!(
-                "Login blocked: user {} account is deactivated",
-                user.username
-            );
-            return Err(ApiError::forbidden_error("Account is deactivated"));
-        }
+    if !user.is_active {
+        warn!(
+            "Login blocked: user {} account is not active",
+            user.username
+        );
+        return Err(ApiError::forbidden_error("Account is not active"));
     }
 
     // Verify password
@@ -302,21 +302,24 @@ pub async fn login(
         Utc::now() + Duration::days(7) // 7 days for normal login
     };
 
+    let now_timestamp = Utc::now().timestamp() as u64;
     let session = Session {
-        id: Uuid::new_v4(),
-        user_id: user.id,
-        device_name: request.device_info.as_ref().map(|d| d.name.clone()),
-        device_type: request.device_info.as_ref().map(|d| d.device_type.clone()),
-        ip_address: None, // TODO: Extract from request headers
-        user_agent: None, // TODO: Extract from request headers
+        id: Uuid::new_v4().to_string(),
+        user_id: user.id.clone(),
+        token: "".to_string(), // Will be set by storage layer
+        created_at: now_timestamp,
+        expires_at: session_expires.timestamp() as u64,
+        last_activity: now_timestamp,
+        ip_address: None, // TODO: Extract from request
+        user_agent: None, // TODO: Extract from request
         is_active: true,
-        last_activity: Utc::now(),
-        expires_at: session_expires,
-        created_at: Utc::now(),
-        metadata: serde_json::json!({
-            "remember_me": request.remember_me,
-            "device_info": request.device_info
-        }),
+        metadata: crate::server::storage::models::SessionMetadata {
+            client_type: Some("api_client".to_string()),
+            client_version: None,
+            device_info: request.device_info.clone(),
+            location: None,
+            custom: std::collections::HashMap::new(),
+        },
     };
 
     let session_id = state
@@ -347,18 +350,27 @@ pub async fn login(
         refresh_token,
         3600, // 1 hour
         AuthUserInfo {
-            id: user.id,
+            id: uuid::Uuid::parse_str(&user.id).unwrap_or_else(|_| Uuid::new_v4()),
             username: user.username.clone(),
-            email: user.email,
-            display_name: user.display_name,
-            role: convert_user_role(&user.role),
-            status: convert_user_status(&user.status),
-            created_at: user.created_at,
+            email: user.email.clone().unwrap_or_default(),
+            display_name: user
+                .profile
+                .display_name
+                .clone()
+                .unwrap_or_else(|| user.username.clone()),
+            role: convert_user_role(user.role.clone()),
+            status: if user.is_active {
+                UserStatus::Active
+            } else {
+                UserStatus::Suspended
+            },
+            created_at: chrono::DateTime::from_timestamp(user.created_at as i64, 0)
+                .unwrap_or_else(|| chrono::Utc::now()),
         },
         SessionInfo {
             id: session_id,
-            created_at: session.created_at,
-            expires_at: session.expires_at,
+            created_at: chrono::DateTime::from_timestamp(session.created_at as i64, 0).unwrap_or_else(|| chrono::Utc::now()),
+            expires_at: chrono::DateTime::from_timestamp(session.expires_at as i64, 0).unwrap_or_else(|| chrono::Utc::now()),
             device: request.device_info,
         },
     );
@@ -466,7 +478,7 @@ pub async fn refresh(
         })?;
 
     // Check user is still active
-    if !matches!(user.status, StorageUserStatus::Active) {
+    if !user.is_active {
         warn!("Token refresh failed: user account is not active");
         return Err(ApiError::forbidden_error("Account is not active"));
     }
@@ -687,8 +699,8 @@ pub async fn change_password(
 
 // Helper functions
 
-/// Convert storage user role to API user role
-fn convert_user_role(role: &StorageUserRole) -> UserRole {
+/// Convert storage UserRole to API UserRole
+fn convert_user_role(role: StorageUserRole) -> UserRole {
     match role {
         StorageUserRole::Admin => UserRole::Admin,
         StorageUserRole::Moderator => UserRole::Moderator,
@@ -697,23 +709,10 @@ fn convert_user_role(role: &StorageUserRole) -> UserRole {
     }
 }
 
-/// Convert storage user status to API user status
-fn convert_user_status(status: &StorageUserStatus) -> UserStatus {
-    match status {
-        StorageUserStatus::Active => UserStatus::Active,
-        StorageUserStatus::Suspended => UserStatus::Suspended,
-        StorageUserStatus::Banned => UserStatus::Banned,
-        StorageUserStatus::PendingVerification => UserStatus::PendingVerification,
-        StorageUserStatus::Deactivated => UserStatus::Deactivated,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::server::storage::models::{
-        UserRole as StorageUserRole, UserStatus as StorageUserStatus,
-    };
+    use crate::server::storage::models::UserRole as StorageUserRole;
 
     #[test]
     fn test_user_role_conversion() {
@@ -736,26 +735,14 @@ mod tests {
     }
 
     #[test]
-    fn test_user_status_conversion() {
+    fn test_user_role_conversion() {
         assert!(matches!(
-            convert_user_status(&StorageUserStatus::Active),
-            UserStatus::Active
+            convert_user_role(StorageUserRole::Admin),
+            UserRole::Admin
         ));
         assert!(matches!(
-            convert_user_status(&StorageUserStatus::Suspended),
-            UserStatus::Suspended
-        ));
-        assert!(matches!(
-            convert_user_status(&StorageUserStatus::Banned),
-            UserStatus::Banned
-        ));
-        assert!(matches!(
-            convert_user_status(&StorageUserStatus::PendingVerification),
-            UserStatus::PendingVerification
-        ));
-        assert!(matches!(
-            convert_user_status(&StorageUserStatus::Deactivated),
-            UserStatus::Deactivated
+            convert_user_role(StorageUserRole::User),
+            UserRole::User
         ));
     }
 }

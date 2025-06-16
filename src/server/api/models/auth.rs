@@ -4,16 +4,23 @@
 //! including registration, login, token management, and JWT claims.
 
 use chrono::{DateTime, Utc};
+use lazy_static::lazy_static;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
+
+lazy_static! {
+    static ref USERNAME_REGEX: Regex = Regex::new(r"^[a-zA-Z0-9_]+$").unwrap();
+}
 
 /// User registration request
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
 pub struct RegisterRequest {
     /// Username (3-50 characters, alphanumeric and underscores only)
-    #[validate(length(min = 3, max = 50), regex = "USERNAME_REGEX")]
+    #[validate(length(min = 3, max = 50), regex(path = "USERNAME_REGEX"))]
     pub username: String,
 
     /// Email address
@@ -21,7 +28,7 @@ pub struct RegisterRequest {
     pub email: String,
 
     /// Password (minimum 8 characters, must contain uppercase, lowercase, number)
-    #[validate(length(min = 8), custom = "validate_password_strength")]
+    #[validate(length(min = 8), custom(function = "validate_password_strength"))]
     pub password: String,
 
     /// Display name (optional, 1-100 characters)
@@ -193,7 +200,7 @@ pub struct ChangePasswordRequest {
     pub current_password: String,
 
     /// New password
-    #[validate(length(min = 8), custom = "validate_password_strength")]
+    #[validate(length(min = 8), custom(function = "validate_password_strength"))]
     pub new_password: String,
 }
 
@@ -213,7 +220,7 @@ pub struct PasswordResetConfirm {
     pub token: String,
 
     /// New password
-    #[validate(length(min = 8), custom = "validate_password_strength")]
+    #[validate(length(min = 8), custom(function = "validate_password_strength"))]
     pub new_password: String,
 }
 
@@ -309,9 +316,6 @@ pub struct ResendVerificationRequest {
 }
 
 // Validation functions and constants
-lazy_static::lazy_static! {
-    static ref USERNAME_REGEX: regex::Regex = regex::Regex::new(r"^[a-zA-Z0-9_]+$").unwrap();
-}
 
 /// Validate password strength
 fn validate_password_strength(password: &str) -> Result<(), validator::ValidationError> {

@@ -4,6 +4,7 @@
 //! storage systems, and REST API. It provides a clean, production-ready server
 //! implementation with proper error handling, logging, and graceful shutdown.
 
+use base64::{engine::general_purpose, Engine as _};
 use clap::{Arg, Command};
 use color_eyre::eyre::{Context, Result};
 use std::{path::PathBuf, sync::Arc};
@@ -12,6 +13,7 @@ use tracing::{info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use lair_chat::server::{
+    api::{start_api_server, ApiState},
     config::{load_config, load_config_from_file, ConfigLoader, ServerConfig},
     storage::{DatabaseConfig, StorageManager},
 };
@@ -52,15 +54,33 @@ impl ServerApp {
             self.config.server.port
         );
 
-        // For now, just start a placeholder server that listens for shutdown
-        // TODO: Implement actual API server integration
-        info!("Server ready - TODO: Add REST API integration");
+        // Generate JWT secret (in production, this should be loaded from config)
+        let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| {
+            use rand::Rng;
+            let mut rng = rand::thread_rng();
+            let secret: [u8; 32] = rng.gen();
+            general_purpose::STANDARD.encode(secret)
+        });
 
+        // Create API state
+        let api_state = ApiState::new(
+            Arc::clone(&self.storage),
+            jwt_secret,
+            Arc::new(self.config.clone()),
+        );
+
+        // Create server bind address
+        let bind_addr = format!("{}:{}", self.config.server.host, self.config.server.port)
+            .parse::<std::net::SocketAddr>()
+            .context("Invalid server address")?;
+
+        info!("Server components initialized successfully");
+
+        // Start REST API server
+        let api_state_clone = api_state.clone();
         let server_task = tokio::spawn(async move {
-            info!("Server task running - waiting for shutdown signal");
-            // Placeholder - just wait
-            loop {
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            if let Err(e) = start_api_server(bind_addr, api_state_clone).await {
+                tracing::error!("API server error: {}", e);
             }
         });
 
@@ -83,8 +103,11 @@ impl ServerApp {
             _ = signal::ctrl_c() => {
                 info!("Received Ctrl+C, initiating graceful shutdown");
             }
-            _ = server_task => {
-                warn!("API server task completed unexpectedly");
+            result = server_task => {
+                match result {
+                    Ok(()) => info!("API server completed successfully"),
+                    Err(e) => warn!("API server task error: {}", e),
+                }
             }
         }
 

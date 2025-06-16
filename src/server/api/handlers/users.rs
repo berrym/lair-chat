@@ -306,9 +306,7 @@ pub async fn search_users(
 
 // Helper functions for converting between storage and API types
 use crate::server::api::models::auth::{UserRole, UserStatus};
-use crate::server::storage::models::{
-    UserRole as StorageUserRole, UserStatus as StorageUserStatus,
-};
+use crate::server::storage::models::UserRole as StorageUserRole;
 
 fn convert_user_role(role: &StorageUserRole) -> UserRole {
     match role {
@@ -316,16 +314,6 @@ fn convert_user_role(role: &StorageUserRole) -> UserRole {
         StorageUserRole::Moderator => UserRole::Moderator,
         StorageUserRole::User => UserRole::User,
         StorageUserRole::Guest => UserRole::Guest,
-    }
-}
-
-fn convert_user_status(status: &StorageUserStatus) -> UserStatus {
-    match status {
-        StorageUserStatus::Active => UserStatus::Active,
-        StorageUserStatus::Suspended => UserStatus::Suspended,
-        StorageUserStatus::Banned => UserStatus::Banned,
-        StorageUserStatus::PendingVerification => UserStatus::PendingVerification,
-        StorageUserStatus::Deactivated => UserStatus::Deactivated,
     }
 }
 

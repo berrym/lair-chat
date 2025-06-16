@@ -35,7 +35,7 @@ use tower_http::{
 };
 use tracing::{info, warn};
 
-use crate::server::storage::{DatabasePool, Storage};
+use crate::server::storage::StorageManager;
 
 pub mod handlers;
 pub mod middleware;
@@ -52,7 +52,7 @@ pub use routes::*;
 #[derive(Clone)]
 pub struct ApiState {
     /// Database storage layer
-    pub storage: Arc<Storage>,
+    pub storage: Arc<StorageManager>,
     /// JWT signing keys
     pub jwt_secret: String,
     /// Server configuration
@@ -62,7 +62,7 @@ pub struct ApiState {
 impl ApiState {
     /// Create new API state
     pub fn new(
-        storage: Arc<Storage>,
+        storage: Arc<StorageManager>,
         jwt_secret: String,
         config: Arc<crate::server::config::ServerConfig>,
     ) -> Self {
@@ -122,7 +122,7 @@ pub fn create_api_router(state: ApiState) -> Router {
 /// Health check endpoint - returns server status
 async fn health_check(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
     // Test database connectivity
-    let db_status = match state.storage.get_database_info().await {
+    let db_status = match state.storage.health_check().await {
         Ok(_) => "healthy",
         Err(e) => {
             warn!("Database health check failed: {}", e);

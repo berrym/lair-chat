@@ -45,6 +45,9 @@ pub mod tui;
 
 // Include server modules
 pub mod server {
+    pub mod api {
+        pub use crate::server_api::*;
+    }
     pub mod app {
         pub use crate::server_app::*;
     }
@@ -64,6 +67,9 @@ pub mod server {
         pub use crate::server_storage::*;
     }
 }
+
+#[path = "server/api/mod.rs"]
+pub mod server_api;
 
 #[path = "server/app/mod.rs"]
 pub mod server_app;

@@ -51,9 +51,9 @@ pub async fn health_check(State(state): State<ApiState>) -> ApiResult<Json<Value
     debug!("Health check requested");
 
     // Test database connectivity
-    let db_status = match state.storage.get_database_info().await {
-        Ok(info) => {
-            debug!("Database connection healthy: {:?}", info);
+    let db_status = match state.storage.health_check().await {
+        Ok(_) => {
+            debug!("Database connection healthy");
             "healthy"
         }
         Err(e) => {
