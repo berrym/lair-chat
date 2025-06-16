@@ -144,13 +144,13 @@ pub async fn create_room(
     // Convert storage model back to API model
     let api_room = Room {
         id: Uuid::parse_str(&created_room.id)
-            .map_err(|_| ApiError::internal_server_error("Invalid room ID"))?,
+            .map_err(|_| ApiError::internal_error("Invalid room ID"))?,
         name: created_room.name.clone(),
         description: created_room.description.clone(),
         room_type: request.room_type,
         privacy: request.privacy,
         owner_id: Uuid::parse_str(&created_room.created_by)
-            .map_err(|_| ApiError::internal_server_error("Invalid owner ID"))?,
+            .map_err(|_| ApiError::internal_error("Invalid owner ID"))?,
         max_members: created_room.settings.max_users,
         created_at: chrono::DateTime::from_timestamp(created_room.created_at as i64, 0)
             .unwrap_or_default(),
@@ -204,7 +204,7 @@ pub async fn get_room(
         .rooms()
         .get_room_by_id(&room_id_str)
         .await
-        .map_err(|e| ApiError::internal_server_error(&format!("Failed to retrieve room: {}", e)))?
+        .map_err(|e| ApiError::internal_error(&format!("Failed to retrieve room: {}", e)))?
         .ok_or_else(|| ApiError::not_found_error("Room"))?;
 
     // Check if room is active
@@ -281,7 +281,7 @@ pub async fn get_room(
         metadata: serde_json::json!({}), // TODO: Convert metadata
     };
 
-    debug!("Room info retrieved successfully: {}", storage_room.name);
+    debug!("Room info retrieved successfully: {}", api_room.name);
     Ok(responses::success(api_room))
 }
 
@@ -329,7 +329,7 @@ pub async fn update_room(
         .rooms()
         .get_room_by_id(&room_id_str)
         .await
-        .map_err(|e| ApiError::internal_server_error(&format!("Failed to retrieve room: {}", e)))?
+        .map_err(|e| ApiError::internal_error(&format!("Failed to retrieve room: {}", e)))?
         .ok_or_else(|| ApiError::not_found_error("Room"))?;
 
     // Check if room is active
@@ -343,9 +343,7 @@ pub async fn update_room(
         .rooms()
         .get_room_membership(&room_id_str, &user_id_str)
         .await
-        .map_err(|e| {
-            ApiError::internal_server_error(&format!("Failed to check membership: {}", e))
-        })?
+        .map_err(|e| ApiError::internal_error(&format!("Failed to check membership: {}", e)))?
         .ok_or_else(|| ApiError::forbidden_error("You are not a member of this room"))?;
 
     // Only owners and admins can update room settings
@@ -513,7 +511,7 @@ pub async fn join_room(
         .rooms()
         .get_room_by_id(&room_id_str)
         .await
-        .map_err(|e| ApiError::internal_server_error(&format!("Failed to retrieve room: {}", e)))?
+        .map_err(|e| ApiError::internal_error(&format!("Failed to retrieve room: {}", e)))?
         .ok_or_else(|| ApiError::not_found_error("Room"))?;
 
     // Check if room is active
@@ -527,9 +525,7 @@ pub async fn join_room(
         .rooms()
         .is_room_member(&room_id_str, &user_id_str)
         .await
-        .map_err(|e| {
-            ApiError::internal_server_error(&format!("Failed to check membership: {}", e))
-        })?
+        .map_err(|e| ApiError::internal_error(&format!("Failed to check membership: {}", e)))?
     {
         return Err(ApiError::validation_error(
             "You are already a member of this room",
@@ -543,9 +539,7 @@ pub async fn join_room(
             .rooms()
             .count_room_members(&room_id_str)
             .await
-            .map_err(|e| {
-                ApiError::internal_server_error(&format!("Failed to count members: {}", e))
-            })?;
+            .map_err(|e| ApiError::internal_error(&format!("Failed to count members: {}", e)))?;
 
         if member_count >= max_users as u64 {
             return Err(ApiError::forbidden_error("Room is at capacity"));
@@ -649,7 +643,7 @@ pub async fn leave_room(
         .rooms()
         .get_room_by_id(&room_id_str)
         .await
-        .map_err(|e| ApiError::internal_server_error(&format!("Failed to retrieve room: {}", e)))?
+        .map_err(|e| ApiError::internal_error(&format!("Failed to retrieve room: {}", e)))?
         .ok_or_else(|| ApiError::not_found_error("Room"))?;
 
     // Check if user is a member
@@ -658,9 +652,7 @@ pub async fn leave_room(
         .rooms()
         .get_room_membership(&room_id_str, &user_id_str)
         .await
-        .map_err(|e| {
-            ApiError::internal_server_error(&format!("Failed to check membership: {}", e))
-        })?
+        .map_err(|e| ApiError::internal_error(&format!("Failed to check membership: {}", e)))?
         .ok_or_else(|| ApiError::not_found_error("You are not a member of this room"))?;
 
     // Check if user is the owner - owners cannot leave without transferring ownership
@@ -671,9 +663,7 @@ pub async fn leave_room(
             .rooms()
             .count_room_members(&room_id_str)
             .await
-            .map_err(|e| {
-                ApiError::internal_server_error(&format!("Failed to count members: {}", e))
-            })?;
+            .map_err(|e| ApiError::internal_error(&format!("Failed to count members: {}", e)))?;
 
         if member_count > 1 {
             return Err(ApiError::forbidden_error(
@@ -762,7 +752,7 @@ pub async fn get_room_members(
         .rooms()
         .get_room_by_id(&room_id_str)
         .await
-        .map_err(|e| ApiError::internal_server_error(&format!("Failed to retrieve room: {}", e)))?
+        .map_err(|e| ApiError::internal_error(&format!("Failed to retrieve room: {}", e)))?
         .ok_or_else(|| ApiError::not_found_error("Room"))?;
 
     // Check if room is active
@@ -780,7 +770,7 @@ pub async fn get_room_members(
                 .is_room_member(&room_id_str, &user_id_str)
                 .await
                 .map_err(|e| {
-                    ApiError::internal_server_error(&format!("Failed to check membership: {}", e))
+                    ApiError::internal_error(&format!("Failed to check membership: {}", e))
                 })?
             {
                 return Err(ApiError::forbidden_error(
@@ -818,7 +808,7 @@ pub async fn get_room_members(
             let member = RoomMember {
                 user_id: Uuid::parse_str(&membership.user_id)
                     .map_err(|_| ApiError::internal_error("Invalid user ID"))?,
-                username: user.username,
+                username: user.username.clone(),
                 display_name: user
                     .profile
                     .display_name

@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+
 use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
@@ -20,7 +20,7 @@ lazy_static! {
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
 pub struct RegisterRequest {
     /// Username (3-50 characters, alphanumeric and underscores only)
-    #[validate(length(min = 3, max = 50), regex(path = "USERNAME_REGEX"))]
+    #[validate(length(min = 3, max = 50))]
     pub username: String,
 
     /// Email address

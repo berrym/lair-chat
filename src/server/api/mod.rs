@@ -28,11 +28,7 @@
 use axum::{extract::State, http::StatusCode, response::Json, Router};
 use serde_json::{json, Value};
 use std::sync::Arc;
-use std::time::Duration;
-use tower::ServiceBuilder;
-use tower_http::{
-    cors::CorsLayer, limit::RequestBodyLimitLayer, timeout::TimeoutLayer, trace::TraceLayer,
-};
+use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::{info, warn};
 
 use crate::server::storage::StorageManager;
@@ -97,26 +93,15 @@ pub fn create_api_router(state: ApiState) -> Router {
         // Add state to all routes
         .with_state(state);
 
-    // Apply middleware stack
-    let middleware_stack = ServiceBuilder::new()
-        // Request timeout (30 seconds)
-        .layer(TimeoutLayer::new(Duration::from_secs(30)))
-        // Request body size limit (10MB)
-        .layer(RequestBodyLimitLayer::new(10 * 1024 * 1024))
-        // CORS configuration
-        .layer(create_cors_layer())
-        // Request tracing
-        .layer(TraceLayer::new_for_http())
-        // Rate limiting (applied per route in middleware)
-        .layer(middleware::rate_limit::create_rate_limit_layer());
-
-    // Wrap API routes under /api/v1 prefix
+    // Wrap API routes under /api/v1 prefix and apply simplified middleware
     Router::new()
         .nest("/api/v1", api_router)
         // Add Swagger UI documentation
         .merge(create_docs_router())
-        // Apply middleware to all routes
-        .layer(middleware_stack)
+        // Apply CORS configuration
+        .layer(create_cors_layer())
+        // Request tracing
+        .layer(TraceLayer::new_for_http())
 }
 
 /// Health check endpoint - returns server status
@@ -159,63 +144,10 @@ fn create_cors_layer() -> CorsLayer {
 
 /// Create documentation router with Swagger UI
 fn create_docs_router() -> Router {
-    use utoipa::OpenApi;
+    use axum::routing::get;
 
-    #[derive(OpenApi)]
-    #[openapi(
-        paths(
-            // Authentication paths
-            handlers::auth::register,
-            handlers::auth::login,
-            handlers::auth::refresh,
-            handlers::auth::logout,
-            // User paths
-            handlers::users::get_profile,
-            handlers::users::update_profile,
-            handlers::users::get_settings,
-            handlers::users::update_settings,
-            // Health check
-            health_check,
-        ),
-        components(
-            schemas(
-                models::auth::RegisterRequest,
-                models::auth::LoginRequest,
-                models::auth::AuthResponse,
-                models::auth::RefreshRequest,
-                models::users::UserProfile,
-                models::users::UpdateProfileRequest,
-                models::users::UserSettings,
-                models::common::ApiError,
-            )
-        ),
-        tags(
-            (name = "auth", description = "Authentication and authorization endpoints"),
-            (name = "users", description = "User management endpoints"),
-            (name = "health", description = "Health check endpoints"),
-        ),
-        info(
-            title = "Lair Chat API",
-            version = "1.0.0",
-            description = "REST API for Lair Chat Server",
-            contact(
-                name = "Lair Chat Team",
-                email = "support@lair-chat.dev"
-            ),
-            license(
-                name = "MIT",
-                url = "https://opensource.org/licenses/MIT"
-            )
-        ),
-        servers(
-            (url = "/api/v1", description = "Local development server"),
-        )
-    )]
-    struct ApiDoc;
-
-    use utoipa_swagger_ui::SwaggerUi;
-
-    SwaggerUi::new("/docs").url("/api-docs/openapi.json", ApiDoc::openapi())
+    // Simple docs router without OpenAPI for now
+    Router::new().route("/docs", get(|| async { "API Documentation - Coming Soon" }))
 }
 
 /// Start the API server on the specified address

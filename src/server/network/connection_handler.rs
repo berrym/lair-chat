@@ -6,7 +6,7 @@
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
 use tokio_util::codec::{Framed, LinesCodec};
-use tracing::{debug, error, info, warn};
+use tracing::info;
 
 use crate::server::app::state::SharedState;
 

@@ -19,8 +19,7 @@
 //! - Admin endpoints: Lower limits for sensitive operations
 
 use axum::{
-    extract::{ConnectInfo, Request, State},
-    http::StatusCode,
+    extract::{ConnectInfo, Request},
     middleware::Next,
     response::Response,
 };
@@ -30,10 +29,10 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
-use tower::{Layer, Service};
+
 use tracing::{debug, warn};
 
-use crate::server::api::{middleware::UserContext, models::common::ApiError, ApiState};
+use crate::server::api::{middleware::UserContext, models::common::ApiError};
 
 /// Rate limiter configuration
 #[derive(Debug, Clone)]

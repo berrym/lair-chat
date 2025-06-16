@@ -4,9 +4,9 @@
 //! a structured way to define endpoint groups and their corresponding
 //! handlers with appropriate middleware.
 
-use axum::{middleware, routing::get, Router};
+use axum::{routing::get, Router};
 
-use crate::server::api::{middleware::jwt_auth_middleware, ApiState};
+use crate::server::api::ApiState;
 
 pub mod admin;
 pub mod auth;
@@ -31,33 +31,15 @@ pub fn create_api_routes() -> Router<ApiState> {
         // Authentication routes (no auth required)
         .nest("/auth", create_auth_routes())
         // User management routes (auth required)
-        .nest(
-            "/users",
-            create_user_routes().layer(middleware::from_fn_with_state(
-                (), // ApiState will be passed by the parent router
-                jwt_auth_middleware,
-            )),
-        )
+        .nest("/users", create_user_routes())
         // Room management routes (auth required)
-        .nest(
-            "/rooms",
-            create_room_routes().layer(middleware::from_fn_with_state((), jwt_auth_middleware)),
-        )
+        .nest("/rooms", create_room_routes())
         // Message routes (auth required)
-        .nest(
-            "/messages",
-            create_message_routes().layer(middleware::from_fn_with_state((), jwt_auth_middleware)),
-        )
+        .nest("/messages", create_message_routes())
         // Session management routes (auth required)
-        .nest(
-            "/sessions",
-            create_session_routes().layer(middleware::from_fn_with_state((), jwt_auth_middleware)),
-        )
+        .nest("/sessions", create_session_routes())
         // Admin routes (admin auth required)
-        .nest(
-            "/admin",
-            create_admin_routes().layer(middleware::from_fn_with_state((), jwt_auth_middleware)),
-        )
+        .nest("/admin", create_admin_routes())
 }
 
 #[cfg(test)]

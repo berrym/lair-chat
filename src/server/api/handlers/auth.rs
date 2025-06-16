@@ -8,17 +8,15 @@
 use axum::{extract::State, http::StatusCode, response::Json, Extension};
 use chrono::{Duration, Utc};
 use tracing::{debug, error, info, warn};
-use utoipa::ToSchema;
 use uuid::Uuid;
-use validator::Validate;
 
 use crate::server::{
     api::{
-        handlers::{auth_helpers, responses, validation},
+        handlers::{auth_helpers, validation},
         middleware::UserContext,
         models::{
             auth::*,
-            common::{ApiError, ApiResult, EmptyResponse, SuccessResponse},
+            common::{ApiError, ApiResult, EmptyResponse},
         },
         ApiState,
     },
@@ -367,7 +365,7 @@ pub async fn login(
                 .display_name
                 .clone()
                 .unwrap_or_else(|| user.username.clone()),
-            role: convert_user_role(user.role.clone()),
+            role: convert_user_role(&user.role),
             status: if user.is_active {
                 UserStatus::Active
             } else {
@@ -452,7 +450,7 @@ pub async fn refresh(
     let session = state
         .storage
         .sessions()
-        .get_session(&session_id)
+        .get_session(&session_id.to_string())
         .await
         .map_err(|e| {
             error!("Failed to get session for token refresh: {}", e);
@@ -468,7 +466,7 @@ pub async fn refresh(
         return Err(ApiError::auth_error("Session is no longer active"));
     }
 
-    if session.expires_at < Utc::now() {
+    if session.expires_at < Utc::now().timestamp() as u64 {
         warn!("Token refresh failed: session has expired");
         return Err(ApiError::auth_error("Session has expired"));
     }
@@ -477,7 +475,7 @@ pub async fn refresh(
     let user = state
         .storage
         .users()
-        .get_user(&user_id)
+        .get_user_by_id(&user_id.to_string())
         .await
         .map_err(|e| {
             error!("Failed to get user for token refresh: {}", e);
@@ -496,7 +494,7 @@ pub async fn refresh(
 
     // Update session activity
     let mut updated_session = session;
-    updated_session.last_activity = Utc::now();
+    updated_session.last_activity = Utc::now().timestamp() as u64;
 
     state
         .storage
@@ -511,7 +509,7 @@ pub async fn refresh(
 
     // Generate new access token
     let access_token = auth_helpers::generate_access_token(
-        user.id,
+        Uuid::parse_str(&user.id).map_err(|_| ApiError::internal_error("Invalid user ID"))?,
         user.username,
         convert_user_role(&user.role),
         session_id,
@@ -521,7 +519,7 @@ pub async fn refresh(
     // Optionally rotate refresh token (recommended for security)
     let new_refresh_token = if state.config.security.rotate_refresh_tokens {
         Some(auth_helpers::generate_refresh_token(
-            user.id,
+            Uuid::parse_str(&user.id).map_err(|_| ApiError::internal_error("Invalid user ID"))?,
             session_id,
             &state.jwt_secret,
         )?)
@@ -570,7 +568,7 @@ pub async fn logout(
         match state
             .storage
             .sessions()
-            .deactivate_user_sessions(&user_context.user_id)
+            .deactivate_user_sessions(&user_context.user_id.to_string())
             .await
         {
             Ok(count) => {
@@ -589,7 +587,7 @@ pub async fn logout(
         match state
             .storage
             .sessions()
-            .deactivate_session(&user_context.session_id)
+            .deactivate_session(&user_context.session_id.to_string())
             .await
         {
             Ok(()) => {
@@ -647,7 +645,7 @@ pub async fn change_password(
     let user = state
         .storage
         .users()
-        .get_user(&user_context.user_id)
+        .get_user_by_id(&user_context.user_id.to_string())
         .await
         .map_err(|e| {
             error!("Failed to get user for password change: {}", e);
@@ -670,7 +668,7 @@ pub async fn change_password(
     // Update user password
     let mut updated_user = user;
     updated_user.password_hash = new_password_hash;
-    updated_user.updated_at = Utc::now();
+    updated_user.updated_at = Utc::now().timestamp() as u64;
 
     state
         .storage
@@ -758,13 +756,13 @@ mod tests {
     }
 
     #[test]
-    fn test_user_role_conversion() {
+    fn test_user_role_conversion_additional() {
         assert!(matches!(
-            convert_user_role(StorageUserRole::Admin),
+            convert_user_role(&StorageUserRole::Admin),
             UserRole::Admin
         ));
         assert!(matches!(
-            convert_user_role(StorageUserRole::User),
+            convert_user_role(&StorageUserRole::User),
             UserRole::User
         ));
     }

@@ -26,14 +26,12 @@
 
 use axum::{
     extract::{Request, State},
-    http::{header, HeaderMap, StatusCode},
+    http::header,
     middleware::Next,
     response::Response,
 };
 use chrono::Utc;
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
-use std::sync::Arc;
-use tower::{Layer, Service};
 use tracing::{debug, warn};
 use uuid::Uuid;
 
@@ -133,14 +131,14 @@ pub async fn jwt_auth_middleware(
     match state
         .storage
         .sessions()
-        .get_session(&user_context.session_id)
+        .get_session(&user_context.session_id.to_string())
         .await
     {
         Ok(Some(session)) => {
             if !session.is_active {
                 return Err(ApiError::auth_error("Session is no longer active"));
             }
-            if session.expires_at < Utc::now() {
+            if session.expires_at < Utc::now().timestamp() as u64 {
                 return Err(ApiError::auth_error("Session has expired"));
             }
         }
@@ -180,10 +178,12 @@ pub async fn optional_jwt_auth_middleware(
                         if let Ok(Some(session)) = state
                             .storage
                             .sessions()
-                            .get_session(&user_context.session_id)
+                            .get_session(&user_context.session_id.to_string())
                             .await
                         {
-                            if session.is_active && session.expires_at >= Utc::now() {
+                            if session.is_active
+                                && session.expires_at >= Utc::now().timestamp() as u64
+                            {
                                 request.extensions_mut().insert(user_context);
                             }
                         }
@@ -203,7 +203,7 @@ pub async fn optional_jwt_auth_middleware(
 }
 
 /// Admin-only authorization middleware
-pub async fn admin_auth_middleware(mut request: Request, next: Next) -> Result<Response, ApiError> {
+pub async fn admin_auth_middleware(request: Request, next: Next) -> Result<Response, ApiError> {
     let user_context = request
         .extensions()
         .get::<UserContext>()
@@ -219,10 +219,7 @@ pub async fn admin_auth_middleware(mut request: Request, next: Next) -> Result<R
 }
 
 /// Moderator or admin authorization middleware
-pub async fn moderator_auth_middleware(
-    mut request: Request,
-    next: Next,
-) -> Result<Response, ApiError> {
+pub async fn moderator_auth_middleware(request: Request, next: Next) -> Result<Response, ApiError> {
     let user_context = request
         .extensions()
         .get::<UserContext>()
@@ -273,7 +270,7 @@ async fn validate_jwt_token(token: &str, state: &ApiState) -> Result<UserContext
     let user = state
         .storage
         .users()
-        .get_user(&user_id)
+        .get_user_by_id(&user_id.to_string())
         .await
         .map_err(|e| {
             warn!("Failed to get user for token validation: {}", e);

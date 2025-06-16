@@ -5,7 +5,6 @@
 //! secure and performant defaults for production use.
 
 use super::*;
-use std::time::Duration;
 
 impl Default for ServerConfig {
     fn default() -> Self {

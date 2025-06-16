@@ -2,9 +2,10 @@
 
 [![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.6.3-green.svg)](docs/releases/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-0.6.4-green.svg)](docs/releases/CHANGELOG.md)
+[![Sprint](https://img.shields.io/badge/Sprint%204-Complete-success.svg)](docs/sprints/sprint-4-completion.md)
 
-A secure, terminal-based chat application built with Rust, featuring end-to-end encryption, direct messaging, and real-time communication.
+A secure, terminal-based chat application built with Rust, featuring end-to-end encryption, direct messaging, real-time communication, and comprehensive system monitoring.
 
 ## 🚀 Quick Start
 
@@ -30,13 +31,19 @@ cargo build --release
 - 🔔 **Unread message tracking** with visual indicators
 - ⚡ **Real-time messaging** with efficient transport layer
 - 🎨 **Customizable styling** and font support
+- 🏥 **System health monitoring** with real-time metrics
+- 📋 **Comprehensive audit logging** for all user actions
+- 🛡️ **Admin dashboard** with complete system oversight
 
 ## 📚 Documentation
 
 | Topic | Description |
 |-------|-------------|
 | [**User Guide**](docs/guides/USER_GUIDE.md) | Complete guide for end users |
+| [**Project Progress**](docs/PROJECT_PROGRESS.md) | Current status and sprint tracking |
 | [**Project Roadmap**](docs/ROADMAP.md) | Strategic direction and future plans |
+| [**Sprint 4 Report**](docs/sprints/sprint-4-completion.md) | Latest sprint completion details |
+| [**Sprint 5 Plan**](docs/sprints/sprint-5-plan.md) | Upcoming sprint planning |
 | [**API Documentation**](docs/api/README.md) | Comprehensive API reference |
 | [**Development Guide**](docs/development/DEVELOPMENT_GUIDE.md) | Setup and contribution guide |
 | [**Architecture**](docs/architecture/README.md) | System design and components |

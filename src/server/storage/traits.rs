@@ -5,6 +5,8 @@
 //! room management, and session handling.
 
 use super::{models::*, OrderBy, Pagination, StorageResult};
+use crate::server::api::models::admin::{AdminAction, AuditLogEntry};
+use crate::server::api::models::{AdminUserInfo, UserStatus};
 use async_trait::async_trait;
 
 /// User storage operations
@@ -88,6 +90,15 @@ pub trait UserStorage: Send + Sync {
 
     /// Get user statistics
     async fn get_user_stats(&self) -> StorageResult<UserStats>;
+
+    /// Get admin user information with activity stats
+    async fn get_admin_user_info(&self, user_id: &str) -> StorageResult<Option<AdminUserInfo>>;
+
+    /// List users for admin management with pagination and filtering
+    async fn list_admin_users(&self, pagination: Pagination) -> StorageResult<Vec<AdminUserInfo>>;
+
+    /// Update user status (admin operation)
+    async fn update_user_status(&self, user_id: &str, status: UserStatus) -> StorageResult<()>;
 }
 
 /// Message storage operations
@@ -208,6 +219,9 @@ pub trait MessageStorage: Send + Sync {
 
     /// Get message statistics
     async fn get_message_stats(&self) -> StorageResult<MessageStats>;
+
+    /// Count messages since a specific timestamp
+    async fn count_messages_since(&self, timestamp: u64) -> StorageResult<u64>;
 }
 
 /// Room storage operations
@@ -445,4 +459,82 @@ pub struct SessionStats {
     pub sessions_this_week: u64,
     pub sessions_by_client: std::collections::HashMap<String, u64>,
     pub average_session_duration: f64,
+}
+
+/// Audit log storage operations
+#[async_trait]
+pub trait AuditLogStorage: Send + Sync {
+    /// Create a new audit log entry
+    async fn create_audit_log(&self, entry: AuditLogEntry) -> StorageResult<AuditLogEntry>;
+
+    /// Get audit log entries with pagination
+    async fn get_audit_logs(
+        &self,
+        pagination: Pagination,
+        order_by: Option<OrderBy>,
+    ) -> StorageResult<Vec<AuditLogEntry>>;
+
+    /// Get audit logs for a specific admin user
+    async fn get_audit_logs_by_admin(
+        &self,
+        admin_user_id: &str,
+        pagination: Pagination,
+    ) -> StorageResult<Vec<AuditLogEntry>>;
+
+    /// Get audit logs for a specific target
+    async fn get_audit_logs_by_target(
+        &self,
+        target_id: &str,
+        target_type: &str,
+        pagination: Pagination,
+    ) -> StorageResult<Vec<AuditLogEntry>>;
+
+    /// Get audit logs by action type
+    async fn get_audit_logs_by_action(
+        &self,
+        action: AdminAction,
+        pagination: Pagination,
+    ) -> StorageResult<Vec<AuditLogEntry>>;
+
+    /// Get audit logs in date range
+    async fn get_audit_logs_in_range(
+        &self,
+        start_time: chrono::DateTime<chrono::Utc>,
+        end_time: chrono::DateTime<chrono::Utc>,
+        pagination: Pagination,
+    ) -> StorageResult<Vec<AuditLogEntry>>;
+
+    /// Search audit logs by description
+    async fn search_audit_logs(
+        &self,
+        query: &str,
+        pagination: Pagination,
+    ) -> StorageResult<Vec<AuditLogEntry>>;
+
+    /// Count total audit log entries
+    async fn count_audit_logs(&self) -> StorageResult<u64>;
+
+    /// Count audit logs by admin user
+    async fn count_audit_logs_by_admin(&self, admin_user_id: &str) -> StorageResult<u64>;
+
+    /// Delete old audit logs (for retention policy)
+    async fn delete_old_audit_logs(
+        &self,
+        before_timestamp: chrono::DateTime<chrono::Utc>,
+    ) -> StorageResult<u64>;
+
+    /// Get audit log statistics
+    async fn get_audit_log_stats(&self) -> StorageResult<AuditLogStats>;
+}
+
+/// Audit log statistics
+#[derive(Debug, Clone)]
+pub struct AuditLogStats {
+    pub total_entries: u64,
+    pub entries_today: u64,
+    pub entries_this_week: u64,
+    pub entries_this_month: u64,
+    pub entries_by_action: std::collections::HashMap<String, u64>,
+    pub entries_by_admin: std::collections::HashMap<String, u64>,
+    pub most_active_admins: Vec<(String, u64)>,
 }

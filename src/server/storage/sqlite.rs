@@ -7,6 +7,10 @@ use super::{
     models::*, traits::*, DatabaseConfig, OrderBy, OrderDirection, Pagination, StorageError,
     StorageResult,
 };
+use crate::server::api::models::{
+    admin::{AdminAction, AuditLogEntry},
+    AdminUserInfo, UserRole as ApiUserRole, UserStatus,
+};
 use async_trait::async_trait;
 use serde_json;
 use sqlx::{
@@ -574,6 +578,190 @@ impl UserStorage for SqliteStorage {
             new_users_this_month: new_users_this_month as u64,
             users_by_role,
         })
+    }
+
+    async fn get_admin_user_info(&self, user_id: &str) -> StorageResult<Option<AdminUserInfo>> {
+        let query = "
+            SELECT u.id, u.username, u.email, u.profile, u.role, u.status, u.created_at, u.last_seen,
+                   COALESCE(m.message_count, 0) as messages_sent,
+                   COALESCE(s.session_count, 0) as sessions_created,
+                   COALESCE(s.active_sessions, 0) as active_sessions
+            FROM users u
+            LEFT JOIN (
+                SELECT user_id, COUNT(*) as message_count
+                FROM messages
+                WHERE is_deleted = 0
+                GROUP BY user_id
+            ) m ON u.id = m.user_id
+            LEFT JOIN (
+                SELECT user_id,
+                       COUNT(*) as session_count,
+                       COUNT(CASE WHEN is_active = 1 THEN 1 END) as active_sessions
+                FROM sessions
+                GROUP BY user_id
+            ) s ON u.id = s.user_id
+            WHERE u.id = ?";
+
+        let row = sqlx::query(query)
+            .bind(user_id)
+            .fetch_optional(&self.pool)
+            .await?;
+
+        if let Some(row) = row {
+            let profile_json: String = row.get("profile");
+            let profile: UserProfile = serde_json::from_str(&profile_json).map_err(|e| {
+                StorageError::SerializationError {
+                    message: e.to_string(),
+                }
+            })?;
+
+            let role_str: String = row.get("role");
+            let api_role = match role_str.as_str() {
+                "admin" => ApiUserRole::Admin,
+                "user" => ApiUserRole::User,
+                _ => ApiUserRole::User,
+            };
+
+            let status_str: String = row.get("status");
+            let status = match status_str.as_str() {
+                "active" => UserStatus::Active,
+                "suspended" => UserStatus::Suspended,
+                "banned" => UserStatus::Banned,
+                "pending_verification" => UserStatus::PendingVerification,
+                "deactivated" => UserStatus::Deactivated,
+                _ => UserStatus::Active,
+            };
+
+            let admin_info = AdminUserInfo {
+                id: uuid::Uuid::parse_str(user_id).map_err(|e| StorageError::ValidationError {
+                    field: "user_id".to_string(),
+                    message: format!("Invalid UUID: {}", e),
+                })?,
+                username: row.get("username"),
+                email: row.get("email"),
+                display_name: profile
+                    .display_name
+                    .unwrap_or_else(|| row.get::<String, _>("username")),
+                role: api_role,
+                status,
+                created_at: chrono::DateTime::from_timestamp(row.get::<i64, _>("created_at"), 0)
+                    .unwrap_or_default(),
+                last_login: None, // TODO: Track last login separately
+                last_activity: row
+                    .get::<Option<i64>, _>("last_seen")
+                    .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0))
+                    .map(|dt| dt),
+                messages_sent: row.get::<i64, _>("messages_sent") as u64,
+                sessions_created: row.get::<i64, _>("sessions_created") as u64,
+                active_sessions: row.get::<i64, _>("active_sessions") as u32,
+            };
+
+            Ok(Some(admin_info))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn list_admin_users(&self, pagination: Pagination) -> StorageResult<Vec<AdminUserInfo>> {
+        let limit_offset = self.pagination_to_sql(&pagination);
+
+        let query = format!("
+            SELECT u.id, u.username, u.email, u.profile, u.role, u.status, u.created_at, u.last_seen,
+                   COALESCE(m.message_count, 0) as messages_sent,
+                   COALESCE(s.session_count, 0) as sessions_created,
+                   COALESCE(s.active_sessions, 0) as active_sessions
+            FROM users u
+            LEFT JOIN (
+                SELECT user_id, COUNT(*) as message_count
+                FROM messages
+                WHERE is_deleted = 0
+                GROUP BY user_id
+            ) m ON u.id = m.user_id
+            LEFT JOIN (
+                SELECT user_id,
+                       COUNT(*) as session_count,
+                       COUNT(CASE WHEN is_active = 1 THEN 1 END) as active_sessions
+                FROM sessions
+                GROUP BY user_id
+            ) s ON u.id = s.user_id
+            ORDER BY u.created_at DESC
+            {}", limit_offset);
+
+        let rows = sqlx::query(&query).fetch_all(&self.pool).await?;
+
+        let mut admin_users = Vec::new();
+        for row in rows {
+            let profile_json: String = row.get("profile");
+            let profile: UserProfile = serde_json::from_str(&profile_json).map_err(|e| {
+                StorageError::SerializationError {
+                    message: e.to_string(),
+                }
+            })?;
+
+            let role_str: String = row.get("role");
+            let api_role = match role_str.as_str() {
+                "admin" => ApiUserRole::Admin,
+                "user" => ApiUserRole::User,
+                _ => ApiUserRole::User,
+            };
+
+            let status_str: String = row.get("status");
+            let status = match status_str.as_str() {
+                "active" => UserStatus::Active,
+                "suspended" => UserStatus::Suspended,
+                "banned" => UserStatus::Banned,
+                "pending_verification" => UserStatus::PendingVerification,
+                "deactivated" => UserStatus::Deactivated,
+                _ => UserStatus::Active,
+            };
+
+            let user_id: String = row.get("id");
+            let admin_info = AdminUserInfo {
+                id: uuid::Uuid::parse_str(&user_id).map_err(|e| StorageError::ValidationError {
+                    field: "user_id".to_string(),
+                    message: format!("Invalid UUID: {}", e),
+                })?,
+                username: row.get("username"),
+                email: row.get("email"),
+                display_name: profile
+                    .display_name
+                    .unwrap_or_else(|| row.get::<String, _>("username")),
+                role: api_role,
+                status,
+                created_at: chrono::DateTime::from_timestamp(row.get::<i64, _>("created_at"), 0)
+                    .unwrap_or_default(),
+                last_login: None, // TODO: Track last login separately
+                last_activity: row
+                    .get::<Option<i64>, _>("last_seen")
+                    .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0))
+                    .map(|dt| dt),
+                messages_sent: row.get::<i64, _>("messages_sent") as u64,
+                sessions_created: row.get::<i64, _>("sessions_created") as u64,
+                active_sessions: row.get::<i64, _>("active_sessions") as u32,
+            };
+
+            admin_users.push(admin_info);
+        }
+
+        Ok(admin_users)
+    }
+
+    async fn update_user_status(&self, user_id: &str, status: UserStatus) -> StorageResult<()> {
+        let status_str = match status {
+            UserStatus::Active => "active",
+            UserStatus::Suspended => "suspended",
+            UserStatus::Banned => "banned",
+            UserStatus::PendingVerification => "pending_verification",
+            UserStatus::Deactivated => "deactivated",
+        };
+
+        sqlx::query("UPDATE users SET status = ? WHERE id = ?")
+            .bind(status_str)
+            .bind(user_id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
     }
 }
 
@@ -1423,6 +1611,17 @@ impl MessageStorage for SqliteStorage {
             most_active_rooms: Vec::new(),
             most_active_users: Vec::new(),
         })
+    }
+
+    async fn count_messages_since(&self, timestamp: u64) -> StorageResult<u64> {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM messages WHERE timestamp >= ? AND is_deleted = 0",
+        )
+        .bind(timestamp as i64)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(count as u64)
     }
 }
 
@@ -2357,6 +2556,433 @@ impl SessionStorage for SqliteStorage {
             sessions_this_week: sessions_this_week as u64,
             sessions_by_client,
             average_session_duration: avg_duration.unwrap_or(0.0),
+        })
+    }
+}
+
+#[async_trait]
+impl AuditLogStorage for SqliteStorage {
+    async fn create_audit_log(&self, entry: AuditLogEntry) -> StorageResult<AuditLogEntry> {
+        let metadata_json = serde_json::to_string(&entry.metadata).map_err(|e| {
+            StorageError::SerializationError {
+                message: e.to_string(),
+            }
+        })?;
+
+        let action_str = match entry.action {
+            AdminAction::UserCreated => "user_created",
+            AdminAction::UserUpdated => "user_updated",
+            AdminAction::UserSuspended => "user_suspended",
+            AdminAction::UserBanned => "user_banned",
+            AdminAction::UserDeleted => "user_deleted",
+            AdminAction::UserRoleChanged => "user_role_changed",
+            AdminAction::RoomCreated => "room_created",
+            AdminAction::RoomUpdated => "room_updated",
+            AdminAction::RoomDeleted => "room_deleted",
+            AdminAction::ServerConfigUpdated => "server_config_updated",
+            AdminAction::SystemMaintenance => "system_maintenance",
+            AdminAction::DatabaseBackup => "database_backup",
+            AdminAction::SecurityAlert => "security_alert",
+            AdminAction::AuditLogAccessed => "audit_log_accessed",
+        };
+
+        sqlx::query(
+            r#"
+            INSERT INTO audit_logs (
+                id, admin_user_id, action, target_id, target_type,
+                description, ip_address, user_agent, timestamp, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&entry.id.to_string())
+        .bind(&entry.admin_user_id.to_string())
+        .bind(action_str)
+        .bind(entry.target_id.as_ref().map(|id| id.to_string()))
+        .bind(&entry.target_type)
+        .bind(&entry.description)
+        .bind(&entry.ip_address)
+        .bind(&entry.user_agent)
+        .bind(entry.timestamp.timestamp())
+        .bind(&metadata_json)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(entry)
+    }
+
+    async fn get_audit_logs(
+        &self,
+        pagination: Pagination,
+        order_by: Option<OrderBy>,
+    ) -> StorageResult<Vec<AuditLogEntry>> {
+        let order_clause = match order_by {
+            Some(OrderBy { field, direction }) => {
+                let dir = match direction {
+                    OrderDirection::Ascending => "ASC",
+                    OrderDirection::Descending => "DESC",
+                };
+                format!("ORDER BY {} {}", field, dir)
+            }
+            None => "ORDER BY timestamp DESC".to_string(),
+        };
+
+        let query = format!(
+            r#"
+            SELECT id, admin_user_id, action, target_id, target_type,
+                   description, ip_address, user_agent, timestamp, metadata
+            FROM audit_logs
+            {}
+            LIMIT ? OFFSET ?
+            "#,
+            order_clause
+        );
+
+        let rows = sqlx::query(&query)
+            .bind(pagination.limit as i64)
+            .bind(pagination.offset as i64)
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut entries = Vec::new();
+        for row in rows {
+            entries.push(self.row_to_audit_log_entry(row)?);
+        }
+
+        Ok(entries)
+    }
+
+    async fn get_audit_logs_by_admin(
+        &self,
+        admin_user_id: &str,
+        pagination: Pagination,
+    ) -> StorageResult<Vec<AuditLogEntry>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, admin_user_id, action, target_id, target_type,
+                   description, ip_address, user_agent, timestamp, metadata
+            FROM audit_logs
+            WHERE admin_user_id = ?
+            ORDER BY timestamp DESC
+            LIMIT ? OFFSET ?
+            "#,
+        )
+        .bind(admin_user_id)
+        .bind(pagination.limit as i64)
+        .bind(pagination.offset as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut entries = Vec::new();
+        for row in rows {
+            entries.push(self.row_to_audit_log_entry(row)?);
+        }
+
+        Ok(entries)
+    }
+
+    async fn get_audit_logs_by_target(
+        &self,
+        target_id: &str,
+        target_type: &str,
+        pagination: Pagination,
+    ) -> StorageResult<Vec<AuditLogEntry>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, admin_user_id, action, target_id, target_type,
+                   description, ip_address, user_agent, timestamp, metadata
+            FROM audit_logs
+            WHERE target_id = ? AND target_type = ?
+            ORDER BY timestamp DESC
+            LIMIT ? OFFSET ?
+            "#,
+        )
+        .bind(target_id)
+        .bind(target_type)
+        .bind(pagination.limit as i64)
+        .bind(pagination.offset as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut entries = Vec::new();
+        for row in rows {
+            entries.push(self.row_to_audit_log_entry(row)?);
+        }
+
+        Ok(entries)
+    }
+
+    async fn get_audit_logs_by_action(
+        &self,
+        action: AdminAction,
+        pagination: Pagination,
+    ) -> StorageResult<Vec<AuditLogEntry>> {
+        let action_str = match action {
+            AdminAction::UserCreated => "user_created",
+            AdminAction::UserUpdated => "user_updated",
+            AdminAction::UserSuspended => "user_suspended",
+            AdminAction::UserBanned => "user_banned",
+            AdminAction::UserDeleted => "user_deleted",
+            AdminAction::UserRoleChanged => "user_role_changed",
+            AdminAction::RoomCreated => "room_created",
+            AdminAction::RoomUpdated => "room_updated",
+            AdminAction::RoomDeleted => "room_deleted",
+            AdminAction::ServerConfigUpdated => "server_config_updated",
+            AdminAction::SystemMaintenance => "system_maintenance",
+            AdminAction::DatabaseBackup => "database_backup",
+            AdminAction::SecurityAlert => "security_alert",
+            AdminAction::AuditLogAccessed => "audit_log_accessed",
+        };
+
+        let rows = sqlx::query(
+            r#"
+            SELECT id, admin_user_id, action, target_id, target_type,
+                   description, ip_address, user_agent, timestamp, metadata
+            FROM audit_logs
+            WHERE action = ?
+            ORDER BY timestamp DESC
+            LIMIT ? OFFSET ?
+            "#,
+        )
+        .bind(action_str)
+        .bind(pagination.limit as i64)
+        .bind(pagination.offset as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut entries = Vec::new();
+        for row in rows {
+            entries.push(self.row_to_audit_log_entry(row)?);
+        }
+
+        Ok(entries)
+    }
+
+    async fn get_audit_logs_in_range(
+        &self,
+        start_time: chrono::DateTime<chrono::Utc>,
+        end_time: chrono::DateTime<chrono::Utc>,
+        pagination: Pagination,
+    ) -> StorageResult<Vec<AuditLogEntry>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, admin_user_id, action, target_id, target_type,
+                   description, ip_address, user_agent, timestamp, metadata
+            FROM audit_logs
+            WHERE timestamp >= ? AND timestamp <= ?
+            ORDER BY timestamp DESC
+            LIMIT ? OFFSET ?
+            "#,
+        )
+        .bind(start_time.timestamp())
+        .bind(end_time.timestamp())
+        .bind(pagination.limit as i64)
+        .bind(pagination.offset as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut entries = Vec::new();
+        for row in rows {
+            entries.push(self.row_to_audit_log_entry(row)?);
+        }
+
+        Ok(entries)
+    }
+
+    async fn search_audit_logs(
+        &self,
+        query: &str,
+        pagination: Pagination,
+    ) -> StorageResult<Vec<AuditLogEntry>> {
+        let search_term = format!("%{}%", query);
+        let rows = sqlx::query(
+            r#"
+            SELECT id, admin_user_id, action, target_id, target_type,
+                   description, ip_address, user_agent, timestamp, metadata
+            FROM audit_logs
+            WHERE description LIKE ? OR target_type LIKE ?
+            ORDER BY timestamp DESC
+            LIMIT ? OFFSET ?
+            "#,
+        )
+        .bind(&search_term)
+        .bind(&search_term)
+        .bind(pagination.limit as i64)
+        .bind(pagination.offset as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut entries = Vec::new();
+        for row in rows {
+            entries.push(self.row_to_audit_log_entry(row)?);
+        }
+
+        Ok(entries)
+    }
+
+    async fn count_audit_logs(&self) -> StorageResult<u64> {
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audit_logs")
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(count as u64)
+    }
+
+    async fn count_audit_logs_by_admin(&self, admin_user_id: &str) -> StorageResult<u64> {
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM audit_logs WHERE admin_user_id = ?")
+                .bind(admin_user_id)
+                .fetch_one(&self.pool)
+                .await?;
+        Ok(count as u64)
+    }
+
+    async fn delete_old_audit_logs(
+        &self,
+        before_timestamp: chrono::DateTime<chrono::Utc>,
+    ) -> StorageResult<u64> {
+        let result = sqlx::query("DELETE FROM audit_logs WHERE timestamp < ?")
+            .bind(before_timestamp.timestamp())
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected())
+    }
+
+    async fn get_audit_log_stats(&self) -> StorageResult<AuditLogStats> {
+        let total_entries: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audit_logs")
+            .fetch_one(&self.pool)
+            .await?;
+
+        let now = chrono::Utc::now().timestamp();
+        let today_start = now - (24 * 60 * 60);
+        let week_start = now - (7 * 24 * 60 * 60);
+        let month_start = now - (30 * 24 * 60 * 60);
+
+        let entries_today: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM audit_logs WHERE timestamp >= ?")
+                .bind(today_start)
+                .fetch_one(&self.pool)
+                .await?;
+
+        let entries_this_week: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM audit_logs WHERE timestamp >= ?")
+                .bind(week_start)
+                .fetch_one(&self.pool)
+                .await?;
+
+        let entries_this_month: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM audit_logs WHERE timestamp >= ?")
+                .bind(month_start)
+                .fetch_one(&self.pool)
+                .await?;
+
+        // Get entries by action
+        let action_rows =
+            sqlx::query("SELECT action, COUNT(*) as count FROM audit_logs GROUP BY action")
+                .fetch_all(&self.pool)
+                .await?;
+
+        let mut entries_by_action = HashMap::new();
+        for row in action_rows {
+            let action: String = row.get("action");
+            let count: i64 = row.get("count");
+            entries_by_action.insert(action, count as u64);
+        }
+
+        // Get entries by admin
+        let admin_rows = sqlx::query(
+            "SELECT admin_user_id, COUNT(*) as count FROM audit_logs GROUP BY admin_user_id",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut entries_by_admin = HashMap::new();
+        let mut most_active_admins = Vec::new();
+        for row in admin_rows {
+            let admin_id: String = row.get("admin_user_id");
+            let count: i64 = row.get("count");
+            entries_by_admin.insert(admin_id.clone(), count as u64);
+            most_active_admins.push((admin_id, count as u64));
+        }
+
+        // Sort most active admins by count
+        most_active_admins.sort_by(|a, b| b.1.cmp(&a.1));
+        most_active_admins.truncate(10); // Top 10
+
+        Ok(AuditLogStats {
+            total_entries: total_entries as u64,
+            entries_today: entries_today as u64,
+            entries_this_week: entries_this_week as u64,
+            entries_this_month: entries_this_month as u64,
+            entries_by_action,
+            entries_by_admin,
+            most_active_admins,
+        })
+    }
+}
+
+impl SqliteStorage {
+    /// Convert a database row to an AuditLogEntry struct
+    fn row_to_audit_log_entry(&self, row: sqlx::sqlite::SqliteRow) -> StorageResult<AuditLogEntry> {
+        let metadata_json: String = row.get("metadata");
+        let metadata: serde_json::Value =
+            serde_json::from_str(&metadata_json).map_err(|e| StorageError::SerializationError {
+                message: e.to_string(),
+            })?;
+
+        let action_str: String = row.get("action");
+        let action = match action_str.as_str() {
+            "user_created" => AdminAction::UserCreated,
+            "user_updated" => AdminAction::UserUpdated,
+            "user_suspended" => AdminAction::UserSuspended,
+            "user_banned" => AdminAction::UserBanned,
+            "user_deleted" => AdminAction::UserDeleted,
+            "user_role_changed" => AdminAction::UserRoleChanged,
+            "room_created" => AdminAction::RoomCreated,
+            "room_updated" => AdminAction::RoomUpdated,
+            "room_deleted" => AdminAction::RoomDeleted,
+            "server_config_updated" => AdminAction::ServerConfigUpdated,
+            "system_maintenance" => AdminAction::SystemMaintenance,
+            "database_backup" => AdminAction::DatabaseBackup,
+            "security_alert" => AdminAction::SecurityAlert,
+            "audit_log_accessed" => AdminAction::AuditLogAccessed,
+            _ => {
+                return Err(StorageError::SerializationError {
+                    message: format!("Unknown admin action: {}", action_str),
+                })
+            }
+        };
+
+        let target_id_str: Option<String> = row.get("target_id");
+        let target_id = target_id_str
+            .as_ref()
+            .and_then(|s| uuid::Uuid::parse_str(s).ok());
+
+        let admin_user_id_str: String = row.get("admin_user_id");
+        let admin_user_id = uuid::Uuid::parse_str(&admin_user_id_str).map_err(|e| {
+            StorageError::SerializationError {
+                message: format!("Invalid admin user ID: {}", e),
+            }
+        })?;
+
+        let id_str: String = row.get("id");
+        let id = uuid::Uuid::parse_str(&id_str).map_err(|e| StorageError::SerializationError {
+            message: format!("Invalid audit log ID: {}", e),
+        })?;
+
+        let timestamp: i64 = row.get("timestamp");
+        let timestamp =
+            chrono::DateTime::from_timestamp(timestamp, 0).unwrap_or_else(chrono::Utc::now);
+
+        Ok(AuditLogEntry {
+            id,
+            admin_user_id,
+            action,
+            target_id,
+            target_type: row.get("target_type"),
+            description: row.get("description"),
+            ip_address: row.get("ip_address"),
+            user_agent: row.get("user_agent"),
+            timestamp,
+            metadata,
         })
     }
 }

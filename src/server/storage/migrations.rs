@@ -214,28 +214,28 @@ CREATE INDEX idx_read_receipts_user_id ON message_read_receipts(user_id);
 CREATE INDEX idx_read_receipts_timestamp ON message_read_receipts(timestamp);
 "#;
 
-/// Migration 010: Add audit log table
+/// Migration 010: Add audit logs table for admin actions
 pub const MIGRATION_010_AUDIT_LOG: &str = r#"
-CREATE TABLE audit_log (
+CREATE TABLE audit_logs (
     id TEXT PRIMARY KEY,
-    event_type TEXT NOT NULL,
-    user_id TEXT,
-    target_type TEXT,
-    target_id TEXT,
+    admin_user_id TEXT NOT NULL,
     action TEXT NOT NULL,
-    details TEXT NOT NULL DEFAULT '{}',
+    target_id TEXT,
+    target_type TEXT NOT NULL,
+    description TEXT NOT NULL,
     ip_address TEXT,
     user_agent TEXT,
     timestamp INTEGER NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+    metadata TEXT NOT NULL DEFAULT '{}',
+    FOREIGN KEY (admin_user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_audit_log_event_type ON audit_log(event_type);
-CREATE INDEX idx_audit_log_user_id ON audit_log(user_id);
-CREATE INDEX idx_audit_log_target_type ON audit_log(target_type);
-CREATE INDEX idx_audit_log_target_id ON audit_log(target_id);
-CREATE INDEX idx_audit_log_action ON audit_log(action);
-CREATE INDEX idx_audit_log_timestamp ON audit_log(timestamp);
+CREATE INDEX idx_audit_logs_admin_user_id ON audit_logs(admin_user_id);
+CREATE INDEX idx_audit_logs_action ON audit_logs(action);
+CREATE INDEX idx_audit_logs_target_type ON audit_logs(target_type);
+CREATE INDEX idx_audit_logs_target_id ON audit_logs(target_id);
+CREATE INDEX idx_audit_logs_timestamp ON audit_logs(timestamp);
+CREATE INDEX idx_audit_logs_admin_timestamp ON audit_logs(admin_user_id, timestamp);
 "#;
 
 /// Migration 011: Add user login attempts tracking
@@ -371,7 +371,7 @@ pub fn get_all_migrations() -> Vec<(&'static str, &'static str)> {
             "009_create_read_receipts_table",
             MIGRATION_009_READ_RECEIPTS,
         ),
-        ("010_create_audit_log_table", MIGRATION_010_AUDIT_LOG),
+        ("010_create_audit_logs_table", MIGRATION_010_AUDIT_LOG),
         (
             "011_create_login_attempts_table",
             MIGRATION_011_LOGIN_ATTEMPTS,
@@ -401,7 +401,7 @@ pub fn is_migration_reversible(name: &str) -> bool {
         "007_create_file_attachments_table" => true,
         "008_create_message_reactions_table" => true,
         "009_create_read_receipts_table" => true,
-        "010_create_audit_log_table" => true,
+        "010_create_audit_logs_table" => true,
         "011_create_login_attempts_table" => true,
         "012_create_server_config_table" => true,
         "013_create_room_invites_table" => true,
@@ -419,7 +419,7 @@ pub fn get_migration_rollback(name: &str) -> Option<&'static str> {
         "013_create_room_invites_table" => Some("DROP TABLE room_invites;"),
         "012_create_server_config_table" => Some("DROP TABLE server_config;"),
         "011_create_login_attempts_table" => Some("DROP TABLE login_attempts;"),
-        "010_create_audit_log_table" => Some("DROP TABLE audit_log;"),
+        "010_create_audit_logs_table" => Some("DROP TABLE audit_logs;"),
         "009_create_read_receipts_table" => Some("DROP TABLE message_read_receipts;"),
         "008_create_message_reactions_table" => Some("DROP TABLE message_reactions;"),
         "007_create_file_attachments_table" => Some("DROP TABLE file_attachments;"),

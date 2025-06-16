@@ -18,16 +18,13 @@
 //! Errors are automatically converted to appropriate HTTP status codes
 //! and JSON error responses.
 
-use axum::{extract::State, http::StatusCode, response::Json, Extension};
+use axum::{extract::State, response::Json, Extension};
 use serde_json::Value;
 use tracing::{debug, error, info, warn};
 
 use crate::server::api::{
     middleware::UserContext,
-    models::{
-        auth::*,
-        common::{ApiError, ApiResult, EmptyResponse, SuccessResponse},
-    },
+    models::common::{ApiError, ApiResult, SuccessResponse},
     ApiState,
 };
 
@@ -236,7 +233,7 @@ pub mod auth_helpers {
     /// Generate JWT access token
     pub fn generate_access_token(
         user_id: Uuid,
-        username: String,
+        _username: String,
         role: UserRole,
         session_id: Uuid,
         jwt_secret: &str,
@@ -401,7 +398,7 @@ mod tests {
 
         let invalid_params = crate::server::api::models::PaginationParams {
             page_size: 0,
-            ..params
+            ..params.clone()
         };
         assert!(pagination::validate_pagination(&invalid_params).is_err());
 

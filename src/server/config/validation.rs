@@ -6,8 +6,7 @@
 //! and security best practices enforcement.
 
 use super::*;
-use std::net::{IpAddr, SocketAddr};
-use std::path::PathBuf;
+use std::net::IpAddr;
 use tracing::{debug, warn};
 
 /// Validate a complete server configuration

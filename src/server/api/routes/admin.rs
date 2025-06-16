@@ -31,6 +31,14 @@ pub fn create_admin_routes() -> Router<ApiState> {
         .route("/config", put(admin::update_server_config))
         // System maintenance
         .route("/maintenance", post(admin::perform_maintenance))
+        // Audit log management
+        .route("/audit", get(admin::get_audit_logs))
+        .route(
+            "/audit/by-admin/:admin_user_id",
+            get(admin::get_audit_logs_by_admin),
+        )
+        .route("/audit/search", post(admin::search_audit_logs))
+        .route("/audit/stats", get(admin::get_audit_log_stats))
         // Apply admin authorization middleware to all routes
         .layer(middleware::from_fn(admin_auth_middleware))
 }

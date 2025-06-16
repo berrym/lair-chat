@@ -81,6 +81,8 @@ pub enum HealthStatus {
     Healthy,
     /// Some components degraded but service operational
     Degraded,
+    /// Critical issues affecting service functionality
+    Critical,
     /// Service not operational
     Unhealthy,
 }
@@ -435,6 +437,61 @@ pub enum TargetAudience {
     ModeratorsAndAbove,
     /// Specific user group
     UserGroup(String),
+}
+
+/// Audit log search request
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct AuditLogSearchRequest {
+    /// Search query string
+    #[validate(length(min = 1, max = 500))]
+    pub query: String,
+
+    /// Page number (0-based)
+    #[serde(default)]
+    pub page: u32,
+
+    /// Number of items per page
+    #[validate(range(min = 1, max = 100))]
+    #[serde(default = "default_page_size")]
+    pub page_size: u32,
+
+    /// Filter by action type
+    pub action_filter: Option<AdminAction>,
+
+    /// Filter by date range start
+    pub start_date: Option<DateTime<Utc>>,
+
+    /// Filter by date range end
+    pub end_date: Option<DateTime<Utc>>,
+}
+
+fn default_page_size() -> u32 {
+    20
+}
+
+/// Audit log statistics
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct AuditLogStats {
+    /// Total number of audit log entries
+    pub total_entries: u64,
+
+    /// Entries created today
+    pub entries_today: u64,
+
+    /// Entries created this week
+    pub entries_this_week: u64,
+
+    /// Entries created this month
+    pub entries_this_month: u64,
+
+    /// Breakdown of entries by action type
+    pub entries_by_action: std::collections::HashMap<String, u64>,
+
+    /// Breakdown of entries by admin user
+    pub entries_by_admin: std::collections::HashMap<String, u64>,
+
+    /// Most active admin users (username, count)
+    pub most_active_admins: Vec<(String, u64)>,
 }
 
 #[cfg(test)]

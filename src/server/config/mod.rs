@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+
 use thiserror::Error;
 use tracing::{debug, info, warn};
 
@@ -448,7 +448,7 @@ impl Default for ConfigBuilder {
 }
 
 /// Merge two configurations, with the second taking precedence
-fn merge_configs(base: ServerConfig, overlay: ServerConfig) -> Result<ServerConfig, ConfigError> {
+fn merge_configs(_base: ServerConfig, overlay: ServerConfig) -> Result<ServerConfig, ConfigError> {
     // For now, we'll do a simple overlay merge
     // In a production implementation, you'd want more sophisticated merging logic
     Ok(overlay)
@@ -522,8 +522,8 @@ pub fn save_to_file(config: &ServerConfig, path: &Path) -> Result<(), ConfigErro
 
 /// Watch configuration file for changes and reload
 pub async fn watch_config_file<P: AsRef<Path>>(
-    path: P,
-    callback: impl Fn(ServerConfig) + Send + 'static,
+    _path: P,
+    _callback: impl Fn(ServerConfig) + Send + Sync,
 ) -> Result<(), ConfigError> {
     // Implementation would use a file watcher like `notify`
     // For now, we'll just log that watching is not implemented

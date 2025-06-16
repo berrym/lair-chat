@@ -67,7 +67,7 @@ pub async fn send_message(
         .rooms()
         .get_room_by_id(&room_id_str)
         .await
-        .map_err(|e| ApiError::internal_server_error(&format!("Failed to retrieve room: {}", e)))?
+        .map_err(|e| ApiError::internal_error(&format!("Failed to retrieve room: {}", e)))?
         .ok_or_else(|| ApiError::not_found_error("Room"))?;
 
     if !storage_room.is_active {
@@ -81,7 +81,7 @@ pub async fn send_message(
         .get_room_membership(&room_id_str, &user_id_str)
         .await
         .map_err(|e| {
-            ApiError::internal_server_error(&format!("Failed to check membership: {}", e))
+            ApiError::internal_error(&format!("Failed to check membership: {}", e))
         })?
         .ok_or_else(|| ApiError::forbidden_error("You are not a member of this room"))?;
 
@@ -200,7 +200,7 @@ pub async fn get_messages(
         .rooms()
         .get_room_by_id(&room_id_str)
         .await
-        .map_err(|e| ApiError::internal_server_error(&format!("Failed to retrieve room: {}", e)))?
+        .map_err(|e| ApiError::internal_error(&format!("Failed to retrieve room: {}", e)))?
         .ok_or_else(|| ApiError::not_found_error("Room"))?;
 
     if !storage_room.is_active {
@@ -214,7 +214,7 @@ pub async fn get_messages(
         .is_room_member(&room_id_str, &user_id_str)
         .await
         .map_err(|e| {
-            ApiError::internal_server_error(&format!("Failed to check membership: {}", e))
+            ApiError::internal_error(&format!("Failed to check membership: {}", e))
         })?
     {
         return Err(ApiError::forbidden_error(
@@ -242,10 +242,10 @@ pub async fn get_messages(
         if !msg.is_deleted {
             let api_message = Message {
                 id: Uuid::parse_str(&msg.id)
-                    .map_err(|_| ApiError::internal_server_error("Invalid message ID"))?,
+                    .map_err(|_| ApiError::internal_error("Invalid message ID"))?,
                 room_id,
                 user_id: Uuid::parse_str(&msg.user_id)
-                    .map_err(|_| ApiError::internal_server_error("Invalid user ID"))?,
+                    .map_err(|_| ApiError::internal_error("Invalid user ID"))?,
                 content: msg.content,
                 message_type: match msg.message_type {
                     crate::server::storage::MessageType::Text => {
@@ -338,7 +338,7 @@ pub async fn edit_message(
         .get_message_by_id(&message_id_str)
         .await
         .map_err(|e| {
-            ApiError::internal_server_error(&format!("Failed to retrieve message: {}", e))
+            ApiError::internal_error(&format!("Failed to retrieve message: {}", e))
         })?
         .ok_or_else(|| ApiError::not_found_error("Message"))?;
 
@@ -458,7 +458,7 @@ pub async fn delete_message(
         .get_message_by_id(&message_id_str)
         .await
         .map_err(|e| {
-            ApiError::internal_server_error(&format!("Failed to retrieve message: {}", e))
+            ApiError::internal_error(&format!("Failed to retrieve message: {}", e))
         })?
         .ok_or_else(|| ApiError::not_found_error("Message"))?;
 
@@ -557,7 +557,7 @@ pub async fn add_reaction(
         .get_message_by_id(&message_id_str)
         .await
         .map_err(|e| {
-            ApiError::internal_server_error(&format!("Failed to retrieve message: {}", e))
+            ApiError::internal_error(&format!("Failed to retrieve message: {}", e))
         })?
         .ok_or_else(|| ApiError::not_found_error("Message"))?;
 
@@ -573,7 +573,7 @@ pub async fn add_reaction(
         .is_room_member(&storage_message.room_id, &user_id_str)
         .await
         .map_err(|e| {
-            ApiError::internal_server_error(&format!("Failed to check membership: {}", e))
+            ApiError::internal_error(&format!("Failed to check membership: {}", e))
         })?
     {
         return Err(ApiError::forbidden_error(
@@ -651,7 +651,7 @@ pub async fn remove_reaction(
         .get_message_by_id(&message_id_str)
         .await
         .map_err(|e| {
-            ApiError::internal_server_error(&format!("Failed to retrieve message: {}", e))
+            ApiError::internal_error(&format!("Failed to retrieve message: {}", e))
         })?
         .ok_or_else(|| ApiError::not_found_error("Message"))?;
 
@@ -667,7 +667,7 @@ pub async fn remove_reaction(
         .is_room_member(&storage_message.room_id, &user_id_str)
         .await
         .map_err(|e| {
-            ApiError::internal_server_error(&format!("Failed to check membership: {}", e))
+            ApiError::internal_error(&format!("Failed to check membership: {}", e))
         })?
     {
         return Err(ApiError::forbidden_error(

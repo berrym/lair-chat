@@ -58,7 +58,7 @@ pub async fn get_profile(
 
     let profile = UserProfile {
         id: user_context.user_id,
-        username: user.username,
+        username: user.username.clone(),
         email: user.email.unwrap_or_default(),
         display_name: user
             .profile
@@ -131,36 +131,40 @@ pub async fn update_profile(
         user.profile.timezone = Some(timezone);
     }
 
-    user.updated_at = chrono::Utc::now().timestamp() as u64;
+    // Update timestamp and capture values before moving user
+    let updated_timestamp = chrono::Utc::now().timestamp() as u64;
+    user.updated_at = updated_timestamp;
+
+    let username = user.username.clone();
+    let email = user.email.clone();
+    let display_name = user.profile.display_name.clone();
+    let role = user.role.clone();
+    let is_active = user.is_active;
+    let avatar_url = user.profile.avatar.clone();
+    let timezone = user.profile.timezone.clone();
+    let last_seen = user.last_seen;
+    let created_at = user.created_at;
 
     // Save updated user
-    state
-        .storage
-        .users()
-        .update_user(&user)
-        .await
-        .map_err(|e| {
-            error!("Failed to update user profile: {}", e);
-            ApiError::internal_error("Profile update failed")
-        })?;
+    state.storage.users().update_user(user).await.map_err(|e| {
+        error!("Failed to update user profile: {}", e);
+        ApiError::internal_error("Profile update failed")
+    })?;
 
     let profile = UserProfile {
         id: user_context.user_id,
-        username: user.username,
-        email: user.email.unwrap_or_default(),
-        display_name: user
-            .profile
-            .display_name
-            .unwrap_or_else(|| user.username.clone()),
-        role: convert_user_role(&user.role),
-        status: convert_user_status(&user.is_active),
-        avatar_url: user.profile.avatar,
-        timezone: user.profile.timezone.unwrap_or_else(|| "UTC".to_string()),
-        last_login: user
-            .last_seen
+        username: username.clone(),
+        email: email.unwrap_or_default(),
+        display_name: display_name.unwrap_or_else(|| username),
+        role: convert_user_role(&role),
+        status: convert_user_status(&is_active),
+        avatar_url,
+        timezone: timezone.unwrap_or_else(|| "UTC".to_string()),
+        last_login: last_seen
             .map(|t| chrono::DateTime::from_timestamp(t as i64, 0).unwrap_or_default()),
-        created_at: chrono::DateTime::from_timestamp(user.created_at as i64, 0).unwrap_or_default(),
-        updated_at: chrono::DateTime::from_timestamp(user.updated_at as i64, 0).unwrap_or_default(),
+        created_at: chrono::DateTime::from_timestamp(created_at as i64, 0).unwrap_or_default(),
+        updated_at: chrono::DateTime::from_timestamp(updated_timestamp as i64, 0)
+            .unwrap_or_default(),
     };
 
     info!(
@@ -213,7 +217,13 @@ pub async fn get_settings(
         push_notifications: user.settings.notifications.mentions,
         desktop_notifications: user.settings.notifications.room_messages,
         sound_notifications: user.settings.notifications.sound_enabled,
-        theme: match user.settings.theme.as_str() {
+        theme: match user
+            .settings
+            .theme
+            .as_ref()
+            .map(|s| s.as_str())
+            .unwrap_or("system")
+        {
             "light" => UserTheme::Light,
             "dark" => UserTheme::Dark,
             _ => UserTheme::System,
@@ -328,7 +338,13 @@ pub async fn update_settings(
         push_notifications: user.settings.notifications.mentions,
         desktop_notifications: user.settings.notifications.room_messages,
         sound_notifications: user.settings.notifications.sound_enabled,
-        theme: match user.settings.theme.as_str() {
+        theme: match user
+            .settings
+            .theme
+            .as_ref()
+            .map(|s| s.as_str())
+            .unwrap_or("system")
+        {
             "light" => UserTheme::Light,
             "dark" => UserTheme::Dark,
             _ => UserTheme::System,
@@ -377,7 +393,7 @@ pub async fn update_settings(
 )]
 pub async fn get_user_by_id(
     State(state): State<ApiState>,
-    Extension(user_context): Extension<UserContext>,
+    Extension(_user_context): Extension<UserContext>,
     Path(user_id): Path<Uuid>,
 ) -> ApiResult<Json<SuccessResponse<UserProfile>>> {
     debug!("Get user profile request for ID: {}", user_id);
@@ -396,7 +412,7 @@ pub async fn get_user_by_id(
 
     let profile = UserProfile {
         id: user_id,
-        username: user.username,
+        username: user.username.clone(),
         email: user.email.unwrap_or_default(),
         display_name: user
             .profile
@@ -440,7 +456,7 @@ pub async fn get_user_by_id(
 )]
 pub async fn get_user_by_username(
     State(state): State<ApiState>,
-    Extension(user_context): Extension<UserContext>,
+    Extension(_user_context): Extension<UserContext>,
     Path(username): Path<String>,
 ) -> ApiResult<Json<SuccessResponse<UserProfile>>> {
     debug!("Get user profile request for username: {}", username);
@@ -464,7 +480,7 @@ pub async fn get_user_by_username(
 
     let profile = UserProfile {
         id: user_id,
-        username: user.username,
+        username: user.username.clone(),
         email: user.email.unwrap_or_default(),
         display_name: user
             .profile
@@ -506,7 +522,7 @@ pub async fn get_user_by_username(
 )]
 pub async fn search_users(
     State(state): State<ApiState>,
-    Extension(user_context): Extension<UserContext>,
+    Extension(_user_context): Extension<UserContext>,
     Json(request): Json<UserSearchRequest>,
 ) -> ApiResult<Json<SuccessResponse<Vec<UserSearchResult>>>> {
     debug!("User search request: {}", request.query);
@@ -537,7 +553,7 @@ pub async fn search_users(
             let user_id = uuid::Uuid::parse_str(&user.id).unwrap_or_else(|_| Uuid::new_v4());
             UserSearchResult {
                 id: user_id,
-                username: user.username,
+                username: user.username.clone(),
                 display_name: user
                     .profile
                     .display_name
@@ -577,7 +593,7 @@ pub async fn search_users(
 )]
 pub async fn get_online_users(
     State(state): State<ApiState>,
-    Extension(user_context): Extension<UserContext>,
+    Extension(_user_context): Extension<UserContext>,
     Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> ApiResult<Json<SuccessResponse<Vec<UserSearchResult>>>> {
     debug!("Get online users request");
@@ -607,7 +623,7 @@ pub async fn get_online_users(
             let user_id = uuid::Uuid::parse_str(&user.id).unwrap_or_else(|_| Uuid::new_v4());
             UserSearchResult {
                 id: user_id,
-                username: user.username,
+                username: user.username.clone(),
                 display_name: user
                     .profile
                     .display_name
@@ -695,7 +711,13 @@ pub async fn reset_settings(
         push_notifications: user.settings.notifications.mentions,
         desktop_notifications: user.settings.notifications.room_messages,
         sound_notifications: user.settings.notifications.sound_enabled,
-        theme: match user.settings.theme.as_str() {
+        theme: match user
+            .settings
+            .theme
+            .as_ref()
+            .map(|s| s.as_str())
+            .unwrap_or("system")
+        {
             "light" => UserTheme::Light,
             "dark" => UserTheme::Dark,
             _ => UserTheme::System,

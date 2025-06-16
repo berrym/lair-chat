@@ -11,7 +11,7 @@ use axum::{
     response::Response,
 };
 use std::time::Instant;
-use tracing::{debug, error, info, warn, Span};
+use tracing::{debug, error, info, warn};
 
 use crate::server::api::middleware::{get_request_id, RequestId, UserContext};
 
@@ -392,7 +392,7 @@ mod tests {
         let mut request = Request::builder()
             .method(Method::GET)
             .uri("http://example.com/api/../admin")
-            .body(())
+            .body(Body::empty())
             .unwrap();
 
         assert!(check_suspicious_request(&request));
@@ -401,7 +401,7 @@ mod tests {
         let request = Request::builder()
             .method(Method::GET)
             .uri("http://example.com/api/v1/users")
-            .body(())
+            .body(Body::empty())
             .unwrap();
 
         assert!(!check_suspicious_request(&request));
@@ -410,7 +410,7 @@ mod tests {
         let request = Request::builder()
             .method(Method::GET)
             .uri("http://example.com/api/search?q=<script>alert('xss')</script>")
-            .body(())
+            .body(Body::empty())
             .unwrap();
 
         assert!(check_suspicious_request(&request));
@@ -422,7 +422,7 @@ mod tests {
             .method(Method::POST)
             .uri("http://example.com/api/v1/messages")
             .header("user-agent", "test-client/1.0")
-            .body(())
+            .body(Body::empty())
             .unwrap();
 
         let trace = RequestTrace::new(&request);
@@ -438,7 +438,7 @@ mod tests {
         let request = Request::builder()
             .method(Method::GET)
             .uri("http://example.com/test")
-            .body(())
+            .body(Body::empty())
             .unwrap();
 
         let trace = RequestTrace::new(&request);
@@ -458,7 +458,7 @@ mod tests {
         let request = Request::builder()
             .method(Method::GET)
             .uri("http://example.com/test")
-            .body(())
+            .body(Body::empty())
             .unwrap();
 
         let mut trace = RequestTrace::new(&request);

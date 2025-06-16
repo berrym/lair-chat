@@ -71,6 +71,7 @@ tower-http = { version = "0.5", features = [
 signal-hook = "0.3.17"
 strip-ansi-escapes = "0.2.0"
 strum = { version = "0.26.3", features = ["derive"] }
+sysinfo = "0.30"
 thiserror = "1.0"
 tokio = { version = "1.40.0", features = ["full"] }
 tokio-stream = { version = "0.1.15", features = ["full"] }

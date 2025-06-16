@@ -12,6 +12,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tracing::error;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -171,23 +172,52 @@ impl From<crate::server::storage::StorageError> for ApiError {
         use crate::server::storage::StorageError;
 
         match err {
-            StorageError::NotFound(resource) => ApiError::not_found_error(resource),
-            StorageError::AlreadyExists(resource) => {
-                ApiError::conflict_error(format!("{} already exists", resource))
+            StorageError::NotFound { entity, id: _ } => ApiError::not_found_error(&entity),
+            StorageError::DuplicateError { entity, message: _ } => {
+                ApiError::conflict_error(format!("{} already exists", entity))
             }
-            StorageError::InvalidInput(msg) => ApiError::validation_error(msg),
-            StorageError::PermissionDenied(msg) => ApiError::forbidden_error(msg),
-            StorageError::Database(e) => {
-                tracing::error!("Database error: {}", e);
+            StorageError::ValidationError { field, message } => {
+                ApiError::validation_error(&format!("{}: {}", field, message))
+            }
+            StorageError::ConnectionError { message } => {
+                error!("Connection error: {}", message);
+                ApiError::internal_error("Database connection failed")
+            }
+            StorageError::QueryError { message } => {
+                error!("Query error: {}", message);
                 ApiError::internal_error("Database operation failed")
             }
-            StorageError::Serialization(e) => {
-                tracing::error!("Serialization error: {}", e);
+            StorageError::TransactionError { message } => {
+                error!("Transaction error: {}", message);
+                ApiError::internal_error("Database transaction failed")
+            }
+            StorageError::MigrationError { message } => {
+                error!("Migration error: {}", message);
+                ApiError::internal_error("Database migration failed")
+            }
+            StorageError::SerializationError { message } => {
+                error!("Serialization error: {}", message);
                 ApiError::internal_error("Data serialization failed")
             }
-            StorageError::Configuration(e) => {
-                tracing::error!("Configuration error: {}", e);
-                ApiError::internal_error("Configuration error")
+            StorageError::DeserializationError { message } => {
+                error!("Deserialization error: {}", message);
+                ApiError::internal_error("Data deserialization failed")
+            }
+            StorageError::ConstraintError { message } => {
+                error!("Constraint error: {}", message);
+                ApiError::conflict_error("Database constraint violation")
+            }
+            StorageError::TimeoutError => {
+                error!("Database timeout");
+                ApiError::internal_error("Database operation timed out")
+            }
+            StorageError::PoolExhausted => {
+                error!("Database pool exhausted");
+                ApiError::internal_error("Database pool exhausted")
+            }
+            StorageError::UnsupportedOperation { operation } => {
+                error!("Unsupported operation: {}", operation);
+                ApiError::internal_error("Operation not supported")
             }
         }
     }

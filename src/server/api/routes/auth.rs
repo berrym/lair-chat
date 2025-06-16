@@ -3,10 +3,7 @@
 //! This module defines all authentication-related HTTP routes including
 //! user registration, login, logout, token refresh, and password management.
 
-use axum::{
-    routing::{get, post},
-    Router,
-};
+use axum::{routing::post, Router};
 
 use crate::server::api::{handlers::auth, ApiState};
 

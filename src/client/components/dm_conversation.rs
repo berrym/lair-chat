@@ -596,7 +596,7 @@ impl ConversationPanel {
     }
 
     /// Create a list item for a message
-    fn create_message_item(&self, message: &DirectMessage, width: u16) -> ListItem {
+    fn create_message_item(&self, message: &DirectMessage, _width: u16) -> ListItem {
         let is_own_message = Some(message.sender_id) == self.state.current_user_id;
 
         let mut lines = Vec::new();

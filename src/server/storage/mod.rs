@@ -4,9 +4,7 @@
 //! multiple database backends (SQLite, PostgreSQL, MySQL) and comprehensive
 //! data management for users, messages, rooms, and sessions.
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 use uuid::Uuid;
@@ -46,6 +44,9 @@ pub enum StorageError {
 
     #[error("Serialization error: {message}")]
     SerializationError { message: String },
+
+    #[error("Deserialization error: {message}")]
+    DeserializationError { message: String },
 
     #[error("Database constraint violation: {message}")]
     ConstraintError { message: String },
@@ -125,6 +126,7 @@ pub struct StorageManager {
     message_storage: Box<dyn MessageStorage>,
     room_storage: Box<dyn RoomStorage>,
     session_storage: Box<dyn SessionStorage>,
+    audit_log_storage: Box<dyn AuditLogStorage>,
 }
 
 impl StorageManager {
@@ -137,7 +139,8 @@ impl StorageManager {
             user_storage: Box::new(backend.clone()),
             message_storage: Box::new(backend.clone()),
             room_storage: Box::new(backend.clone()),
-            session_storage: Box::new(backend),
+            session_storage: Box::new(backend.clone()),
+            audit_log_storage: Box::new(backend),
         })
     }
 
@@ -159,6 +162,11 @@ impl StorageManager {
     /// Get session storage interface
     pub fn sessions(&self) -> &dyn SessionStorage {
         self.session_storage.as_ref()
+    }
+
+    /// Get audit log storage interface
+    pub fn audit_logs(&self) -> &dyn AuditLogStorage {
+        self.audit_log_storage.as_ref()
     }
 
     /// Run health check on all storage backends
