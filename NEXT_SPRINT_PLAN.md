@@ -1,412 +1,447 @@
-# Next Sprint Plan - Sprint 4: Session Management & Admin APIs
+# Next Sprint Plan - Sprint 5: Advanced User Features & WebSocket Foundation
 
-**Document Version:** 4.0  
-**Created:** June 17, 2025  
-**Updated:** June 18, 2025  
-**Sprint Timeline:** June 18-25, 2025  
+**Document Version:** 5.0  
+**Created:** June 16, 2025  
+**Updated:** June 16, 2025  
+**Sprint Timeline:** June 17-24, 2025  
 **Sprint Duration:** 8 days  
-**Previous Sprint:** Sprint 3 - Room & Message Management APIs (✅ Complete)
+**Previous Sprint:** Sprint 4 - Session & Admin Management APIs (✅ Complete)
 
-## 🎯 Sprint 4 Goals
+## 🎯 Sprint 5 Goals
 
-**Primary Objective:** Implement comprehensive session management for multi-device support and administrative APIs for server monitoring, user management, and moderation tools.
+**Primary Objective:** Implement advanced user features including avatar upload and user blocking systems, establish WebSocket foundation for real-time communication, and create the infrastructure for live messaging and presence indicators.
 
 **Success Criteria:**
-- All session management endpoints operational and tested
-- Admin user management APIs functional
-- Server monitoring and statistics endpoints working
-- User moderation and reporting system implemented
-- Advanced user features (avatar upload, blocking) operational
-- Integration tests achieving >95% coverage
-- Complete API documentation and testing suite ready
+- Advanced user features (avatar upload, blocking) operational and tested
+- WebSocket protocol implemented with authentication integration
+- Real-time messaging infrastructure established
+- User presence system functional with live status updates
+- Typing indicators and notification system operational
+- Integration tests achieving >95% coverage for real-time features
+- WebSocket API documentation and client examples complete
 
 ## 📊 Sprint Overview
 
-**Capacity:** 7 developer days remaining  
-**Story Points Planned:** 30 points  
-**Story Points Completed:** 12 points (40%)  
-**Complexity:** Medium (building on proven API patterns from Sprints 2-3)  
-**Risk Level:** Low (session foundation complete, minor compilation issues to resolve)
+**Capacity:** 8 developer days  
+**Story Points Planned:** 35 points  
+**Story Points From Previous Sprint:** 0 (Sprint 4 100% complete)  
+**Complexity:** High (introducing real-time communication patterns)  
+**Risk Level:** Medium (new WebSocket technology, concurrent connection management)
 
 ## 📋 Sprint Backlog
 
-### 🏆 Epic 1: Session Management (10 points)
+### 🏆 Epic 1: Advanced User Features (12 points)
 
-#### SESSION-001: Create Session ✅ COMPLETE
-**Story:** As a user, I want to track my active sessions so I can manage my devices and security.
-- **Endpoint:** `POST /api/v1/sessions`
-- **Points:** 3
-- **Priority:** High
-- **Dependencies:** Authentication APIs (✅ Complete)
-- **Status:** ✅ Complete (June 18)
-- **Acceptance Criteria:** ✅ All criteria met
-  - ✅ Creates new session with device information
-  - ✅ Tracks IP address, user agent, and location
-  - ✅ Returns session token for device identification
-  - ✅ Supports session expiration and refresh
-
-#### SESSION-002: List User Sessions ✅ COMPLETE
-**Story:** As a user, I want to see all my active sessions so I can monitor security.
-- **Endpoint:** `GET /api/v1/sessions`
-- **Points:** 2
-- **Priority:** High
-- **Dependencies:** SESSION-001 ✅
-- **Status:** ✅ Complete (June 18)
-- **Acceptance Criteria:** ✅ All criteria met
-  - ✅ Returns paginated list of user's sessions
-  - ✅ Shows device info, last activity, and location
-  - ✅ Marks current session clearly
-  - ✅ Supports filtering by active/expired status
-
-#### SESSION-003: Revoke Session ✅ COMPLETE
-**Story:** As a user, I want to revoke sessions so I can secure my account.
-- **Endpoint:** `DELETE /api/v1/sessions/{session_id}`
-- **Points:** 2
-- **Priority:** High
-- **Dependencies:** SESSION-002 ✅
-- **Status:** ✅ Complete (June 18)
-- **Acceptance Criteria:** ✅ All criteria met
-  - ✅ Revokes specific session immediately
-  - ✅ Invalidates session tokens
-  - ✅ Logs security action for audit
-  - ✅ Supports bulk revocation of all sessions
-
-#### SESSION-004: Session Activity Tracking ✅ COMPLETE
-**Story:** As a user, I want to see session activity so I can detect suspicious behavior.
-- **Endpoint:** `GET /api/v1/sessions/stats`
-- **Points:** 3
-- **Priority:** Medium
-- **Dependencies:** SESSION-001 ✅
-- **Status:** ✅ Complete (June 18)
-- **Acceptance Criteria:** ✅ All criteria met
-  - ✅ Tracks session statistics and activity metrics
-  - ✅ Shows activity timeline with timestamps
-  - ✅ Includes device and usage context
-  - ✅ Supports comprehensive session analytics
-
-### 🏆 Epic 2: Admin User Management (8 points)
-
-#### ADMIN-001: List All Users 🔄 IN PROGRESS
-**Story:** As an admin, I want to see all users so I can manage the community.
-- **Endpoint:** `GET /api/v1/admin/users`
-- **Points:** 2
+#### USER-001: Avatar Upload System
+**Story:** As a user, I want to upload and manage my avatar so I can personalize my profile.
+- **Endpoints:** 
+  - `POST /api/v1/users/avatar` - Upload avatar
+  - `GET /api/v1/users/{user_id}/avatar` - Get avatar
+  - `DELETE /api/v1/users/avatar` - Remove avatar
+- **Points:** 5
 - **Priority:** High
 - **Dependencies:** User Management APIs (✅ Complete)
-- **Status:** 🔄 In Progress (Started June 18)
-- **Blockers:** Storage method compilation errors need resolution
 - **Acceptance Criteria:**
-  - Returns paginated list of all users
-  - Includes user status, role, and activity metrics
-  - Supports filtering by role, status, and registration date
-  - Shows user engagement statistics
+  - Accepts image file uploads (PNG, JPG, GIF, WebP)
+  - Validates file size (max 5MB) and dimensions (max 1024x1024)
+  - Automatically resizes and optimizes images
+  - Generates multiple sizes (32x32, 64x64, 128x128, 256x256)
+  - Updates user profile with avatar URLs
+  - Supports avatar deletion and replacement
+  - Implements secure file storage with proper access controls
 
-#### ADMIN-002: Update User Status
-**Story:** As an admin, I want to manage user accounts so I can moderate the platform.
-- **Endpoint:** `PUT /api/v1/admin/users/{user_id}/status`
-- **Points:** 3
+#### USER-002: User Blocking & Reporting
+**Story:** As a user, I want to block and report other users so I can maintain a safe communication environment.
+- **Endpoints:**
+  - `POST /api/v1/users/{user_id}/block` - Block user
+  - `DELETE /api/v1/users/{user_id}/block` - Unblock user
+  - `GET /api/v1/users/blocked` - List blocked users
+  - `POST /api/v1/users/{user_id}/report` - Report user
+- **Points:** 4
 - **Priority:** High
-- **Dependencies:** ADMIN-001
-- **Acceptance Criteria:**
-  - Activate, deactivate, or suspend user accounts
-  - Validates admin has sufficient permissions
-  - Logs all status changes for audit
-  - Notifies user of account status changes
-
-#### ADMIN-003: User Activity Reports
-**Story:** As an admin, I want to see user activity reports so I can understand platform usage.
-- **Endpoint:** `GET /api/v1/admin/users/{user_id}/activity`
-- **Points:** 3
-- **Priority:** Medium
-- **Dependencies:** ADMIN-001
-- **Acceptance Criteria:**
-  - Shows comprehensive user activity metrics
-  - Includes message counts, room participation, and login patterns
-  - Supports date range filtering and export
-  - Provides moderation-relevant activity indicators
-
-### 🏆 Epic 3: Server Monitoring & Statistics (7 points)
-
-#### MONITOR-001: Server Statistics 🔄 IN PROGRESS
-**Story:** As an admin, I want to see server statistics so I can monitor performance.
-- **Endpoint:** `GET /api/v1/admin/stats`
-- **Points:** 3
-- **Priority:** High
-- **Dependencies:** All core APIs (✅ Complete)
-- **Status:** 🔄 In Progress (Started June 18)
-- **Progress:** 60% - Real storage integration started, compilation fixes needed
-- **Acceptance Criteria:**
-  - ✅ Returns comprehensive server metrics
-  - ✅ Shows user, room, and message counts
-  - 🔄 Includes performance metrics and error rates
-  - 📅 Supports real-time and historical data
-
-#### MONITOR-002: System Health Check
-**Story:** As an admin, I want to monitor system health so I can ensure reliability.
-- **Endpoint:** `GET /api/v1/admin/health`
-- **Points:** 2
-- **Priority:** High
-- **Dependencies:** Storage layer (✅ Complete)
-- **Acceptance Criteria:**
-  - Checks database connectivity and performance
-  - Monitors storage usage and capacity
-  - Tests all critical system components
-  - Provides detailed health status and alerts
-
-#### MONITOR-003: Audit Logs
-**Story:** As an admin, I want to access audit logs so I can track important system events.
-- **Endpoint:** `GET /api/v1/admin/audit`
-- **Points:** 2
-- **Priority:** Medium
-- **Dependencies:** All APIs with audit logging
-- **Acceptance Criteria:**
-  - Returns comprehensive audit trail
-  - Includes user actions, admin operations, and system events
-  - Supports filtering by user, action type, and date range
-  - Provides secure log export functionality
-
-### 🏆 Epic 4: Advanced User Features (5 points)
-
-#### USER-001: Avatar Upload
-**Story:** As a user, I want to upload an avatar so I can personalize my profile.
-- **Endpoint:** `POST /api/v1/users/avatar`
-- **Points:** 3
-- **Priority:** Medium
 - **Dependencies:** User Management APIs (✅ Complete)
 - **Acceptance Criteria:**
-  - Accepts image file uploads (PNG, JPG, GIF)
-  - Validates file size and dimensions
-  - Resizes and optimizes images automatically
-  - Updates user profile with avatar URL
+  - Blocks user from sending direct messages
+  - Prevents blocked users from seeing user's activity
+  - Hides blocked user's messages and presence
+  - Creates detailed reports for admin review
+  - Supports multiple report categories (spam, harassment, inappropriate content)
+  - Maintains comprehensive audit trail for moderation
+  - Integrates with admin moderation tools
 
-#### USER-002: Block/Report Users
-**Story:** As a user, I want to block and report other users so I can maintain a safe environment.
-- **Endpoint:** `POST /api/v1/users/{user_id}/block`, `POST /api/v1/users/{user_id}/report`
+#### USER-003: Enhanced User Profiles
+**Story:** As a user, I want comprehensive profile management so I can control my public information.
+- **Endpoints:**
+  - `PUT /api/v1/users/profile` - Update profile
+  - `GET /api/v1/users/{user_id}/profile` - Get public profile
+  - `PUT /api/v1/users/settings` - Update user settings
+- **Points:** 3
+- **Priority:** Medium
+- **Dependencies:** USER-001, USER-002
+- **Acceptance Criteria:**
+  - Extended profile fields (bio, location, website, social links)
+  - Privacy controls for profile visibility
+  - User preference management (notifications, privacy, display)
+  - Theme and display customization options
+  - Account deactivation and data export functionality
+
+### 🏆 Epic 2: WebSocket Foundation (13 points)
+
+#### WEBSOCKET-001: WebSocket Protocol Implementation
+**Story:** As a developer, I want WebSocket infrastructure so we can support real-time communication.
+- **Endpoints:** WebSocket connection at `/ws`
+- **Points:** 5
+- **Priority:** Critical
+- **Dependencies:** Session Management APIs (✅ Complete)
+- **Acceptance Criteria:**
+  - WebSocket server implementation with connection lifecycle management
+  - JWT-based authentication for WebSocket connections
+  - Connection state management (connecting, connected, disconnecting, disconnected)
+  - Heartbeat mechanism for connection health monitoring
+  - Automatic reconnection logic with exponential backoff
+  - Scalable architecture supporting 1000+ concurrent connections
+  - Comprehensive error handling and logging
+
+#### WEBSOCKET-002: Real-time Message Delivery
+**Story:** As a user, I want instant message delivery so I can have real-time conversations.
+- **Protocol:** WebSocket message types for chat functionality
+- **Points:** 4
+- **Priority:** High
+- **Dependencies:** WEBSOCKET-001, Message APIs (✅ Complete)
+- **Acceptance Criteria:**
+  - Real-time message broadcasting to room participants
+  - Message delivery confirmation and read receipts
+  - Offline message queuing and delivery
+  - Message ordering guarantees with timestamps
+  - Support for different message types (text, media, system)
+  - Integration with existing REST message APIs
+  - Efficient message routing and delivery optimization
+
+#### WEBSOCKET-003: User Presence System
+**Story:** As a user, I want to see who's online so I can know when others are available.
+- **Protocol:** Presence status updates via WebSocket
+- **Points:** 2
+- **Priority:** High
+- **Dependencies:** WEBSOCKET-001
+- **Acceptance Criteria:**
+  - Real-time presence status (online, away, busy, offline)
+  - Automatic status updates based on activity
+  - Presence broadcasting to relevant users and rooms
+  - Last seen timestamp tracking
+  - Privacy controls for presence visibility
+  - Efficient presence update batching for performance
+
+#### WEBSOCKET-004: Typing Indicators
+**Story:** As a user, I want to see when others are typing so I can have natural conversations.
+- **Protocol:** Typing status via WebSocket
 - **Points:** 2
 - **Priority:** Medium
-- **Dependencies:** User Management APIs (✅ Complete)
+- **Dependencies:** WEBSOCKET-001, WEBSOCKET-002
 - **Acceptance Criteria:**
-  - Blocks user from sending messages or invitations
-  - Creates reports for admin review
-  - Supports different report categories
-  - Maintains user privacy and prevents harassment
+  - Real-time typing indicator broadcasting
+  - Automatic typing timeout after inactivity
+  - Multiple user typing status aggregation
+  - Room-specific typing indicators
+  - Performance optimization for high-frequency updates
+  - Privacy controls for typing indicator visibility
+
+### 🏆 Epic 3: Performance & Infrastructure (10 points)
+
+#### PERF-001: Caching Layer Implementation
+**Story:** As a system, I need efficient caching so I can handle increased real-time load.
+- **Implementation:** Redis-compatible caching with fallback
+- **Points:** 4
+- **Priority:** High
+- **Dependencies:** All previous APIs
+- **Acceptance Criteria:**
+  - User session caching for fast authentication
+  - Avatar and profile data caching
+  - Room membership and permission caching
+  - Message metadata caching for recent messages
+  - Cache invalidation strategies for data consistency
+  - Performance monitoring and cache hit rate tracking
+
+#### PERF-002: Database Query Optimization
+**Story:** As a system, I need optimized queries so real-time features perform well.
+- **Implementation:** Query analysis and optimization
+- **Points:** 3
+- **Priority:** High
+- **Dependencies:** WebSocket implementation
+- **Acceptance Criteria:**
+  - Optimized queries for presence and typing updates
+  - Efficient message retrieval with proper indexing
+  - User and room lookup performance improvements
+  - Connection pooling optimization for concurrent requests
+  - Query performance monitoring and alerting
+  - Database schema optimization for real-time workloads
+
+#### PERF-003: Load Testing & Monitoring
+**Story:** As operations, I need comprehensive monitoring so I can ensure system reliability.
+- **Implementation:** Load testing framework and monitoring
+- **Points:** 3
+- **Priority:** Medium
+- **Dependencies:** WEBSOCKET-001, PERF-001
+- **Acceptance Criteria:**
+  - Load testing framework for WebSocket connections
+  - Performance monitoring for real-time features
+  - Concurrent connection testing (1000+ users)
+  - Message throughput and latency testing
+  - System resource monitoring and alerting
+  - Performance regression testing automation
 
 ## 🗓️ Sprint Timeline
 
-### Day 1 (June 18): Session Foundation ✅ COMPLETE
-**Focus:** Core session management endpoints
-- ✅ Implement SESSION-001 (Create Session)
-- ✅ Implement SESSION-002 (List User Sessions)
-- ✅ Set up session storage and tracking
+### Day 1 (June 17): Advanced User Features Foundation
+**Focus:** Avatar upload system and file handling infrastructure
+- Implement USER-001 foundation (file upload handling)
+- Set up image processing and storage infrastructure
+- Begin avatar endpoint implementation
+- Implement file validation and security measures
 
-### Day 2 (June 19): Admin API Implementation
-**Focus:** Complete admin APIs and fix compilation issues
-- Fix admin statistics compilation errors
-- Complete ADMIN-001 (List All Users)
-- Implement ADMIN-002 (Update User Status)
-- Add admin permission validation
+### Day 2 (June 18): User Blocking & Security
+**Focus:** User blocking system and reporting mechanisms
+- Complete USER-001 (Avatar Upload System)
+- Implement USER-002 (User Blocking & Reporting)
+- Add comprehensive security controls
+- Integrate with admin moderation tools
 
-### Day 3 (June 20): Admin Reporting & Monitoring
-**Focus:** User activity reporting and system monitoring
-- Complete ADMIN-003 (User Activity Reports)
-- Implement MONITOR-002 (System Health Check)
-- Add comprehensive audit logging foundations
+### Day 3 (June 19): WebSocket Foundation
+**Focus:** Core WebSocket infrastructure and authentication
+- Complete USER-003 (Enhanced User Profiles)
+- Begin WEBSOCKET-001 (WebSocket Protocol Implementation)
+- Implement WebSocket authentication with JWT
+- Set up connection lifecycle management
 
-### Day 4 (June 21): Server Monitoring Complete
-**Focus:** System monitoring and health infrastructure
-- Complete MONITOR-001 (Server Statistics)
-- Finalize MONITOR-002 (System Health Check)
-- Set up performance metrics collection
+### Day 4 (June 20): Real-time Message Infrastructure
+**Focus:** Message delivery and WebSocket integration
+- Complete WEBSOCKET-001 (WebSocket Protocol)
+- Implement WEBSOCKET-002 (Real-time Message Delivery)
+- Integrate WebSocket with existing message APIs
+- Add message delivery confirmation system
 
-### Day 5 (June 22): Audit & Advanced Features
-**Focus:** Audit trails and advanced user features
-- Implement MONITOR-003 (Audit Logs)
-- Complete logging infrastructure
-- Begin USER-001 (Avatar Upload)
+### Day 5 (June 21): Presence & Typing Systems
+**Focus:** User presence and real-time interaction indicators
+- Complete WEBSOCKET-002 (Real-time Message Delivery)
+- Implement WEBSOCKET-003 (User Presence System)
+- Implement WEBSOCKET-004 (Typing Indicators)
+- Add real-time status broadcasting
 
-### Day 6 (June 23): Advanced User Features
-**Focus:** Enhanced user capabilities
-- Complete USER-001 (Avatar Upload)
-- Implement USER-002 (Block/Report Users)
-- Add file upload handling infrastructure
+### Day 6 (June 22): Performance Infrastructure
+**Focus:** Caching and optimization for real-time features
+- Complete WebSocket implementation and testing
+- Implement PERF-001 (Caching Layer Implementation)
+- Begin PERF-002 (Database Query Optimization)
+- Add performance monitoring infrastructure
 
-### Day 7 (June 24): Integration Testing
-**Focus:** Comprehensive testing and validation
-- Integration testing for all Sprint 4 endpoints
-- Security testing for admin privileges and session management
-- Performance testing for session operations under load
+### Day 7 (June 23): Load Testing & Optimization
+**Focus:** Performance testing and system optimization
+- Complete PERF-002 (Database Query Optimization)
+- Implement PERF-003 (Load Testing & Monitoring)
+- Conduct comprehensive load testing
+- Performance tuning and optimization
 
-### Day 8 (June 25): Sprint 4 Completion
-**Focus:** Final validation and documentation
-- End-to-end system testing
-- Complete API documentation updates
-- Performance optimization and final validation
-- Sprint 4 retrospective and Sprint 5 planning
+### Day 8 (June 24): Integration & Sprint Completion
+**Focus:** End-to-end testing and documentation
+- Complete all performance optimization
+- End-to-end integration testing for real-time features
+- WebSocket API documentation and client examples
+- Sprint 5 retrospective and Sprint 6 planning
 
 ## 📋 Definition of Done
 
 For each user story to be considered complete, it must:
 
 ### Technical Requirements
-- [ ] Endpoint implemented with proper HTTP methods and status codes
-- [ ] Request/response models defined with validation
-- [ ] Integration with storage layer functional
-- [ ] Error handling comprehensive with appropriate error codes
-- [ ] Rate limiting configured appropriately
+- [ ] All endpoints implemented with proper HTTP methods and WebSocket protocols
+- [ ] Request/response models defined with comprehensive validation
+- [ ] WebSocket message protocols documented and implemented
+- [ ] Integration with storage layer functional and optimized
+- [ ] Real-time features tested under concurrent load
+- [ ] Error handling comprehensive for both REST and WebSocket
+- [ ] Security review completed for file uploads and real-time features
 - [ ] Unit tests written with >90% coverage
 
 ### Quality Requirements
 - [ ] Code reviewed and approved by team
-- [ ] Integration tests passing
-- [ ] API documentation updated in OpenAPI schema
-- [ ] Postman collection updated with examples
-- [ ] Security review completed (input validation, authorization)
-- [ ] Performance testing shows acceptable response times
+- [ ] Integration tests passing for both REST and WebSocket features
+- [ ] Load testing completed with 1000+ concurrent WebSocket connections
+- [ ] API and WebSocket protocol documentation updated
+- [ ] Client examples and integration guides provided
+- [ ] Security review completed (input validation, file upload security)
+- [ ] Performance testing shows acceptable response times and throughput
 
 ### Documentation Requirements
-- [ ] Endpoint documented in OpenAPI specification
-- [ ] Example requests/responses provided
-- [ ] Error scenarios documented
-- [ ] Integration guide updated
+- [ ] REST endpoints documented in OpenAPI specification
+- [ ] WebSocket protocol documented with message types and flows
+- [ ] File upload security guidelines provided
+- [ ] Real-time feature integration examples provided
+- [ ] Performance characteristics documented
 - [ ] Breaking changes (if any) clearly noted
 
 ## 🔧 Technical Implementation Notes
 
-### Data Models
+### Avatar Upload Implementation
 ```rust
-// Core room structure
-pub struct RoomInfo {
-    pub id: Uuid,
-    pub name: String,
-    pub description: Option<String>,
-    pub room_type: RoomType,
-    pub privacy: RoomPrivacy,
-    pub created_by: Uuid,
-    pub created_at: DateTime<Utc>,
-    pub member_count: u32,
-    pub settings: RoomSettings,
+// Avatar upload structure
+pub struct AvatarUpload {
+    pub file_data: Vec<u8>,
+    pub content_type: String,
+    pub filename: String,
 }
 
-// Message structure
-pub struct MessageInfo {
-    pub id: Uuid,
-    pub room_id: Uuid,
+// Avatar metadata
+pub struct AvatarInfo {
     pub user_id: Uuid,
-    pub content: String,
-    pub message_type: MessageType,
-    pub timestamp: DateTime<Utc>,
-    pub edited_at: Option<DateTime<Utc>>,
-    pub reactions: Vec<MessageReaction>,
-}
-
-// Room membership structure
-pub struct RoomMembership {
-    pub room_id: Uuid,
-    pub user_id: Uuid,
-    pub role: RoomRole,
-    pub joined_at: DateTime<Utc>,
-    pub permissions: Vec<Permission>,
+    pub original_url: String,
+    pub thumbnail_urls: HashMap<String, String>, // size -> url
+    pub content_type: String,
+    pub file_size: u64,
+    pub uploaded_at: DateTime<Utc>,
 }
 ```
 
-### Error Handling Strategy
-- Use consistent error response format from Sprint 1
-- Implement field-level validation errors
-- Provide helpful error messages for common mistakes
-- Handle storage layer errors gracefully
+### WebSocket Protocol Design
+```rust
+// WebSocket message types
+#[derive(Serialize, Deserialize)]
+pub enum WebSocketMessage {
+    // Authentication
+    Authenticate { token: String },
+    AuthenticationResult { success: bool, user_id: Option<Uuid> },
+    
+    // Real-time messaging
+    MessageSent { message: MessageInfo },
+    MessageReceived { message_id: Uuid, user_id: Uuid },
+    MessageRead { message_id: Uuid, user_id: Uuid },
+    
+    // Presence updates
+    PresenceUpdate { user_id: Uuid, status: PresenceStatus },
+    PresenceBroadcast { users: Vec<UserPresence> },
+    
+    // Typing indicators
+    TypingStart { user_id: Uuid, room_id: Uuid },
+    TypingStop { user_id: Uuid, room_id: Uuid },
+    TypingStatus { room_id: Uuid, typing_users: Vec<Uuid> },
+    
+    // System messages
+    Error { code: String, message: String },
+    Heartbeat { timestamp: u64 },
+    HeartbeatResponse { timestamp: u64 },
+}
+```
 
 ### Performance Considerations
-- Implement caching for frequently accessed rooms and messages
-- Use cursor-based pagination for message history
-- Optimize database queries with proper indexing on room_id and timestamp
-- Consider rate limiting for message sending and search operations
-- Implement message batching for bulk operations
+- Implement connection pooling for WebSocket connections
+- Use message batching for high-frequency updates (typing, presence)
+- Implement efficient user lookup caching for real-time features
+- Consider horizontal scaling strategies for WebSocket servers
+- Optimize database queries for real-time workloads
+- Implement proper rate limiting for WebSocket messages
 
 ## 🧪 Testing Strategy
 
 ### Unit Testing
-- Test all room and message handlers with mock storage
-- Validate request/response serialization for complex nested data
-- Test permission and role validation logic
-- Mock real-time notification dependencies
+- Test all avatar upload handlers with various file types and sizes
+- Test user blocking logic with comprehensive scenarios
+- Test WebSocket message serialization/deserialization
+- Mock storage layer for WebSocket authentication testing
+- Test presence system state management
 
 ### Integration Testing
-- End-to-end API testing with real storage
-- Test room membership workflows and permissions
-- Validate message ordering and pagination
-- Test concurrent message sending scenarios
+- End-to-end avatar upload workflow testing
+- User blocking integration with message and presence systems
+- WebSocket connection lifecycle testing
+- Real-time message delivery testing with multiple clients
+- Presence system integration testing
+- Load testing with concurrent WebSocket connections
 
 ### Load Testing
-- Message sending under high concurrent load
-- Room listing with large member counts
-- Message search with large message history
-- Identify bottlenecks in permission checking
+- 1000+ concurrent WebSocket connections
+- High-frequency typing indicator updates
+- Simultaneous message broadcasting to large rooms
+- Avatar upload under concurrent load
+- Database performance under real-time workloads
 
 ## 🚨 Risk Assessment
 
-### Low Risk
-- Room CRUD operations (leveraging proven user management patterns)
-- Basic message sending and retrieval
-- Room membership management
+### High Risk
+- WebSocket connection scaling and performance
+- File upload security and storage management
+- Real-time message delivery guarantees under load
+- Concurrent connection management and resource usage
 
 ### Medium Risk
-- Message search performance with large history
-- Real-time notification foundations
-- Complex permission validation across room roles
+- User blocking edge cases and privacy implications
+- Presence system performance with large user bases
+- Cache invalidation strategies for real-time data
+- Database query performance for real-time features
+
+### Low Risk
+- Avatar upload basic functionality
+- Enhanced user profile management
+- Typing indicator implementation
 
 ### Mitigation Strategies
-- Implement message indexing early for search performance
-- Start with polling-based updates, add WebSocket later
-- Create comprehensive permission test matrix
-- Monitor message throughput and database performance
+- Implement comprehensive WebSocket connection testing early
+- Create secure file upload with multiple validation layers
+- Design message delivery with acknowledgment and retry mechanisms
+- Monitor resource usage continuously during development
+- Implement circuit breakers for external dependencies
+- Create comprehensive error handling for WebSocket edge cases
 
 ## 📊 Success Metrics
 
 ### Functional Metrics
-- All 11 room and message stories completed and tested
-- 100% API endpoint uptime during testing
-- <200ms average response time for room operations
-- <300ms average response time for message operations
-- <500ms average response time for search operations
+- All 9 advanced user and WebSocket stories completed and tested
+- 1000+ concurrent WebSocket connections supported
+- <100ms latency for real-time message delivery
+- <50ms latency for presence and typing updates
+- 99.9% message delivery success rate
+- Avatar upload success rate >99%
 
 ### Quality Metrics
-- >90% test coverage for new code
-- Zero critical or major bugs found in testing
-- All security and permission reviews passed
-- API documentation accuracy validated
+- >90% test coverage for new real-time features
+- Zero critical bugs in WebSocket implementation
+- Zero security vulnerabilities in file upload system
+- All load testing scenarios passed
+- Comprehensive WebSocket protocol documentation
 
-### Team Metrics
-- Sprint velocity maintained from Sprint 2 success
-- Zero blockers lasting >4 hours
-- Comprehensive knowledge transfer from user management patterns
-- Effective reuse of established architectural patterns
+### Performance Metrics
+- WebSocket connection establishment <500ms
+- Message delivery latency <100ms P95
+- Presence update latency <50ms P95
+- Avatar upload processing <2s for standard images
+- Database query performance maintained under real-time load
 
-## 🔮 Preparation for Sprint 5
+## 🔮 Preparation for Sprint 6
 
-**Sprint 5 Focus:** WebSocket & Real-time Features
-**Timeline:** June 26 - July 3, 2025
+**Sprint 6 Focus:** Room & Message APIs with Real-time Integration
+**Timeline:** June 25 - July 2, 2025
 
 ### Pre-work Required
-- Design WebSocket connection architecture
-- Plan real-time message delivery system
-- Prepare notification infrastructure
-- Design client-server synchronization protocols
+- Design real-time room features (live member lists, room activity)
+- Plan message search integration with real-time updates
+- Prepare room notification and invitation system
+- Design message history synchronization for WebSocket clients
 
 ### Dependencies
-- ✅ Sprint 4 session management APIs operational
-- 🔄 Sprint 4 admin APIs completion (June 24)
-- Real-time features require session tracking ✅
-- WebSocket needs comprehensive message history ✅
-- Notifications require user preference system ✅
+- ✅ Sprint 5 WebSocket foundation operational
+- ✅ Sprint 5 advanced user features complete
+- Real-time room features require WebSocket infrastructure ✅
+- Message APIs need real-time delivery integration ✅
+- Room management requires presence system ✅
 
-### Technical Debt: Minimal
-- Proven patterns from Sprints 2, 3, and 4 ✅
-- Complete REST API foundation established ✅
-- Production-ready core feature set ✅
-- Session management infrastructure complete ✅
+### Technical Foundation
+- WebSocket infrastructure supports room-based broadcasting
+- User presence system enables room activity indicators
+- Advanced user features support room member management
+- Performance optimization supports real-time room operations
+
 ---
 
 **Sprint Lead:** Development Team  
 **Product Owner:** Product Team  
-**Stakeholders:** Full Team  
-**Sprint Review:** June 25, 2025, 4:00 PM UTC  
-**Sprint Retrospective:** June 25, 2025, 4:30 PM UTC
+**Stakeholders:** Full Team + Operations Team (for real-time infrastructure)  
+**Sprint Review:** June 24, 2025, 4:00 PM UTC  
+**Sprint Retrospective:** June 24, 2025, 4:30 PM UTC  
+**Architecture Review:** June 19, 2025 (WebSocket implementation checkpoint)

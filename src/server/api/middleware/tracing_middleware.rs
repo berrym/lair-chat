@@ -5,6 +5,7 @@
 //! metrics, and error information for observability and debugging.
 
 use axum::{
+    body::Body,
     extract::Request,
     http::{Method, StatusCode, Uri},
     middleware::Next,
