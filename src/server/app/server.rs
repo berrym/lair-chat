@@ -167,7 +167,25 @@ async fn handle_connection(
                 } else if authenticated {
                     // Handle regular chat messages
                     if let Some(ref user) = username {
-                        handle_chat_message(&msg, user, addr, &state).await;
+                        // Check message type BEFORE calling handle_chat_message
+                        // to prevent special messages from being formatted with username prefix
+                        if msg.starts_with("DM:") {
+                            handle_dm_message(&msg, user, addr, &state).await;
+                        } else if msg.starts_with("INVITE_USER:")
+                            || msg.starts_with("ACCEPT_INVITATION:")
+                            || msg.starts_with("DECLINE_INVITATION:")
+                            || msg == "LIST_INVITATIONS"
+                            || msg == "ACCEPT_ALL_INVITATIONS"
+                            || msg.starts_with("CREATE_ROOM:")
+                            || msg.starts_with("JOIN_ROOM:")
+                            || msg == "LEAVE_ROOM"
+                            || msg == "LIST_ROOMS"
+                            || msg == "REQUEST_USER_LIST"
+                        {
+                            handle_room_and_invitation_commands(&msg, user, addr, &state).await;
+                        } else {
+                            handle_chat_message(&msg, user, addr, &state).await;
+                        }
                     }
                 } else {
                     warn!("Unauthenticated message from {}: {}", addr, msg);
@@ -297,7 +315,392 @@ async fn handle_auth(
     }
 }
 
-/// Handle chat messages
+/// Handle DM messages separately to ensure they never get broadcasted
+async fn handle_dm_message(
+    msg: &str,
+    username: &str,
+    addr: SocketAddr,
+    state: &Arc<Mutex<SharedState>>,
+) {
+    let parts: Vec<&str> = msg.splitn(3, ':').collect();
+    if parts.len() == 3 {
+        let recipient = parts[1];
+        let dm_content = parts[2];
+
+        debug!(
+            "Processing DM from {} to {}: {}",
+            username, recipient, dm_content
+        );
+
+        let state_guard = state.lock().await;
+
+        // Find the recipient's connection
+        if let Some(recipient_user) = state_guard.get_user(recipient) {
+            let recipient_addr = recipient_user.address;
+
+            // Send DM only to the recipient with DM_FROM prefix
+            let dm_message = format!("DM_FROM:{}:{}", username, dm_content);
+            state_guard.send_to_peer(&recipient_addr, &dm_message);
+
+            debug!(
+                "DM sent from {} to {} at {}",
+                username, recipient, recipient_addr
+            );
+        } else {
+            // Recipient not found, send error back to sender
+            let error_msg = format!("User '{}' not found or not online", recipient);
+            state_guard.send_to_peer(&addr, &error_msg);
+            warn!(
+                "DM failed - recipient {} not found for sender {}",
+                recipient, username
+            );
+        }
+
+        drop(state_guard);
+    } else {
+        // Invalid DM format, send error back to sender
+        let state_guard = state.lock().await;
+        state_guard.send_to_peer(&addr, "Invalid DM format. Use: DM:username:message");
+        drop(state_guard);
+    }
+}
+
+/// Handle room and invitation commands (private, not broadcasted)
+async fn handle_room_and_invitation_commands(
+    msg: &str,
+    username: &str,
+    addr: SocketAddr,
+    state: &Arc<Mutex<SharedState>>,
+) {
+    // Handle room commands
+    if msg.starts_with("CREATE_ROOM:") {
+        let room_name = msg.strip_prefix("CREATE_ROOM:").unwrap_or("").trim();
+        if !room_name.is_empty() {
+            let mut state_guard = state.lock().await;
+            if state_guard.create_room(room_name.to_string()) {
+                // Room created successfully, move user to it
+                state_guard.move_user_to_room(username, room_name);
+                state_guard.send_to_peer(&addr, &format!("ROOM_CREATED:{}", room_name));
+                state_guard.send_to_peer(&addr, &format!("ROOM_JOINED:{}", room_name));
+                debug!("Room '{}' created and joined by {}", room_name, username);
+            } else {
+                state_guard.send_to_peer(
+                    &addr,
+                    &format!("ROOM_ERROR:Room '{}' already exists", room_name),
+                );
+            }
+            drop(state_guard);
+        }
+        return;
+    }
+
+    if msg.starts_with("JOIN_ROOM:") {
+        let room_name = msg.strip_prefix("JOIN_ROOM:").unwrap_or("").trim();
+        if !room_name.is_empty() {
+            let mut state_guard = state.lock().await;
+            if state_guard.get_room(room_name).is_some() {
+                state_guard.move_user_to_room(username, room_name);
+                state_guard.send_to_peer(&addr, &format!("ROOM_JOINED:{}", room_name));
+                debug!("User {} joined room '{}'", username, room_name);
+            } else {
+                state_guard.send_to_peer(
+                    &addr,
+                    &format!("ROOM_ERROR:Room '{}' does not exist", room_name),
+                );
+            }
+            drop(state_guard);
+        }
+        return;
+    }
+
+    if msg == "LEAVE_ROOM" {
+        let mut state_guard = state.lock().await;
+        state_guard.move_user_to_room(username, "lobby");
+        state_guard.send_to_peer(&addr, "ROOM_LEFT:left room");
+        state_guard.send_to_peer(&addr, "ROOM_JOINED:lobby");
+        debug!("User {} left room and returned to lobby", username);
+        drop(state_guard);
+        return;
+    }
+
+    if msg == "LIST_ROOMS" {
+        let state_guard = state.lock().await;
+        let rooms: Vec<String> = state_guard
+            .get_all_rooms()
+            .iter()
+            .filter(|room| !room.is_lobby)
+            .map(|room| room.name.clone())
+            .collect();
+        let room_list = if rooms.is_empty() {
+            "ROOM_LIST:".to_string()
+        } else {
+            format!("ROOM_LIST:{}", rooms.join(","))
+        };
+        state_guard.send_to_peer(&addr, &room_list);
+        drop(state_guard);
+        return;
+    }
+
+    if msg == "REQUEST_USER_LIST" {
+        let state_guard = state.lock().await;
+        let users: Vec<String> = state_guard
+            .get_all_users()
+            .iter()
+            .map(|user| user.username.clone())
+            .collect();
+        let user_list = if users.is_empty() {
+            "USER_LIST:".to_string()
+        } else {
+            format!("USER_LIST:{}", users.join(","))
+        };
+        state_guard.send_to_peer(&addr, &user_list);
+        drop(state_guard);
+        return;
+    }
+
+    if msg.starts_with("INVITE_USER:") {
+        let invite_data = msg.strip_prefix("INVITE_USER:").unwrap_or("");
+        let parts: Vec<&str> = invite_data.splitn(2, ':').collect();
+        if parts.len() == 2 {
+            let target_username = parts[0];
+            let room_name = parts[1];
+
+            debug!(
+                "Processing invite from {} to invite {} to room '{}'",
+                username, target_username, room_name
+            );
+
+            let mut state_guard = state.lock().await;
+
+            // Check if the target user exists and is online
+            if let Some(target_user) = state_guard.get_user(target_username) {
+                let target_addr = target_user.address;
+
+                // Check if the room exists
+                if state_guard.get_room(room_name).is_some() {
+                    // Add pending invitation
+                    let invitation = crate::server::app::state::PendingInvitation {
+                        inviter: username.to_string(),
+                        room_name: room_name.to_string(),
+                        invited_at: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs(),
+                    };
+                    state_guard.add_pending_invitation(target_username, invitation);
+
+                    // Get updated count for better UX
+                    let pending_count = state_guard.get_pending_invitations(target_username).len();
+
+                    // Send invitation to the target user with position info
+                    let invite_message = format!(
+                        "INVITATION:{}:{}:{} invited you to join the chat room '{}' (#{} of {} pending)",
+                        username, room_name, username, room_name, pending_count, pending_count
+                    );
+                    state_guard.send_to_peer(&target_addr, &invite_message);
+
+                    // Send confirmation to the inviter
+                    state_guard.send_to_peer(
+                        &addr,
+                        &format!(
+                            "Invitation sent to {} for room '{}'",
+                            target_username, room_name
+                        ),
+                    );
+
+                    debug!(
+                        "Invitation sent from {} to {} for room '{}'",
+                        username, target_username, room_name
+                    );
+                } else {
+                    // Room doesn't exist
+                    state_guard.send_to_peer(
+                        &addr,
+                        &format!("INVITE_ERROR:Room '{}' does not exist", room_name),
+                    );
+                }
+            } else {
+                // Target user not found or not online
+                state_guard.send_to_peer(
+                    &addr,
+                    &format!(
+                        "INVITE_ERROR:User '{}' not found or not online",
+                        target_username
+                    ),
+                );
+            }
+
+            drop(state_guard);
+        } else {
+            // Invalid invite format
+            let state_guard = state.lock().await;
+            state_guard.send_to_peer(&addr, "INVITE_ERROR:Invalid invite format");
+            drop(state_guard);
+        }
+        return;
+    }
+
+    // Handle ACCEPT_INVITATION
+    if msg.starts_with("ACCEPT_INVITATION:") {
+        let room_name = &msg[18..]; // Remove "ACCEPT_INVITATION:" prefix
+        let mut state_guard = state.lock().await;
+
+        if room_name == "LATEST" {
+            // Accept the latest invitation
+            if let Some(latest_invite) = state_guard.get_latest_invitation(username) {
+                let room_to_join = latest_invite.room_name.clone();
+
+                // Remove the invitation
+                state_guard.remove_pending_invitation(username, &room_to_join);
+
+                // Join the room using existing method
+                if state_guard.move_user_to_room(username, &room_to_join) {
+                    state_guard.send_to_peer(&addr, &format!("Joined room '{}'", room_to_join));
+                    state_guard
+                        .broadcast_to_room(&room_to_join, &format!("{} joined the room", username));
+                } else {
+                    state_guard.send_to_peer(&addr, "ACCEPT_ERROR:Failed to join room");
+                }
+            } else {
+                state_guard.send_to_peer(&addr, "ACCEPT_ERROR:No pending invitations");
+            }
+        } else {
+            // Accept specific room invitation
+            if state_guard.remove_pending_invitation(username, room_name) {
+                // Join the room using existing method
+                if state_guard.move_user_to_room(username, room_name) {
+                    state_guard.send_to_peer(&addr, &format!("Joined room '{}'", room_name));
+                    state_guard
+                        .broadcast_to_room(room_name, &format!("{} joined the room", username));
+                } else {
+                    state_guard.send_to_peer(&addr, "ACCEPT_ERROR:Failed to join room");
+                }
+            } else {
+                state_guard.send_to_peer(
+                    &addr,
+                    &format!("ACCEPT_ERROR:No invitation found for room '{}'", room_name),
+                );
+            }
+        }
+
+        drop(state_guard);
+        return;
+    }
+
+    // Handle DECLINE_INVITATION
+    if msg.starts_with("DECLINE_INVITATION:") {
+        let room_name = &msg[19..]; // Remove "DECLINE_INVITATION:" prefix
+        let mut state_guard = state.lock().await;
+
+        if room_name == "LATEST" {
+            // Decline the latest invitation
+            if let Some(latest_invite) = state_guard.get_latest_invitation(username) {
+                let room_to_decline = latest_invite.room_name.clone();
+                state_guard.remove_pending_invitation(username, &room_to_decline);
+                state_guard.send_to_peer(
+                    &addr,
+                    &format!("Declined invitation to room '{}'", room_to_decline),
+                );
+            } else {
+                state_guard.send_to_peer(&addr, "DECLINE_ERROR:No pending invitations");
+            }
+        } else {
+            // Decline specific room invitation
+            if state_guard.remove_pending_invitation(username, room_name) {
+                state_guard.send_to_peer(
+                    &addr,
+                    &format!("Declined invitation to room '{}'", room_name),
+                );
+            } else {
+                state_guard.send_to_peer(
+                    &addr,
+                    &format!("DECLINE_ERROR:No invitation found for room '{}'", room_name),
+                );
+            }
+        }
+
+        drop(state_guard);
+        return;
+    }
+
+    // Handle LIST_INVITATIONS
+    if msg == "LIST_INVITATIONS" {
+        let state_guard = state.lock().await;
+        let invitations = state_guard.get_pending_invitations(username);
+
+        if invitations.is_empty() {
+            state_guard.send_to_peer(&addr, "No pending invitations");
+        } else {
+            let mut invite_list = String::from("Pending invitations:\n");
+            for (i, invite) in invitations.iter().enumerate() {
+                invite_list.push_str(&format!(
+                    "{}. Room: '{}' (from {})\n",
+                    i + 1,
+                    invite.room_name,
+                    invite.inviter
+                ));
+            }
+            invite_list.push_str("Use '/accept <room>' or '/accept' for latest");
+            state_guard.send_to_peer(&addr, &invite_list);
+        }
+
+        drop(state_guard);
+        return;
+    }
+
+    // Handle ACCEPT_ALL_INVITATIONS
+    if msg == "ACCEPT_ALL_INVITATIONS" {
+        let mut state_guard = state.lock().await;
+        let invitations = state_guard
+            .get_pending_invitations(username)
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+
+        if invitations.is_empty() {
+            state_guard.send_to_peer(&addr, "No pending invitations to accept");
+        } else {
+            let count = invitations.len();
+            let mut last_room = None;
+
+            // Accept all invitations (user will end up in the last room)
+            for invite in invitations {
+                state_guard.remove_pending_invitation(username, &invite.room_name);
+                last_room = Some(invite.room_name);
+            }
+
+            // Join the last room
+            if let Some(room_name) = last_room {
+                if state_guard.move_user_to_room(username, &room_name) {
+                    state_guard.send_to_peer(
+                        &addr,
+                        &format!(
+                            "Accepted {} invitations and joined room '{}'",
+                            count, room_name
+                        ),
+                    );
+                    state_guard
+                        .broadcast_to_room(&room_name, &format!("{} joined the room", username));
+                } else {
+                    state_guard.send_to_peer(
+                        &addr,
+                        &format!("Accepted {} invitations but failed to join room", count),
+                    );
+                }
+            }
+        }
+
+        drop(state_guard);
+        return;
+    }
+
+    // Unknown command
+    let state_guard = state.lock().await;
+    state_guard.send_to_peer(&addr, &format!("Unknown command: {}", msg));
+    drop(state_guard);
+}
+
+/// Handle chat messages (broadcasted to room only)
 async fn handle_chat_message(
     msg: &str,
     username: &str,
@@ -307,10 +710,22 @@ async fn handle_chat_message(
     let formatted_msg = format!("{}: {}", username, msg);
 
     let state_guard = state.lock().await;
-    state_guard.broadcast_message(&addr, &formatted_msg);
-    drop(state_guard);
 
-    debug!("Broadcasted message from {}: {}", username, msg);
+    // Get user's current room and broadcast only to that room
+    if let Some(user) = state_guard.get_user(username) {
+        let current_room = user.current_room.clone();
+        state_guard.broadcast_to_room(&current_room, &formatted_msg);
+        debug!(
+            "Broadcasted message from {} to room '{}': {}",
+            username, current_room, msg
+        );
+    } else {
+        // Fallback to old behavior if user not found
+        state_guard.broadcast_message(&addr, &formatted_msg);
+        debug!("Broadcasted message from {} (fallback): {}", username, msg);
+    }
+
+    drop(state_guard);
 }
 
 /// Send a message to a specific peer

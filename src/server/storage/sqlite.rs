@@ -4,8 +4,9 @@
 //! with support for connection pooling, migrations, and comprehensive data operations.
 
 use super::{
-    models::*, traits::*, DatabaseConfig, OrderBy, OrderDirection, Pagination, StorageError,
-    StorageResult,
+    models::{self, *},
+    traits::*,
+    DatabaseConfig, OrderBy, OrderDirection, Pagination, StorageError, StorageResult,
 };
 use crate::server::api::models::{
     admin::{AdminAction, AuditLogEntry},
@@ -303,7 +304,11 @@ impl UserStorage for SqliteStorage {
         Ok(())
     }
 
-    async fn update_profile(&self, user_id: &str, profile: UserProfile) -> StorageResult<()> {
+    async fn update_profile(
+        &self,
+        user_id: &str,
+        profile: models::UserProfile,
+    ) -> StorageResult<()> {
         let profile_json =
             serde_json::to_string(&profile).map_err(|e| StorageError::SerializationError {
                 message: e.to_string(),
@@ -609,11 +614,12 @@ impl UserStorage for SqliteStorage {
 
         if let Some(row) = row {
             let profile_json: String = row.get("profile");
-            let profile: UserProfile = serde_json::from_str(&profile_json).map_err(|e| {
-                StorageError::SerializationError {
-                    message: e.to_string(),
-                }
-            })?;
+            let profile: models::UserProfile =
+                serde_json::from_str(&profile_json).map_err(|e| {
+                    StorageError::SerializationError {
+                        message: e.to_string(),
+                    }
+                })?;
 
             let role_str: String = row.get("role");
             let api_role = match role_str.as_str() {
@@ -692,11 +698,12 @@ impl UserStorage for SqliteStorage {
         let mut admin_users = Vec::new();
         for row in rows {
             let profile_json: String = row.get("profile");
-            let profile: UserProfile = serde_json::from_str(&profile_json).map_err(|e| {
-                StorageError::SerializationError {
-                    message: e.to_string(),
-                }
-            })?;
+            let profile: models::UserProfile =
+                serde_json::from_str(&profile_json).map_err(|e| {
+                    StorageError::SerializationError {
+                        message: e.to_string(),
+                    }
+                })?;
 
             let role_str: String = row.get("role");
             let api_role = match role_str.as_str() {
@@ -770,7 +777,7 @@ impl SqliteStorage {
     /// Convert a database row to a User struct
     fn row_to_user(&self, row: sqlx::sqlite::SqliteRow) -> StorageResult<User> {
         let profile_json: String = row.get("profile");
-        let profile: UserProfile =
+        let profile: models::UserProfile =
             serde_json::from_str(&profile_json).map_err(|e| StorageError::SerializationError {
                 message: e.to_string(),
             })?;

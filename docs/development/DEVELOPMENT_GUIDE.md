@@ -1,896 +1,1152 @@
-# Lair Chat Development Guide
+# Development Guide 🚀
 
-A comprehensive guide for developers contributing to Lair Chat, covering setup, architecture, testing, and contribution workflows.
+This guide provides comprehensive information for developers working on Lair Chat, including setup instructions, coding standards, testing practices, and contribution guidelines.
 
-## Table of Contents
+## 📋 Table of Contents
 
-1. [Development Environment Setup](#development-environment-setup)
-2. [Project Structure](#project-structure)
-3. [Architecture Overview](#architecture-overview)
-4. [Building and Running](#building-and-running)
-5. [Testing Strategy](#testing-strategy)
-6. [Code Standards](#code-standards)
-7. [Contributing Guidelines](#contributing-guidelines)
-8. [Debugging and Profiling](#debugging-and-profiling)
-9. [Release Process](#release-process)
-10. [Advanced Topics](#advanced-topics)
+- [Quick Start](#quick-start)
+- [Development Environment Setup](#development-environment-setup)
+- [Project Structure](#project-structure)
+- [Coding Standards](#coding-standards)
+- [Testing Strategy](#testing-strategy)
+- [Build and Deployment](#build-and-deployment)
+- [Debugging and Profiling](#debugging-and-profiling)
+- [Contributing Guidelines](#contributing-guidelines)
+- [Release Process](#release-process)
+- [Troubleshooting](#troubleshooting)
 
-## Development Environment Setup
+## ⚡ Quick Start
 
 ### Prerequisites
+- **Rust**: 1.70.0 or later
+- **Git**: Latest version
+- **PostgreSQL**: 13+ (for database features)
+- **Redis**: 6+ (for caching and sessions)
 
-- **Rust**: 1.75.0 or later (MSRV as of June 2025)
-- **Git**: For version control
-- **Terminal**: Modern terminal with Unicode support
-- **Editor**: VS Code, Vim, or your preferred Rust-compatible editor
-
-### Rust Installation
-
+### 5-Minute Setup
 ```bash
-# Install rustup (if not already installed)
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# Install the required toolchain (minimum 1.75.0 as of June 2025)
-rustup toolchain install stable
-rustup default stable
-
-# Install useful components
-rustup component add clippy rustfmt rust-analyzer
-```
-
-### Development Tools
-
-```bash
-# Install additional cargo tools
-cargo install cargo-watch    # Auto-rebuild on file changes
-cargo install cargo-audit    # Security vulnerability scanning
-cargo install cargo-outdated # Check for outdated dependencies
-cargo install cargo-bloat    # Binary size analysis
-cargo install flamegraph     # Performance profiling
-```
-
-### Clone and Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/lair-chat.git
+# 1. Clone the repository
+git clone https://github.com/your-org/lair-chat.git
 cd lair-chat
 
-# Verify setup
-cargo check
-cargo test
+# 2. Install dependencies and setup environment
+make setup
+
+# 3. Run tests to verify setup
+make test
+
+# 4. Start development servers
+make dev
 ```
 
-### Editor Configuration
+### First Contribution
+```bash
+# 1. Create a feature branch
+git checkout -b feature/your-feature-name
 
-#### VS Code
-Install these extensions:
+# 2. Make your changes
+# 3. Run tests and linting
+make check
+
+# 4. Commit and push
+git commit -m "feat: add your feature description"
+git push origin feature/your-feature-name
+
+# 5. Create a pull request
+```
+
+## 🛠️ Development Environment Setup
+
+### System Requirements
+- **Operating System**: Linux, macOS, or Windows with WSL2
+- **Memory**: 8GB RAM minimum, 16GB recommended
+- **Storage**: 10GB free space
+- **Network**: Internet connection for dependencies
+
+### Rust Installation
+```bash
+# Install Rust via rustup
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source ~/.cargo/env
+
+# Install required components
+rustup component add clippy rustfmt rust-src
+
+# Install cargo tools
+cargo install cargo-watch cargo-expand cargo-audit cargo-deny
+```
+
+### Database Setup
+
+#### PostgreSQL
+```bash
+# Install PostgreSQL (Ubuntu/Debian)
+sudo apt update
+sudo apt install postgresql postgresql-contrib
+
+# Start PostgreSQL service
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
+
+# Create database and user
+sudo -u postgres createdb lair_chat_dev
+sudo -u postgres createuser lair_chat_user -P
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE lair_chat_dev TO lair_chat_user;"
+```
+
+#### Redis
+```bash
+# Install Redis (Ubuntu/Debian)
+sudo apt install redis-server
+
+# Start Redis service
+sudo systemctl start redis-server
+sudo systemctl enable redis-server
+
+# Test Redis connection
+redis-cli ping
+```
+
+### Environment Configuration
+```bash
+# Copy environment template
+cp .env.example .env
+
+# Edit environment variables
+nano .env
+```
+
+Example `.env` file:
+```env
+# Database Configuration
+DATABASE_URL=postgresql://lair_chat_user:password@localhost/lair_chat_dev
+DATABASE_MAX_CONNECTIONS=10
+
+# Redis Configuration
+REDIS_URL=redis://localhost:6379
+REDIS_MAX_CONNECTIONS=10
+
+# Server Configuration
+SERVER_HOST=127.0.0.1
+SERVER_PORT=8080
+ADMIN_PORT=9090
+
+# Logging Configuration
+RUST_LOG=lair_chat=debug,tower_http=debug
+LOG_LEVEL=debug
+
+# Security Configuration
+JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+SESSION_SECRET=your-session-secret-key
+
+# File Upload Configuration
+MAX_FILE_SIZE=10485760  # 10MB
+UPLOAD_DIR=./uploads
+
+# Development Settings
+RUST_BACKTRACE=1
+DEVELOPMENT_MODE=true
+```
+
+### IDE Setup
+
+#### VS Code Configuration
+Create `.vscode/settings.json`:
+```json
+{
+    "rust-analyzer.cargo.features": ["dev"],
+    "rust-analyzer.checkOnSave.command": "clippy",
+    "rust-analyzer.rustfmt.rangeFormatting.enable": true,
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+        "source.fixAll": true
+    },
+    "files.watcherExclude": {
+        "**/target/**": true
+    }
+}
+```
+
+#### Recommended Extensions
 - rust-analyzer
-- CodeLLDB (for debugging)
+- CodeLLDB
 - Better TOML
 - GitLens
+- Thunder Client (for API testing)
 
-#### Vim/Neovim
-```vim
-" Add to your config
-Plug 'rust-lang/rust.vim'
-Plug 'neoclide/coc.nvim', {'branch': 'release'}
-```
+## 🏗️ Project Structure
 
-## Project Structure
-
+### Directory Layout
 ```
 lair-chat/
-├── src/
-│   ├── bin/                # Binary entry points
-│   │   ├── client.rs       # Client application entry
-│   │   └── server.rs       # Server application entry
-│   ├── common/             # Shared functionality
-│   │   ├── protocol/       # Message types & protocols
-│   │   ├── crypto/         # Encryption utilities
-│   │   ├── transport/      # Network abstractions
-│   │   └── errors/         # Common error types
-│   ├── client/             # Client-specific code
-│   │   ├── ui/components/  # UI components & TUI
-│   │   ├── chat/           # Chat functionality
-│   │   ├── auth/           # Client authentication
-│   │   ├── app.rs          # Application logic
-│   │   ├── config.rs       # Configuration
-│   │   ├── connection_manager.rs # Network management
-│   │   └── errors.rs       # Client errors
-│   └── server/             # Server-specific code
-│       ├── app/            # Server application logic
-│       ├── chat/           # Message & room handling
-│       ├── auth/           # Server authentication
-│       └── network/        # Connection management
-├── tests/                  # Integration tests
-│   ├── integration/        # End-to-end tests
-│   └── stress/             # Performance tests
-├── benches/                # Performance benchmarks
-├── examples/               # Example implementations
-└── docs/                   # Comprehensive documentation
-    ├── architecture/       # System design docs
-    ├── development/        # Development guides
-    ├── guides/             # User guides
-    └── releases/           # Release notes
-│   ├── api/               # API documentation
-│   ├── guides/            # User and developer guides
-│   ├── architecture/      # Architecture documents
-│   └── development/       # Development docs
-├── Cargo.toml              # Project configuration
-├── Cargo.lock              # Dependency lock file
-├── build.rs                # Build script
-└── README.md               # Project overview
+├── src/                    # Source code
+│   ├── bin/               # Binary entry points
+│   │   ├── client.rs      # Client application
+│   │   └── server.rs      # Server application
+│   ├── common/            # Shared functionality
+│   │   ├── protocol/      # Message protocols
+│   │   ├── crypto/        # Encryption utilities
+│   │   ├── transport/     # Network abstractions
+│   │   └── errors/        # Common error types
+│   ├── client/            # Client-specific code
+│   │   ├── ui/           # User interface components
+│   │   ├── chat/         # Chat functionality
+│   │   ├── auth/         # Authentication
+│   │   └── network/      # Client networking
+│   └── server/            # Server-specific code
+│       ├── app/          # Application logic
+│       ├── chat/         # Message handling
+│       ├── auth/         # Authentication
+│       ├── api/          # REST API handlers
+│       └── network/      # Server networking
+├── tests/                 # Integration tests
+├── benches/              # Benchmarks
+├── examples/             # Example applications
+├── docs/                 # Documentation
+├── scripts/              # Build and deployment scripts
+├── config/               # Configuration files
+└── migrations/           # Database migrations
 ```
 
 ### Module Organization
+```rust
+// Example module structure
+pub mod common {
+    pub mod protocol;
+    pub mod crypto;
+    pub mod transport;
+    pub mod errors;
+}
 
-```mermaid
-graph TD
-    A[lib.rs] --> B[client/]
-    A --> C[server/]
-    B --> D[app.rs]
-    B --> E[tui.rs]
-    B --> F[components/]
-    B --> G[auth/]
-    B --> H[chat/]
-    B --> I[transport/]
-    F --> J[home.rs]
-    F --> K[dm_conversation.rs]
-    F --> L[user_list.rs]
-    H --> M[dm_manager.rs]
-    H --> N[room_manager.rs]
-    I --> O[tcp_transport.rs]
-    I --> P[encrypted_transport.rs]
+pub mod client {
+    pub mod ui;
+    pub mod chat;
+    pub mod auth;
+    pub mod network;
+}
+
+pub mod server {
+    pub mod app;
+    pub mod chat;
+    pub mod auth;
+    pub mod api;
+    pub mod network;
+}
 ```
 
-## Architecture Overview
+### Dependency Management
+```toml
+# Cargo.toml - Main dependencies
+[dependencies]
+# Async runtime
+tokio = { version = "1.0", features = ["full"] }
 
-### High-Level Architecture
+# Web framework
+axum = "0.7"
+tower = "0.4"
+tower-http = "0.5"
 
-```mermaid
-graph TB
-    subgraph "Client Application"
-        A[TUI Layer] --> B[Application Layer]
-        B --> C[Chat Logic]
-        B --> D[Authentication]
-        C --> E[Transport Layer]
-        D --> E
-        E --> F[Encryption Layer]
-    end
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Database
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid"] }
+redis = { version = "0.24", features = ["tokio-comp"] }
+
+# Cryptography
+ring = "0.17"
+x25519-dalek = "2.0"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Configuration
+config = "0.14"
+clap = { version = "4.0", features = ["derive"] }
+
+[dev-dependencies]
+# Testing
+tokio-test = "0.4"
+criterion = "0.5"
+proptest = "1.0"
+```
+
+## 📝 Coding Standards
+
+### Rust Style Guide
+We follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/) and use `rustfmt` with the following configuration:
+
+```toml
+# rustfmt.toml
+max_width = 100
+hard_tabs = false
+tab_spaces = 4
+newline_style = "Unix"
+use_small_heuristics = "Default"
+reorder_imports = true
+reorder_modules = true
+remove_nested_parens = true
+merge_derives = true
+use_try_shorthand = false
+use_field_init_shorthand = false
+force_explicit_abi = true
+edition = "2021"
+```
+
+### Naming Conventions
+```rust
+// Module names: snake_case
+mod user_management;
+
+// Type names: PascalCase
+struct UserProfile {
+    user_id: UserId,        // Field names: snake_case
+    display_name: String,
+}
+
+enum MessageType {          // Enum variants: PascalCase
+    Text,
+    Image,
+    File,
+}
+
+// Function names: snake_case
+fn send_message(content: &str) -> Result<MessageId, ChatError> {
+    // Local variables: snake_case
+    let message_id = generate_id();
     
-    subgraph "Network"
-        F --> G[TCP Connection]
-    end
+    // Constants: SCREAMING_SNAKE_CASE
+    const MAX_MESSAGE_LENGTH: usize = 4096;
     
-    subgraph "Server Application"
-        G --> H[Server Transport]
-        H --> I[Authentication Service]
-        H --> J[Room Manager]
-        H --> K[Message Router]
-        I --> L[User Storage]
-        J --> M[Room Storage]
-    end
+    Ok(message_id)
+}
+
+// Trait names: PascalCase
+trait MessageHandler {
+    fn handle_message(&self, message: Message) -> Result<(), Error>;
+}
 ```
 
-### Core Components
-
-#### Client Architecture
-
-1. **TUI Layer** (`tui.rs`):
-   - Terminal User Interface using Ratatui
-   - Event handling and rendering
-   - Keyboard input processing
-
-2. **Application Layer** (`app.rs`):
-   - Main application state management
-   - Coordination between components
-   - Configuration handling
-
-3. **Chat Logic** (`chat/`):
-   - Message handling and storage
-   - Room and DM management
-   - User presence tracking
-
-4. **Transport Layer** (`transport/`):
-   - Network communication abstractions
-   - Connection management
-   - Message serialization
-
-5. **Encryption Layer**:
-   - End-to-end encryption with AES-GCM
-   - Key exchange using X25519
-   - Secure message transport
-
-#### Server Architecture
-
-1. **Connection Handler**:
-   - TCP connection management
-   - Client session handling
-   - Message routing
-
-2. **Authentication Service**:
-   - User authentication and registration
-   - Session management
-   - Rate limiting
-
-3. **Room Manager**:
-   - Chat room creation and management
-   - User permissions
-   - Message broadcasting
-
-### Data Flow
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant C as Client
-    participant T as Transport
-    participant S as Server
-    participant R as Room Manager
+### Error Handling Patterns
+```rust
+// Use thiserror for error types
+#[derive(thiserror::Error, Debug)]
+pub enum ChatError {
+    #[error("User not found: {user_id}")]
+    UserNotFound { user_id: String },
     
-    U->>C: Type message
-    C->>C: Encrypt message
-    C->>T: Send encrypted data
-    T->>S: TCP transmission
-    S->>S: Decrypt message
-    S->>R: Route to room
-    R->>S: Broadcast to users
-    S->>T: Send to clients
-    T->>C: Receive data
-    C->>C: Decrypt message
-    C->>U: Display message
+    #[error("Database error")]
+    Database(#[from] sqlx::Error),
+    
+    #[error("Network error")]
+    Network(#[from] std::io::Error),
+}
+
+// Use Result<T, E> for fallible operations
+pub async fn send_message(
+    pool: &PgPool,
+    message: NewMessage,
+) -> Result<Message, ChatError> {
+    let message = sqlx::query_as!(
+        Message,
+        "INSERT INTO messages (content, user_id, room_id) VALUES ($1, $2, $3) RETURNING *",
+        message.content,
+        message.user_id,
+        message.room_id
+    )
+    .fetch_one(pool)
+    .await?;
+    
+    Ok(message)
+}
+
+// Use anyhow for main functions and tests
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Application logic
+    Ok(())
+}
 ```
 
-## Building and Running
+### Documentation Standards
+```rust
+//! Module-level documentation
+//! 
+//! This module provides chat functionality including message sending,
+//! room management, and user presence tracking.
 
-### Development Builds
-
-```bash
-# Quick development build
-cargo build
-
-# Build with optimizations (slower build, faster runtime)
-cargo build --release
-
-# Build specific binary
-cargo build --bin lair-chat-client
-cargo build --bin lair-chat-server
+/// Send a message to a chat room.
+/// 
+/// # Arguments
+/// 
+/// * `pool` - Database connection pool
+/// * `message` - The message to send
+/// 
+/// # Returns
+/// 
+/// Returns the created message with generated ID and timestamp.
+/// 
+/// # Errors
+/// 
+/// This function will return an error if:
+/// * The database connection fails
+/// * The user doesn't have permission to send messages
+/// * The message content exceeds the maximum length
+/// 
+/// # Examples
+/// 
+/// ```rust
+/// use lair_chat::chat::send_message;
+/// 
+/// let message = NewMessage {
+///     content: "Hello, world!".to_string(),
+///     user_id: "user_123".to_string(),
+///     room_id: "room_456".to_string(),
+/// };
+/// 
+/// let sent_message = send_message(&pool, message).await?;
+/// println!("Message sent: {}", sent_message.id);
+/// ```
+pub async fn send_message(
+    pool: &PgPool,
+    message: NewMessage,
+) -> Result<Message, ChatError> {
+    // Implementation
+}
 ```
 
-### Running in Development
+### Code Organization Patterns
+```rust
+// Use modules to organize related functionality
+pub mod auth {
+    pub mod handlers;
+    pub mod middleware;
+    pub mod models;
+    pub mod service;
+    
+    pub use service::AuthService;
+}
 
-#### Terminal 1 - Server
-```bash
-# Run server with debug logging
-RUST_LOG=debug cargo run --bin lair-chat-server
+// Use type aliases for complex types
+pub type UserId = uuid::Uuid;
+pub type Result<T> = std::result::Result<T, ChatError>;
 
-# Run with specific configuration
-cargo run --bin lair-chat-server -- --config server.toml
+// Use builder pattern for complex configurations
+#[derive(Debug, Clone)]
+pub struct ServerConfig {
+    pub host: String,
+    pub port: u16,
+    pub database_url: String,
+    pub redis_url: String,
+}
+
+impl ServerConfig {
+    pub fn builder() -> ServerConfigBuilder {
+        ServerConfigBuilder::default()
+    }
+}
+
+#[derive(Default)]
+pub struct ServerConfigBuilder {
+    host: Option<String>,
+    port: Option<u16>,
+    database_url: Option<String>,
+    redis_url: Option<String>,
+}
+
+impl ServerConfigBuilder {
+    pub fn host(mut self, host: impl Into<String>) -> Self {
+        self.host = Some(host.into());
+        self
+    }
+    
+    pub fn port(mut self, port: u16) -> Self {
+        self.port = Some(port);
+        self
+    }
+    
+    pub fn build(self) -> Result<ServerConfig, ConfigError> {
+        Ok(ServerConfig {
+            host: self.host.unwrap_or_else(|| "127.0.0.1".to_string()),
+            port: self.port.unwrap_or(8080),
+            database_url: self.database_url.ok_or(ConfigError::MissingDatabaseUrl)?,
+            redis_url: self.redis_url.ok_or(ConfigError::MissingRedisUrl)?,
+        })
+    }
+}
 ```
 
-#### Terminal 2 - Client
-```bash
-# Run client with debug logging
-RUST_LOG=debug cargo run --bin lair-chat-client
-
-# Connect to specific server
-cargo run --bin lair-chat-client -- --server localhost:8080
-```
-
-### Watch Mode for Development
-
-```bash
-# Auto-rebuild and run on file changes
-cargo watch -x "run --bin lair-chat-client"
-
-# Run tests on changes
-cargo watch -x test
-
-# Run clippy on changes
-cargo watch -x clippy
-```
-
-### Environment Variables
-
-```bash
-# Logging configuration
-export RUST_LOG=debug                    # Enable debug logging
-export RUST_LOG=lair_chat=trace         # Trace level for our crate
-export RUST_LOG=error                    # Only errors
-
-# Client configuration
-export LAIR_CHAT_SERVER=localhost:8080  # Default server
-export LAIR_CHAT_CONFIG=~/.config/lair-chat/client.toml
-
-# Server configuration
-export LAIR_CHAT_PORT=8080              # Server port
-export LAIR_CHAT_HOST=0.0.0.0           # Bind address
-```
-
-## Testing Strategy
+## 🧪 Testing Strategy
 
 ### Test Organization
-
 ```
 tests/
 ├── integration/           # Integration tests
-│   ├── client_server.rs  # Full client-server tests
-│   ├── encryption.rs     # Encryption integration
-│   └── transport.rs      # Transport layer tests
-├── unit/                 # Unit tests (in src/)
-└── fixtures/             # Test data and helpers
+│   ├── api/              # API endpoint tests
+│   ├── auth/             # Authentication tests
+│   └── chat/             # Chat functionality tests
+├── unit/                 # Unit tests (also in src/ files)
+├── fixtures/             # Test data and utilities
+└── common/               # Shared test utilities
 ```
 
-### Running Tests
-
-```bash
-# Run all tests
-cargo test
-
-# Run specific test
-cargo test test_message_encryption
-
-# Run with output
-cargo test -- --nocapture
-
-# Run integration tests only
-cargo test --test integration
-
-# Run with coverage (requires cargo-tarpaulin)
-cargo tarpaulin --out Html
-```
-
-### Test Categories
-
-#### Unit Tests
-Located in source files using `#[cfg(test)]`:
+### Unit Testing
 ```rust
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio_test;
     
-    #[test]
-    fn test_message_creation() {
-        let msg = Message::new("test", "Hello");
-        assert_eq!(msg.content, "Hello");
+    #[tokio::test]
+    async fn test_send_message_success() {
+        // Arrange
+        let pool = create_test_pool().await;
+        let message = NewMessage {
+            content: "Test message".to_string(),
+            user_id: "user_123".to_string(),
+            room_id: "room_456".to_string(),
+        };
+        
+        // Act
+        let result = send_message(&pool, message).await;
+        
+        // Assert
+        assert!(result.is_ok());
+        let sent_message = result.unwrap();
+        assert_eq!(sent_message.content, "Test message");
+        assert!(!sent_message.id.is_empty());
     }
     
     #[tokio::test]
-    async fn test_async_function() {
-        let result = some_async_function().await;
-        assert!(result.is_ok());
+    async fn test_send_message_invalid_user() {
+        let pool = create_test_pool().await;
+        let message = NewMessage {
+            content: "Test message".to_string(),
+            user_id: "invalid_user".to_string(),
+            room_id: "room_456".to_string(),
+        };
+        
+        let result = send_message(&pool, message).await;
+        
+        assert!(matches!(result, Err(ChatError::UserNotFound { .. })));
     }
 }
 ```
 
-#### Integration Tests
-Full application testing:
+### Integration Testing
 ```rust
+// tests/integration/api/messages.rs
+use lair_chat::server::create_app;
+use axum_test::TestServer;
+use serde_json::json;
+
 #[tokio::test]
-async fn test_client_server_communication() {
-    let server = start_test_server().await;
-    let client = TestClient::connect(&server.address()).await?;
+async fn test_send_message_api() {
+    // Setup test server
+    let app = create_app().await;
+    let server = TestServer::new(app).unwrap();
     
-    client.send_message("Hello, World!").await?;
-    let received = server.get_last_message().await?;
+    // Create test user and get auth token
+    let auth_response = server
+        .post("/api/v1/auth/login")
+        .json(&json!({
+            "username": "test_user",
+            "password": "test_password"
+        }))
+        .await;
     
-    assert_eq!(received.content, "Hello, World!");
+    let token = auth_response.json::<AuthResponse>().access_token;
+    
+    // Send message
+    let response = server
+        .post("/api/v1/rooms/test_room/messages")
+        .add_header("Authorization", format!("Bearer {}", token))
+        .json(&json!({
+            "content": "Hello, world!",
+            "type": "text"
+        }))
+        .await;
+    
+    assert_eq!(response.status_code(), 201);
+    
+    let message: Message = response.json();
+    assert_eq!(message.content, "Hello, world!");
 }
 ```
 
-#### Property-Based Testing
-Using the `proptest` crate:
+### Property-Based Testing
 ```rust
 use proptest::prelude::*;
 
 proptest! {
     #[test]
-    fn test_message_serialization(content in ".*") {
-        let msg = Message::new("user", &content);
-        let serialized = msg.serialize();
-        let deserialized = Message::deserialize(&serialized)?;
-        prop_assert_eq!(msg.content, deserialized.content);
+    fn test_message_validation(
+        content in ".*",
+        user_id in "[a-zA-Z0-9_]{1,50}",
+        room_id in "[a-zA-Z0-9_]{1,50}"
+    ) {
+        let message = NewMessage {
+            content: content.clone(),
+            user_id: user_id.clone(),
+            room_id: room_id.clone(),
+        };
+        
+        let validation_result = validate_message(&message);
+        
+        // Messages with empty content should be invalid
+        if content.is_empty() {
+            assert!(validation_result.is_err());
+        }
+        
+        // Messages exceeding max length should be invalid
+        if content.len() > MAX_MESSAGE_LENGTH {
+            assert!(validation_result.is_err());
+        }
+        
+        // Valid messages should pass validation
+        if !content.is_empty() && content.len() <= MAX_MESSAGE_LENGTH {
+            assert!(validation_result.is_ok());
+        }
     }
 }
 ```
 
-### Test Fixtures and Helpers
-
+### Performance Testing
 ```rust
-// tests/fixtures/mod.rs
-pub struct TestServer {
-    handle: JoinHandle<()>,
-    address: SocketAddr,
-}
+// benches/message_throughput.rs
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use lair_chat::chat::*;
 
-impl TestServer {
-    pub async fn start() -> Self {
-        // Start test server
-    }
+fn benchmark_message_processing(c: &mut Criterion) {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let pool = rt.block_on(create_test_pool());
     
-    pub fn address(&self) -> SocketAddr {
-        self.address
-    }
+    c.bench_function("send_message", |b| {
+        b.to_async(&rt).iter(|| async {
+            let message = NewMessage {
+                content: black_box("Benchmark message content".to_string()),
+                user_id: black_box("user_123".to_string()),
+                room_id: black_box("room_456".to_string()),
+            };
+            
+            send_message(&pool, message).await.unwrap()
+        })
+    });
 }
 
-pub struct TestClient {
-    transport: TestTransport,
-}
-
-impl TestClient {
-    pub async fn connect(addr: &SocketAddr) -> Result<Self> {
-        // Connect test client
-    }
-}
+criterion_group!(benches, benchmark_message_processing);
+criterion_main!(benches);
 ```
 
-## Code Standards
-
-### Rust Style Guidelines
-
-We follow the official Rust style guide with some additions:
-
-#### Formatting
-```bash
-# Format code
-cargo fmt
-
-# Check formatting
-cargo fmt -- --check
-```
-
-#### Linting
-```bash
-# Run clippy
-cargo clippy
-
-# Run clippy with all features
-cargo clippy --all-features
-
-# Deny warnings in CI
-cargo clippy -- -D warnings
-```
-
-#### Code Organization
-
-1. **Import Order**:
-   ```rust
-   // Standard library
-   use std::collections::HashMap;
-   use std::sync::Arc;
-   
-   // External crates
-   use serde::{Deserialize, Serialize};
-   use tokio::sync::Mutex;
-   
-   // Internal crates (crate-level)
-   use crate::transport::Transport;
-   use crate::errors::ChatError;
-   
-   // Local modules
-   use super::message::Message;
-   ```
-
-2. **Error Handling**:
-   ```rust
-   // Use thiserror for error types
-   #[derive(thiserror::Error, Debug)]
-   pub enum ChatError {
-       #[error("Connection failed: {0}")]
-       ConnectionFailed(String),
-       
-       #[error("Authentication failed")]
-       AuthenticationFailed,
-   }
-   
-   // Use Result types consistently
-   pub async fn send_message(&mut self, msg: Message) -> Result<(), ChatError> {
-       // Implementation
-   }
-   ```
-
-3. **Documentation**:
-   ```rust
-   /// Represents a chat message with metadata
-   /// 
-   /// # Examples
-   /// 
-   /// ```
-   /// use lair_chat::Message;
-   /// 
-   /// let msg = Message::new("alice", "Hello, world!");
-   /// assert_eq!(msg.author, "alice");
-   /// ```
-   pub struct Message {
-       /// The username of the message author
-       pub author: String,
-       /// The message content
-       pub content: String,
-       /// When the message was created
-       pub timestamp: chrono::DateTime<chrono::Utc>,
-   }
-   ```
-
-### Async Guidelines
-
-1. **Use `tokio` for async runtime**
-2. **Prefer `async/await` over manual Future implementation**
-3. **Use appropriate async primitives**:
-   ```rust
-   // For shared mutable state
-   use tokio::sync::Mutex;
-   
-   // For channels
-   use tokio::sync::mpsc;
-   
-   // For cancellation
-   use tokio_util::sync::CancellationToken;
-   ```
-
-### Performance Guidelines
-
-1. **Avoid unnecessary allocations**:
-   ```rust
-   // Good: Use string slices when possible
-   fn process_message(content: &str) -> Result<()> {
-       // ...
-   }
-   
-   // Avoid: Unnecessary String allocation
-   fn process_message(content: String) -> Result<()> {
-       // ...
-   }
-   ```
-
-2. **Use appropriate data structures**:
-   ```rust
-   // For frequent insertions/removals
-   use std::collections::HashMap;
-   
-   // For ordered data
-   use std::collections::BTreeMap;
-   
-   // For message queues
-   use std::collections::VecDeque;
-   ```
-
-## Contributing Guidelines
-
-### Workflow
-
-1. **Fork the repository**
-2. **Create a feature branch**:
-   ```bash
-   git checkout -b feature/new-awesome-feature
-   ```
-3. **Make your changes**
-4. **Write tests**
-5. **Ensure all tests pass**:
-   ```bash
-   cargo test
-   cargo clippy
-   cargo fmt --check
-   ```
-6. **Submit a pull request**
-
-### Commit Messages
-
-Follow [Conventional Commits](https://www.conventionalcommits.org/):
-
-```
-feat: add support for file attachments in DMs
-fix: resolve connection timeout issues
-docs: update API documentation for transport layer
-test: add integration tests for encryption
-refactor: simplify message routing logic
-perf: optimize message serialization
-```
-
-### Pull Request Guidelines
-
-1. **Title**: Clear, descriptive title
-2. **Description**: 
-   - What changes were made
-   - Why the changes were necessary
-   - Any breaking changes
-   - Testing notes
-3. **Checklist**:
-   - [ ] Tests added/updated
-   - [ ] Documentation updated
-   - [ ] No linting errors
-   - [ ] All tests pass
-
-### Code Review Process
-
-1. **Automated checks** must pass
-2. **At least one review** from a maintainer
-3. **Address feedback** promptly
-4. **Squash commits** before merging (if requested)
-
-## Debugging and Profiling
-
-### Logging
-
+### Test Utilities
 ```rust
-use tracing::{debug, error, info, warn, trace};
+// tests/common/mod.rs
+use sqlx::PgPool;
+use uuid::Uuid;
 
-// Use structured logging
-info!(user = %username, room = %room_name, "User joined room");
+pub async fn create_test_pool() -> PgPool {
+    let database_url = std::env::var("TEST_DATABASE_URL")
+        .unwrap_or_else(|_| "postgresql://test:test@localhost/lair_chat_test".to_string());
+    
+    PgPool::connect(&database_url).await.unwrap()
+}
 
-// Use different levels appropriately
-trace!("Detailed execution flow");
-debug!("Debugging information"); 
-info!("General information");
-warn!("Something unexpected happened");
-error!(error = %err, "Operation failed");
+pub fn create_test_user() -> User {
+    User {
+        id: Uuid::new_v4(),
+        username: format!("test_user_{}", Uuid::new_v4()),
+        email: format!("test_{}@example.com", Uuid::new_v4()),
+        created_at: chrono::Utc::now(),
+    }
+}
+
+pub async fn setup_test_room(pool: &PgPool) -> Room {
+    let room = Room {
+        id: Uuid::new_v4(),
+        name: format!("test_room_{}", Uuid::new_v4()),
+        description: Some("Test room".to_string()),
+        created_at: chrono::Utc::now(),
+    };
+    
+    sqlx::query!(
+        "INSERT INTO rooms (id, name, description, created_at) VALUES ($1, $2, $3, $4)",
+        room.id,
+        room.name,
+        room.description,
+        room.created_at
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    
+    room
+}
 ```
 
-### Debug Configuration
-
-```toml
-# Cargo.toml - Debug profile
-[profile.dev]
-debug = true
-opt-level = 0
-
-# Release profile with debug info
-[profile.release-with-debug]
-inherits = "release"
-debug = true
-```
-
-### Debugging Tools
-
-#### GDB/LLDB
+### Running Tests
 ```bash
-# Build with debug symbols
+# Run all tests
+cargo test
+
+# Run specific test
+cargo test test_send_message_success
+
+# Run integration tests only
+cargo test --test integration
+
+# Run tests with output
+cargo test -- --nocapture
+
+# Run tests in parallel
+cargo test --jobs 4
+
+# Generate coverage report
+cargo tarpaulin --out html --output-dir coverage/
+```
+
+## 🔨 Build and Deployment
+
+### Development Build
+```bash
+# Debug build (fast compilation, slower runtime)
 cargo build
 
-# Debug with gdb
-rust-gdb target/debug/lair-chat-client
+# Release build (slow compilation, fast runtime)
+cargo build --release
 
-# Debug with lldb
-rust-lldb target/debug/lair-chat-client
+# Build specific binary
+cargo build --bin lair-chat-server
+
+# Build with specific features
+cargo build --features "database,redis"
 ```
 
-#### VS Code Debugging
-```json
-// .vscode/launch.json
-{
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug Client",
-            "cargo": {
-                "args": ["build", "--bin=lair-chat-client"],
-                "filter": {
-                    "name": "lair-chat-client",
-                    "kind": "bin"
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}"
-        }
-    ]
-}
-```
-
-### Performance Profiling
-
-#### CPU Profiling with Flamegraph
+### Build Scripts
 ```bash
-# Install flamegraph
-cargo install flamegraph
+# scripts/build.sh
+#!/bin/bash
+set -euo pipefail
 
-# Profile the application
-cargo flamegraph --bin lair-chat-client
+echo "Building Lair Chat..."
 
-# Open flamegraph.svg in browser
+# Check for required tools
+command -v cargo >/dev/null 2>&1 || { echo "Rust/Cargo not found"; exit 1; }
+
+# Run pre-build checks
+echo "Running pre-build checks..."
+cargo fmt --check
+cargo clippy -- -D warnings
+cargo audit
+
+# Build the project
+echo "Building release binary..."
+cargo build --release
+
+# Run tests
+echo "Running tests..."
+cargo test --release
+
+echo "Build completed successfully!"
 ```
 
-#### Memory Profiling with Valgrind
-```bash
-# Install valgrind
-sudo apt install valgrind  # Ubuntu/Debian
+### Docker Configuration
+```dockerfile
+# Dockerfile
+FROM rust:1.70 as builder
 
-# Run with valgrind
-valgrind --tool=memcheck --leak-check=full target/debug/lair-chat-client
+WORKDIR /app
+COPY . .
+
+# Build dependencies first for better caching
+RUN cargo build --release --bin lair-chat-server
+
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/target/release/lair-chat-server /usr/local/bin/
+COPY --from=builder /app/config/ /etc/lair-chat/
+
+EXPOSE 8080 9090
+
+CMD ["lair-chat-server", "--config", "/etc/lair-chat/config.toml"]
 ```
 
-#### Benchmarking
-```bash
-# Run benchmarks
-cargo bench
+```yaml
+# docker-compose.yml
+version: '3.8'
 
-# Run specific benchmark
-cargo bench message_throughput
+services:
+  lair-chat:
+    build: .
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@db:5432/lair_chat
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./uploads:/app/uploads
 
-# Generate benchmark report
-cargo bench -- --save-baseline main
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: lair_chat
+      POSTGRES_PASSWORD: password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+
+volumes:
+  postgres_data:
+  redis_data:
 ```
 
-## Release Process
-
-### Version Management
-
-We use [Semantic Versioning](https://semver.org/):
-- **MAJOR**: Breaking changes
-- **MINOR**: New features, backwards compatible
-- **PATCH**: Bug fixes, backwards compatible
-
-### Release Checklist
-
-1. **Update version numbers**:
-   ```bash
-   # Update Cargo.toml
-   version = "0.7.0"
-   
-   # Update README.md badges
-   # Update documentation
-   ```
-
-2. **Update changelog**:
-   ```markdown
-   # Changelog
-   
-   ## [0.7.0] - 2024-01-15
-   
-   ### Added
-   - File attachment support in DMs
-   - Message reactions
-   
-   ### Changed
-   - Improved encryption performance
-   
-   ### Fixed
-   - Connection stability issues
-   ```
-
-3. **Create release**:
-   ```bash
-   git tag -a v0.7.0 -m "Release version 0.7.0"
-   git push origin v0.7.0
-   ```
-
-4. **Build release artifacts**:
-   ```bash
-   # Build for different targets
-   cargo build --release --target x86_64-unknown-linux-gnu
-   cargo build --release --target x86_64-pc-windows-gnu
-   cargo build --release --target x86_64-apple-darwin
-   ```
-
-5. **Publish to crates.io**:
-   ```bash
-   cargo publish --dry-run
-   cargo publish
-   ```
-
-### CI/CD Pipeline
-
-Our GitHub Actions workflow includes:
-
+### CI/CD Configuration
 ```yaml
 # .github/workflows/ci.yml
 name: CI
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: lair_chat_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+          
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-      - name: Run tests
-        run: cargo test --all-features
-      - name: Run clippy
-        run: cargo clippy -- -D warnings
-      - name: Check formatting
-        run: cargo fmt -- --check
-  
-  security:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+        
+    - name: Cache cargo
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        
+    - name: Check formatting
+      run: cargo fmt --check
+      
+    - name: Run clippy
+      run: cargo clippy -- -D warnings
+      
+    - name: Run tests
+      run: cargo test --verbose
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/lair_chat_test
+        REDIS_URL: redis://localhost:6379
+        
+    - name: Run security audit
+      run: cargo audit
+```
+
+## 🐛 Debugging and Profiling
+
+### Logging Setup
+```rust
+// Initialize tracing
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+pub fn init_tracing() {
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_target(false)
+                .with_file(true)
+                .with_line_number(true)
+                .with_level(true)
+                .with_ansi(true)
+        )
+        .with(EnvFilter::from_default_env())
+        .init();
+}
+
+// Use structured logging
+#[tracing::instrument(skip(pool))]
+pub async fn send_message(
+    pool: &PgPool,
+    message: NewMessage,
+) -> Result<Message, ChatError> {
+    tracing::info!("Sending message to room {}", message.room_id);
+    
+    let result = sqlx::query_as!(/* ... */)
+        .fetch_one(pool)
+        .await;
+    
+    match &result {
+        Ok(msg) => tracing::info!("Message sent successfully: {}", msg.id),
+        Err(e) => tracing::error!("Failed to send message: {}", e),
+    }
+    
+    result.map_err(Into::into)
+}
+```
+
+### Debug Configuration
+```bash
+# Enable debug logging
+export RUST_LOG=lair_chat=debug,sqlx=info,tower_http=debug
+
+# Enable backtraces
+export RUST_BACKTRACE=1
+
+# Enable full backtraces
+export RUST_BACKTRACE=full
+
+# Run with debug symbols
+cargo run --bin lair-chat-server
+```
+
+### Performance Profiling
+```bash
+# Install profiling tools
+cargo install flamegraph
+sudo apt install linux-tools-common linux-tools-generic
+
+# Generate flame graph
+sudo cargo flamegraph --bin lair-chat-server
+
+# Memory profiling with valgrind
+cargo build --bin lair-chat-server
+valgrind --tool=massif target/debug/lair-chat-server
+
+# CPU profiling with perf
+perf record -g cargo run --release --bin lair-chat-server
+perf report
+```
+
+### Common Debugging Scenarios
+```rust
+// Debug async code
+#[tokio::main]
+async fn main() {
+    // Enable tokio console
+    console_subscriber::init();
+    
+    // Your async code here
+}
+
+// Debug database queries
+let query_result = sqlx::query!("SELECT * FROM users WHERE id = $1", user_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Database query failed: {:?}", e);
+        e
+    })?;
+
+// Debug WebSocket connections
+#[tracing::instrument(skip(socket))]
+async fn handle_websocket(socket: WebSocket) {
+    tracing::info!("New WebSocket connection established");
+    
+    while let Some(msg) = socket.recv().await {
+        match msg {
+            Ok(msg) => {
+                tracing::debug!("Received message: {:?}", msg);
+                // Handle message
+            }
+            Err(e) => {
+                tracing::error!("WebSocket error: {:?}", e);
+                break;
+            }
+        }
+    }
+    
+    tracing::info!("WebSocket connection closed");
+}
+```
+
+## 🤝 Contributing Guidelines
+
+### Getting Started
+1. **Fork the repository** on GitHub
+2. **Clone your fork** locally
+3. **Create a feature branch** from `develop`
+4. **Make your changes** following our coding standards
+5. **Write tests** for your changes
+6. **Run the test suite** to ensure everything works
+7. **Commit your changes** with descriptive messages
+8. **Push to your fork** and create a pull request
+
+### Commit Message Format
+We follow the [Conventional Commits](https://www.conventionalcommits.org/) specification:
+
+```
+<type>[optional scope]: <description>
+
+[optional body]
+
+[optional footer(s)]
+```
+
+Types:
+- `feat`: A new feature
+- `fix`: A bug fix
+- `docs`: Documentation only changes
+- `style`: Changes that don't affect meaning (whitespace, formatting)
+- `refactor`: Code change that neither fixes a bug nor adds a feature
+- `perf`: Performance improvements
+- `test`: Adding or modifying tests
+- `chore`: Maintenance tasks
+
+Examples:
+```
+feat(auth): add JWT token refresh functionality
+
+Implement automatic token refresh to improve user experience
+and reduce login frequency.
+
+Closes #123
+
+fix(websocket): handle connection drops gracefully
+
+Previously, unexpected connection drops would cause the server
+to panic. Now they are handled gracefully with proper cleanup.
+
+docs(api): update authentication endpoint documentation
+
+Add examples for new JWT refresh endpoint and clarify
+error response formats.
+```
+
+### Pull Request Process
+1. **Update documentation** if you've made API changes
+2. **Add tests** for new functionality
+3. **Ensure all tests pass** and code follows style guidelines
+4. **Update CHANGELOG.md** if your changes are user-facing
+5. **Request review** from maintainers
+6. **Address feedback** and update your PR as needed
+
+### Code Review Checklist
+- [ ] Code follows the project's style guidelines
+- [ ] Self-review of the code has been performed
+- [ ] Code is well-commented, particularly in hard-to-understand areas
+- [ ] Tests have been added that prove the fix is effective or feature works
+- [ ] New and existing unit tests pass locally
+- [ ] Any dependent changes have been merged and published
+
+### Development Workflow
+```bash
+# 1. Start from develop branch
+git checkout develop
+git pull origin develop
+
+# 2. Create feature branch
+git checkout -b feature/your-feature-name
+
+# 3. Make changes and commit frequently
+git add .
+git commit -m "feat: implement basic functionality"
+
+# 4. Push to your fork
+git push origin feature/your-feature-name
+
+# 5. Create pull request on GitHub
+
+# 6. After review and approval, merge via GitHub
+
+# 7. Clean up
+git checkout develop
+git pull origin develop
+git branch -d feature/your-feature-name
+```
+
+## 🚀 Release Process
+
+### Version Management
+We use [Semantic Versioning](https://semver.org/):
+- **MAJOR** version for incompatible API changes
+- **MINOR** version for backwards-compatible functionality additions
+- **PATCH** version for backwards-compatible bug fixes
+
+### Release Checklist
+- [ ] All tests pass
+- [ ] Documentation is updated
+- [ ] CHANGELOG.md is updated
+- [ ] Version numbers are bumped in Cargo.toml
+- [ ] Git tag is created
+- [ ] Release notes are written
+- [ ] Binaries are built and published
+
+### Automated Release
+```yaml
+# .github/workflows/release.yml
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - name: Security audit
-        run: cargo audit
-```
-
-## Advanced Topics
-
-### Custom Transport Implementation
-
-To implement a custom transport layer:
-
-```rust
-use async_trait::async_trait;
-use crate::transport::{Transport, TransportError};
-
-pub struct MyCustomTransport {
-    // Implementation details
-}
-
-#[async_trait]
-impl Transport for MyCustomTransport {
-    async fn send(&mut self, data: &[u8]) -> Result<(), TransportError> {
-        // Send implementation
-    }
+    - uses: actions/checkout@v4
     
-    async fn receive(&mut self) -> Result<Vec<u8>, TransportError> {
-        // Receive implementation
-    }
-    
-    async fn close(&mut self) -> Result<(), TransportError> {
-        // Cleanup implementation
-    }
-}
-```
-
-### Encryption Extensions
-
-Adding new encryption algorithms:
-
-```rust
-use crate::encryption::{EncryptionService, EncryptionError};
-
-pub struct MyEncryption {
-    // Encryption state
-}
-
-impl EncryptionService for MyEncryption {
-    fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>, EncryptionError> {
-        // Encryption implementation
-    }
-    
-    fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>, EncryptionError> {
-        // Decryption implementation
-    }
-}
-```
-
-### Plugin Architecture
-
-Future plugin support framework:
-
-```rust
-pub trait Plugin: Send + Sync {
-    fn name(&self) -> &str;
-    fn version(&self) -> &str;
-    
-    fn on_message(&self, message: &Message) -> Result<(), PluginError>;
-    fn on_user_join(&self, user: &User) -> Result<(), PluginError>;
-}
-
-pub struct PluginManager {
-    plugins: Vec<Box<dyn Plugin>>,
-}
-
-impl PluginManager {
-    pub fn register_plugin(&mut self, plugin: Box<dyn Plugin>) {
-        self.plugins.push(plugin);
-    }
-}
-```
-
----
-
-## Resources
-
-- [Rust Book](https://doc.rust-lang.org/book/)
-- [Tokio Tutorial](https://tokio.rs/tokio/tutorial)
-- [Ratatui Documentation](https://ratatui.rs/)
-- [Cargo Book](https://doc.rust-lang.org/cargo/)
-- [API Documentation](../api/README.md)
-- [Architecture Documentation](../architecture/README.md)
-
-For questions or support, please open an issue or join our development chat room.
-
----
-
-*Development Guide last updated: June 2025*
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      
+    - name: Build release
+      run: cargo build --release
+      
+    - name: Create release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_

@@ -5,11 +5,13 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
 use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 
 use crate::server::api::models::auth::{UserRole, UserStatus};
+use crate::shared_types::TcpServerStats;
 
 /// Server statistics
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -467,6 +469,32 @@ pub struct AuditLogSearchRequest {
 
 fn default_page_size() -> u32 {
     20
+}
+
+/// Global TCP server stats storage
+static TCP_STATS: std::sync::OnceLock<Arc<Mutex<Option<TcpServerStats>>>> =
+    std::sync::OnceLock::new();
+
+/// Initialize TCP stats storage
+pub fn init_tcp_stats() {
+    TCP_STATS.set(Arc::new(Mutex::new(None))).ok();
+}
+
+/// Update TCP server statistics for admin dashboard
+pub async fn update_tcp_stats(stats: TcpServerStats) {
+    if let Some(tcp_stats) = TCP_STATS.get() {
+        if let Ok(mut guard) = tcp_stats.try_lock() {
+            *guard = Some(stats);
+        }
+    }
+}
+
+/// Get current TCP server statistics
+pub async fn get_tcp_stats() -> Option<TcpServerStats> {
+    TCP_STATS
+        .get()
+        .and_then(|tcp_stats| tcp_stats.try_lock().ok())
+        .and_then(|guard| guard.clone())
 }
 
 /// Audit log statistics

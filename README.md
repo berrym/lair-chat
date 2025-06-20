@@ -15,12 +15,47 @@ git clone https://github.com/yourusername/lair-chat.git
 cd lair-chat
 cargo build --release
 
-# Start server
+# Option 1: Quick automated test with multiple clients
+./scripts/quick_start.sh
+
+# Option 2: Manual testing
+# Terminal 1 - Start server
 ./target/release/lair-chat-server
 
-# Start client (in another terminal)
+# Terminal 2+ - Start clients
 ./target/release/lair-chat-client
+
+# Option 3: Automated multi-client testing
+./scripts/test_multiple_clients.sh -n 3 -a
 ```
+
+### Testing with Multiple Clients
+
+For comprehensive real-world testing scenarios:
+
+```bash
+# Basic multi-client test (3 clients)
+make test-multi-client
+
+# Load testing with 10 clients
+./scripts/test_multiple_clients.sh -n 10 -a -d 300
+
+# Network testing across machines
+./scripts/quick_start.sh  # On server machine
+./target/release/lair-chat-client  # On client machines
+```
+
+See [Real-World Testing Guide](docs/REAL_WORLD_TESTING_GUIDE.md) for detailed testing scenarios.
+
+## 🎯 Database Migration Progress
+
+**Phase 1: Infrastructure Setup - COMPLETED ✅**
+- TCP and REST API servers now share the same StorageManager instance
+- Database connection pool increased for dual server access
+- SharedState structure updated to use database storage
+- Infrastructure ready for full database integration
+
+**Next: Phase 2 - Data Structure Migration (In Progress)**
 
 ## ✨ Features
 
@@ -40,14 +75,15 @@ cargo build --release
 | Topic | Description |
 |-------|-------------|
 | [**User Guide**](docs/guides/USER_GUIDE.md) | Complete guide for end users |
+| [**Admin Documentation**](docs/admin/README.md) | System administration and management |
+| [**API Documentation**](docs/api/README.md) | REST API and WebSocket reference |
+| [**Development Guide**](docs/development/DEVELOPMENT_GUIDE.md) | Setup, testing, and contribution guide |
+| [**Architecture**](docs/architecture/README.md) | System design and technical details |
 | [**Project Progress**](docs/PROJECT_PROGRESS.md) | Current status and sprint tracking |
 | [**Project Roadmap**](docs/ROADMAP.md) | Strategic direction and future plans |
-| [**Sprint 4 Report**](docs/sprints/sprint-4-completion.md) | Latest sprint completion details |
-| [**Sprint 5 Plan**](docs/sprints/sprint-5-plan.md) | Upcoming sprint planning |
-| [**API Documentation**](docs/api/README.md) | Comprehensive API reference |
-| [**Development Guide**](docs/development/DEVELOPMENT_GUIDE.md) | Setup and contribution guide |
-| [**Architecture**](docs/architecture/README.md) | System design and components |
 | [**Migration Guide**](docs/guides/migration-v0.6.0.md) | Upgrading between versions |
+| [**Performance Baselines**](docs/development/performance-baselines.md) | Benchmarks and optimization |
+| [**Real-World Testing Guide**](docs/REAL_WORLD_TESTING_GUIDE.md) | Multi-client testing and deployment |
 
 ## 🏗️ Architecture
 

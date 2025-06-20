@@ -1,0 +1,69 @@
+#!/usr/bin/expect -f
+set timeout 15
+
+# Test room creation functionality
+puts "🏠 Testing Room Creation..."
+
+spawn ./target/release/lair-chat-client
+expect "Welcome to Lair Chat!"
+
+# Registration
+expect "Login with existing account? (y/n):"
+send "n\r"
+expect "Enter username:"
+send "testuser\r"
+expect "Enter password:"
+send "testpass\r"
+expect "Registration successful"
+expect "Authentication successful"
+
+# Wait for lobby
+sleep 2
+
+puts "✅ Logged in successfully"
+
+# Create a room
+puts "📝 Creating room 'testroom'..."
+send "/create-room testroom\r"
+sleep 2
+
+# Check if we got the success message
+expect {
+    "Room 'testroom' created successfully!" {
+        puts "✅ Room creation success message received"
+    }
+    timeout {
+        puts "❌ No room creation success message"
+    }
+}
+
+# Test sending a message in the new room
+puts "💬 Sending message in new room..."
+send "Hello from testroom!\r"
+sleep 1
+
+# List rooms to verify it exists
+puts "📋 Listing rooms..."
+send "/rooms\r"
+sleep 2
+
+# Leave the room
+puts "🚪 Leaving room..."
+send "/leave\r"
+sleep 1
+
+# Join the room again
+puts "🔄 Rejoining room..."
+send "/join testroom\r"
+sleep 2
+
+# Send another message
+send "Back in testroom!\r"
+sleep 1
+
+# Quit
+puts "👋 Quitting..."
+send "/quit\r"
+expect eof
+
+puts "✅ Room creation test completed!"

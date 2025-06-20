@@ -16,6 +16,8 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -225,6 +227,26 @@ fn default_page_size() -> u32 {
 
 fn default_sort_order() -> SortOrder {
     SortOrder::Ascending
+}
+
+/// TCP server statistics access functions
+/// These functions provide access to TCP server statistics for integrated monitoring
+
+/// Global TCP server statistics reference
+pub static TCP_SERVER_STATS: once_cell::sync::Lazy<
+    Arc<Mutex<Option<crate::shared_types::TcpServerStats>>>,
+> = once_cell::sync::Lazy::new(|| Arc::new(Mutex::new(None)));
+
+/// Update TCP server statistics
+pub async fn update_tcp_stats(stats: crate::shared_types::TcpServerStats) {
+    if let Ok(mut global_stats) = TCP_SERVER_STATS.try_lock() {
+        *global_stats = Some(stats);
+    }
+}
+
+/// Get current TCP server statistics
+pub async fn get_tcp_stats() -> Option<crate::shared_types::TcpServerStats> {
+    TCP_SERVER_STATS.try_lock().ok()?.clone()
 }
 
 /// Validation helpers

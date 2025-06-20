@@ -17,6 +17,7 @@ use crate::{
     },
     config::Config,
     connection_manager::ConnectionManager,
+    message_router::ClientMessageRouter,
     tcp_transport::TcpTransport,
     transport::{ConnectionConfig, ConnectionObserver, Message, MessageStore},
     tui::{Event, Tui},
@@ -50,6 +51,9 @@ pub struct App {
 
     // Server-provided user list for DM discovery
     connected_users: Vec<String>,
+
+    // Unified message routing system
+    message_router: ClientMessageRouter,
 }
 
 /// Observer for handling ConnectionManager messages and events
@@ -74,13 +78,35 @@ impl ChatMessageObserver {
 
 impl ConnectionObserver for ChatMessageObserver {
     fn on_message(&self, message: String) {
+        debug!("Connection received message: {}", message);
+
+        // *** COMPREHENSIVE MESSAGE SOURCE TRACKING ***
+        if message.contains("USER_LIST")
+            || message.contains("ROOM_LIST")
+            || message.contains("CURRENT_ROOM")
+            || message.contains("ROOM_STATUS")
+            || message.contains("Reconnected User")
+            || message.contains(": true")
+            || message == "true"
+        {
+            tracing::error!(
+                "🔍 CONNECTION OBSERVER: Protocol message received from server: '{}'",
+                message
+            );
+        } else {
+            tracing::info!(
+                "🔍 CONNECTION OBSERVER: Regular message received: '{}'",
+                message
+            );
+        }
+
         // Store message in local store
         if let Ok(mut store) = self.message_store.lock() {
             store.add_message(Message::received_message(message.clone()));
         }
 
-        // Send received message to UI via action system
-        let _ = self.action_sender.send(Action::ReceiveMessage(message));
+        // Forward to the action sender for processing
+        let _ = self.action_sender.send(Action::RouteMessage(message));
     }
 
     fn on_error(&self, error: String) {
@@ -154,6 +180,9 @@ impl App {
 
         let connection_manager = Arc::new(tokio::sync::Mutex::new(connection_manager));
 
+        // Clone action_tx for message router before moving it into the struct
+        let action_tx_clone = action_tx.clone();
+
         Ok(Self {
             tick_rate,
             frame_rate,
@@ -180,6 +209,9 @@ impl App {
 
             // Server-provided user list
             connected_users: Vec::new(),
+
+            // Unified message routing system
+            message_router: ClientMessageRouter::new(action_tx_clone),
         })
     }
 
@@ -487,6 +519,8 @@ impl App {
             // New action for handling auth failure
             Action::AuthenticationFailure(error) => {
                 error!("Authentication failed: {}", error);
+
+                // Immediately reset auth state first
                 self.auth_state = AuthState::Failed {
                     reason: error.clone(),
                 };
@@ -495,10 +529,22 @@ impl App {
                     .handle_error(crate::auth::AuthError::InternalError(error.clone()));
                 self.mode = Mode::Authentication;
 
+                // Reset connection manager to prevent hanging on next attempt
+                let connection_manager = Arc::clone(&self.connection_manager);
+                tokio::spawn(async move {
+                    info!("Cleaning up connection after authentication failure");
+                    // Force disconnect with longer wait
+                    let mut manager = connection_manager.lock().await;
+                    let _ = manager.disconnect().await;
+                    drop(manager);
+                    // Longer delay to ensure complete cleanup
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    info!("Connection cleanup completed");
+                });
+
                 // Add error message to UI for better user feedback
                 self.home_component
                     .add_message_to_room(format!("Authentication failed: {}", error), true);
-
                 Ok(None)
             }
 
@@ -626,243 +672,236 @@ impl App {
                 Ok(None)
             }
 
-            Action::ReceiveMessage(message) => {
-                // Filter out user list requests immediately - these should never be displayed
-                if message == "REQUEST_USER_LIST" {
-                    info!("Filtered out user list request from display");
-                    return Ok(None);
-                }
-
-                // Check if this is a server user list update
-                if message.starts_with("USER_LIST:") {
-                    let user_list_str = message.strip_prefix("USER_LIST:").unwrap_or("");
-                    self.connected_users = if user_list_str.is_empty() {
-                        Vec::new()
-                    } else {
-                        user_list_str.split(',').map(|s| s.to_string()).collect()
-                    };
-                    info!("Updated connected users list: {:?}", self.connected_users);
-                    // Update the home component with the new user list
-                    self.home_component
-                        .update_connected_users(self.connected_users.clone());
-                    return Ok(None);
-                }
-
-                // Check if this is a room status update
-                if message.starts_with("ROOM_STATUS:") {
-                    let status_str = message.strip_prefix("ROOM_STATUS:").unwrap_or("");
-                    let parts: Vec<&str> = status_str.splitn(2, ',').collect();
-                    if parts.len() == 2 {
-                        let room_name = parts[0];
-                        let username = parts[1];
-                        info!("Room status update: {} joined {}", username, room_name);
-                        // Update status bar to show current room
-                        self.status_bar
-                            .set_current_room(Some(room_name.to_string()));
-                    }
-                    return Ok(None);
-                }
-
-                // Check if this is a direct message from another user
-                if message.starts_with("DM_FROM:") {
-                    info!("📨 DEBUG: Received DM_FROM message: '{}'", message);
-                    let dm_str = message.strip_prefix("DM_FROM:").unwrap_or("");
-                    let parts: Vec<&str> = dm_str.splitn(2, ':').collect();
-                    if parts.len() == 2 {
-                        let sender = parts[0];
-                        let dm_content = parts[1];
-                        info!(
-                            "📥 DEBUG: Parsed DM_FROM - sender: '{}', content: '{}'",
-                            sender, dm_content
-                        );
-                        info!("💬 Received direct message from {}: {}", sender, dm_content);
-
-                        // Add the DM to conversation manager
-                        self.home_component
-                            .add_dm_received_message(sender.to_string(), dm_content.to_string());
-                        self.status_bar.record_received_message();
-
-                        // Show DM notification in status bar
-                        self.status_bar.show_dm_notification(
-                            sender.to_string(),
-                            std::time::Duration::from_secs(8),
-                        );
-
-                        info!("✅ DEBUG: DM_FROM message processed and added to conversation");
-
-                        // Show a notification to the user about the new DM
-                        let notification_msg = format!("🔔 New DM from {}: {}", sender, dm_content);
-                        info!("{}", notification_msg);
-
-                        // Check if user is currently in DM mode with this sender
-                        let is_viewing_sender_dm = self.home_component.is_in_dm_mode()
-                            && self.home_component.get_current_dm_partner().as_ref()
-                                == Some(&sender.to_string());
-
-                        // If not viewing this DM conversation, show multiple notifications
-                        if !is_viewing_sender_dm {
-                            // Show notification in chat area
-                            let notification = format!(
-                                "🔔 NEW DIRECT MESSAGE from {}: \"{}\" (Press Ctrl+L → N to view DMs)",
-                                sender, dm_content
-                            );
-                            self.home_component.add_message_to_room(notification, true);
-
-                            // Also log a prominent notification
-                            info!("🔔 NEW DM NOTIFICATION: {} → You: {}", sender, dm_content);
-
-                            // Show a system-level notification
-                            let system_notification = format!(
-                                "📨 You have a new direct message from {}! Check your DM list.",
-                                sender
-                            );
-                            self.home_component
-                                .add_message_to_room(system_notification, true);
-                        }
-                    } else {
-                        error!("❌ DEBUG: Invalid DM_FROM format - parts: {:?}", parts);
-                    }
-                    return Ok(None);
-                }
-
-                // Message handling from either modern or legacy systems
-                // Messages can come from observer pattern or legacy transport
-                info!("ACTION: ReceiveMessage handler called with: '{}'", message);
-                info!("DEBUG: Current auth_state: {:?}", self.auth_state);
-                info!(
-                    "DEBUG: Chat initialized: {}",
-                    self.home_component.is_chat_initialized()
+            // New unified message router actions
+            Action::DisplayMessage { content, is_system } => {
+                debug!(
+                    "DisplayMessage action: content='{}', is_system={}",
+                    content, is_system
                 );
 
-                // Make sure the message appears in the chat regardless of source
-                if !message.is_empty() && self.auth_state.is_authenticated() {
-                    // Filter out protocol messages and add messages to chat with proper system classification
-                    if !message.starts_with("USER_LIST:")
-                        && !message.starts_with("ROOM_STATUS:")
-                        && message != "REQUEST_USER_LIST"
-                    {
-                        let is_system_msg = self.home_component.is_system_message(&message);
-                        self.home_component
-                            .add_message_to_room(message.clone(), is_system_msg);
-                    }
-                }
+                // Check if this is a DM message that should be handled specially
+                if content.starts_with("💬 ") && !*is_system {
+                    // Extract sender and message from "💬 sender: message" format
+                    if let Some(rest) = content.strip_prefix("💬 ") {
+                        if let Some((sender, message)) = rest.split_once(": ") {
+                            debug!("Processing DM message from {} to DM system", sender);
 
-                // Check if this is an authentication response from server
-                if message.contains("Welcome back")
-                    || message.contains("has joined the chat")
-                    || message.contains("Registration successful")
-                {
-                    info!(
-                        "Authentication success message detected: '{}' (current auth_state: {:?})",
-                        message, self.auth_state
-                    );
+                            // Get current user to determine if this is sent or received
+                            let current_user =
+                                if let AuthState::Authenticated { ref profile, .. } =
+                                    self.auth_state
+                                {
+                                    Some(profile.username.clone())
+                                } else {
+                                    None
+                                };
 
-                    // Only process if we're currently authenticating to avoid interference
-                    if self.auth_state == AuthState::Authenticating {
-                        info!("Processing authentication response for authenticating user");
-
-                        // Create successful auth state - server has confirmed authentication
-                        let username = if message.contains("Welcome back") {
-                            // Extract from "Welcome back, username" format
-                            message
-                                .split("Welcome back, ")
-                                .nth(1)
-                                .and_then(|s| s.split(',').next())
-                                .unwrap_or("User")
-                        } else if message.contains("has joined") {
-                            // Extract from "username has joined the chat" format
-                            message.split(" has joined").next().unwrap_or("User")
+                            if let Some(current_user) = current_user {
+                                if sender == current_user {
+                                    // This is a sent message - skip it since it was already added
+                                    // when the user sent the message via handle_dm_message_send
+                                    debug!(
+                                        "Skipping sent DM message display - already added locally"
+                                    );
+                                } else {
+                                    // This is a received message from sender
+                                    debug!("Adding received DM message from {}", sender);
+                                    self.home_component.add_dm_received_message(
+                                        sender.to_string(),
+                                        message.to_string(),
+                                    );
+                                }
+                            } else {
+                                // Fallback if no current user - treat as received
+                                debug!("No current user - treating as received message");
+                                self.home_component.add_dm_received_message(
+                                    sender.to_string(),
+                                    message.to_string(),
+                                );
+                            }
                         } else {
-                            "User"
-                        };
-
-                        info!("Extracted username from server response: '{}'", username);
-
-                        let auth_state = AuthState::Authenticated {
-                            profile: crate::auth::UserProfile {
-                                id: uuid::Uuid::new_v4(),
-                                username: username.to_string(),
-                                roles: vec!["user".to_string()],
-                            },
-                            session: crate::auth::Session {
-                                id: uuid::Uuid::new_v4(),
-                                token: format!("server_token_{}", username),
-                                created_at: std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap()
-                                    .as_secs(),
-                                expires_at: std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap()
-                                    .as_secs()
-                                    + 3600,
-                            },
-                        };
-
-                        // Send authentication success action
-                        info!(
-                            "Sending AuthenticationSuccess action for user: {}",
-                            username
-                        );
-                        let _ = self
-                            .action_tx
-                            .send(Action::AuthenticationSuccess(auth_state));
+                            // Fallback to regular room message if parsing fails
+                            self.home_component
+                                .add_message_to_room(content.clone(), *is_system);
+                        }
                     } else {
-                        info!("Ignoring authentication message - not currently authenticating (state: {:?})", self.auth_state);
+                        self.home_component
+                            .add_message_to_room(content.clone(), *is_system);
                     }
-                } else if message.contains("Authentication failed")
-                    || message.contains("Login failed")
-                    || message.contains("Invalid credentials")
+                } else {
+                    // Regular message or system message - display through room component
+                    self.home_component
+                        .add_message_to_room(content.clone(), *is_system);
+                }
+
+                debug!("DisplayMessage processed successfully");
+                Ok(None)
+            }
+
+            Action::UpdateConnectedUsers(users) => {
+                // Update connected users list
+                self.connected_users = users.clone();
+                self.home_component.update_connected_users(users.clone());
+                Ok(None)
+            }
+
+            Action::UpdateCurrentRoom(room_name) => {
+                // Update current room in status bar
+                self.status_bar.set_current_room(Some(room_name.clone()));
+                Ok(None)
+            }
+
+            Action::RouteMessage(message) => {
+                debug!("RouteMessage action received: {}", message);
+
+                // COMPREHENSIVE DEBUG: Log all protocol messages
+                if message.contains("Reconnected User")
+                    || message.contains("USER_LIST")
+                    || message.contains("ROOM_LIST")
+                    || message.contains("CURRENT_ROOM")
+                    || message.contains("ROOM_STATUS")
+                    || message.contains(": true")
+                    || message == "true"
                 {
-                    warn!(
-                        "Authentication failure message detected: '{}' (current auth_state: {:?})",
-                        message, self.auth_state
+                    tracing::warn!(
+                        "🔍 APP DEBUG: RouteMessage received protocol message: '{}'",
+                        message
                     );
-
-                    if self.auth_state == AuthState::Authenticating {
-                        let _ = self
-                            .action_tx
-                            .send(Action::AuthenticationFailure(message.clone()));
-                    }
                 }
 
-                // Ensure chat is initialized
-                if !self.home_component.is_chat_initialized() {
-                    warn!("Chat not initialized, attempting to initialize with default user");
-                    if let Err(e) = self
-                        .home_component
-                        .initialize_chat("DefaultUser".to_string())
-                    {
-                        error!("Failed to initialize chat: {}", e);
+                let current_username =
+                    if let AuthState::Authenticated { ref profile, .. } = self.auth_state {
+                        Some(profile.username.clone())
                     } else {
-                        info!("DEBUG: Successfully initialized chat with DefaultUser");
-                        // Update status bar to show Lobby room
-                        self.status_bar.set_current_room(Some("Lobby".to_string()));
+                        None
+                    };
+
+                if let Some(current_username) = current_username {
+                    debug!("Routing message for {}: '{}'", current_username, message);
+
+                    // Update current user in message router
+                    if let AuthState::Authenticated { ref profile, .. } = self.auth_state {
+                        self.message_router
+                            .set_current_user(Some(profile.username.clone()));
+                    }
+
+                    // Use unified message router as the ONLY message handler
+                    match self
+                        .message_router
+                        .parse_and_route_protocol_message(&message)
+                    {
+                        Ok(()) => {
+                            debug!(
+                                "Message router successfully processed message for {}: '{}'",
+                                current_username, message
+                            );
+                        }
+                        Err(e) => {
+                            debug!(
+                                "Message router failed to process '{}' for {}: {}",
+                                message, current_username, e
+                            );
+
+                            // SMART protocol message filtering - catch display spam but allow processing
+
+                            // The message router failed, but we should only filter messages that
+                            // would be harmful to display. Legitimate protocol messages like
+                            // USER_LIST: and ROOM_STATUS: should have been processed by the router.
+
+                            // If we get here with a protocol message, it means the router couldn't
+                            // handle it properly, so we should filter it to prevent display spam.
+
+                            // Filter Reconnected User protocol messages (these should never display)
+                            if message.starts_with("Reconnected User: ")
+                                && !message.contains(" joined the room")
+                            {
+                                debug!("Filtered out Reconnected User protocol: '{}'", message);
+                                tracing::warn!(
+                                    "🔍 APP FALLBACK: Filtered Reconnected User message that router couldn't handle: '{}'",
+                                    message
+                                );
+                                return Ok(None);
+                            }
+
+                            // Filter any remaining protocol spam that slipped through
+                            if message.starts_with("USER_LIST:")
+                                || message.starts_with("ROOM_STATUS:")
+                                || message.starts_with("ROOM_LIST:")
+                                || message.starts_with("CURRENT_ROOM:")
+                                || message == "true"
+                                || message.trim() == "true"
+                                || message.ends_with(": true")
+                                || (message.contains(": ") && {
+                                    let parts: Vec<&str> = message.splitn(2, ": ").collect();
+                                    parts.len() == 2
+                                        && (parts[1].starts_with("USER_LIST")
+                                            || parts[1].starts_with("ROOM_STATUS")
+                                            || parts[1].starts_with("CURRENT_ROOM")
+                                            || parts[1] == "true"
+                                            || parts[1].trim() == "true")
+                                })
+                            {
+                                debug!(
+                                    "Filtered out protocol spam that router couldn't handle: '{}'",
+                                    message
+                                );
+                                tracing::warn!(
+                                    "🔍 APP FALLBACK: Filtered protocol spam: '{}'",
+                                    message
+                                );
+                                return Ok(None);
+                            }
+
+                            // *** EMERGENCY OVERRIDE: FINAL PROTOCOL BLOCK BEFORE UI ***
+                            // This is the absolute last chance to block protocol messages
+                            if message.contains("USER_LIST")
+                                || message.contains("ROOM_LIST")
+                                || message.contains("CURRENT_ROOM")
+                                || message.contains("ROOM_STATUS")
+                                || message.contains("Reconnected User")
+                                || message.contains("REQUEST_USER_LIST")
+                                || message.contains("ROOM_CREATED")
+                                || message.contains("ROOM_JOINED")
+                                || message.contains("ROOM_LEFT")
+                                || message.contains(": true")
+                                || message == "true"
+                                || message.trim() == "true"
+                                || (message.contains(": ") && {
+                                    let parts: Vec<&str> = message.splitn(2, ": ").collect();
+                                    parts.len() == 2
+                                        && (parts[1].len() < 50
+                                            && (parts[1].contains("_LIST")
+                                                || parts[1].contains("_ROOM")
+                                                || parts[1].contains("_STATUS")
+                                                || parts[1].matches(',').count() > 2
+                                                || parts[1].chars().all(|c| {
+                                                    c.is_alphanumeric()
+                                                        || c == '_'
+                                                        || c == ':'
+                                                        || c == ','
+                                                })))
+                                })
+                            {
+                                tracing::error!(
+                                    "🚨🚨🚨 EMERGENCY OVERRIDE: Blocked protocol message at final stage: '{}'",
+                                    message
+                                );
+                                return Ok(None);
+                            }
+
+                            // If we get here, log it as a genuine message that passed all filters
+                            tracing::warn!(
+                                "✅ APP: Displaying genuine unhandled message: '{}'",
+                                message
+                            );
+                            self.home_component
+                                .add_message_to_room(message.to_string(), false);
+                        }
                     }
                 } else {
-                    info!("DEBUG: Chat already initialized, proceeding with message handling");
+                    debug!("Received message while not authenticated: '{}'", message);
                 }
 
-                // Modern message handling through room system
-                info!("DEBUG: Adding message to room: '{}'", message);
-                self.home_component
-                    .add_message_to_room(message.to_string(), true);
-
-                // Handle message counting:
-                // 1. Don't count messages from the current user (starting with "You:")
-                // 2. Count all received messages (including system messages)
-                // 3. User-initiated outgoing messages use explicit RecordSentMessage action
-                if message.starts_with("You:") {
-                    info!("User message added to room: {}", message);
-                } else {
-                    // Count all received messages (including system messages)
-                    self.status_bar.record_received_message();
-                    info!(
-                        "Received message counted: {} - Total now: {}",
-                        message,
-                        self.status_bar.get_received_count()
-                    );
-                }
                 Ok(None)
             }
 
@@ -870,7 +909,15 @@ impl App {
                 // Handle sent messages from ConnectionManager
                 info!("ACTION: MessageSent handler called with: '{}'", message);
 
-                // Add sent message to the room display
+                // Skip DM messages - they are handled by the message router system
+                if message.starts_with("DM:") {
+                    debug!(
+                        "Skipping DM message from MessageSent action - handled by message router"
+                    );
+                    return Ok(None);
+                }
+
+                // Only add non-DM messages to room display
                 self.home_component
                     .add_message_to_room(message.to_string(), false);
                 info!("Sent message added to room: {}", message);
@@ -881,7 +928,6 @@ impl App {
                     "Sent message counted - Total now: {}",
                     self.status_bar.get_sent_count()
                 );
-                tracing::info!("DEBUG: Recorded sent message in status bar");
 
                 Ok(None)
             }
@@ -926,6 +972,173 @@ impl App {
                 Ok(None)
             }
 
+            // Room actions
+            Action::CreateRoom(room_name) => {
+                info!("Creating room: {}", room_name);
+                // Send room creation request to server using the new direct method
+                let create_message = format!("CREATE_ROOM:{}", room_name);
+                self.send_room_command_to_server(create_message);
+                self.home_component
+                    .add_message_to_room(format!("Creating room '{}'...", room_name), true);
+                Ok(None)
+            }
+
+            Action::JoinRoom(room_name) => {
+                info!("Joining room: {}", room_name);
+                // Send room join request to server using the new direct method
+                let join_message = format!("JOIN_ROOM:{}", room_name);
+                self.send_room_command_to_server(join_message);
+                self.home_component
+                    .add_message_to_room(format!("Joining room '{}'...", room_name), true);
+                Ok(None)
+            }
+
+            Action::LeaveRoom => {
+                info!("Leaving current room");
+                // Send leave room request to server using the new direct method
+                self.send_room_command_to_server("LEAVE_ROOM".to_string());
+                self.home_component
+                    .add_message_to_room("Leaving current room...".to_string(), true);
+                Ok(None)
+            }
+
+            Action::ListRooms => {
+                info!("Requesting room list");
+                // Send room list request to server using the new direct method
+                self.send_room_command_to_server("LIST_ROOMS".to_string());
+                self.home_component
+                    .add_message_to_room("Requesting available rooms...".to_string(), true);
+                Ok(None)
+            }
+
+            Action::RoomCreated(room_name) => {
+                info!("Room created successfully: {}", room_name);
+                self.home_component.add_message_to_room(
+                    format!("Room '{}' created successfully!", room_name),
+                    true,
+                );
+                // Pass the action to home component to update available rooms
+                self.home_component.update(action.clone())?;
+                // Automatically join the created room
+                self.status_bar.set_current_room(Some(room_name.clone()));
+                Ok(None)
+            }
+
+            Action::RoomJoined(room_name) => {
+                info!("Successfully joined room: {}", room_name);
+                self.home_component
+                    .add_message_to_room(format!("✅ Joined room '{}'", room_name), true);
+                self.status_bar.set_current_room(Some(room_name.clone()));
+                Ok(None)
+            }
+
+            Action::RoomLeft(room_name) => {
+                info!("Successfully left room: {}", room_name);
+                self.home_component
+                    .add_message_to_room(format!("✅ Left room '{}'", room_name), true);
+                // Return to Lobby
+                self.status_bar.set_current_room(Some("Lobby".to_string()));
+                Ok(None)
+            }
+
+            Action::RoomError(error) => {
+                warn!("Room operation error: {}", error);
+                self.home_component
+                    .add_message_to_room(format!("❌ Room error: {}", error), true);
+                Ok(None)
+            }
+
+            Action::RoomListReceived(rooms) => {
+                info!("Received room list: {:?}", rooms);
+                if rooms.is_empty() {
+                    self.home_component.add_message_to_room(
+                        "📋 No rooms available besides Lobby".to_string(),
+                        true,
+                    );
+                } else {
+                    self.home_component
+                        .add_message_to_room("📋 Available rooms:".to_string(), true);
+                    for room in rooms {
+                        self.home_component
+                            .add_message_to_room(format!("  • {}", room), true);
+                    }
+                    self.home_component.add_message_to_room(
+                        "Use /join <room_name> to join a room".to_string(),
+                        true,
+                    );
+                }
+                Ok(None)
+            }
+
+            Action::CurrentRoomChanged(room_name) => {
+                info!("Current room changed to: {}", room_name);
+                self.status_bar.set_current_room(Some(room_name.clone()));
+                Ok(None)
+            }
+
+            Action::InvitationReceived(_inviter, room_name, invite_message) => {
+                // Use DisplayMessage actions directly to ensure UI visibility
+                let invitation_display = format!("🔔 INVITATION: {}", invite_message);
+                if let Err(e) = self.action_tx.send(Action::DisplayMessage {
+                    content: invitation_display,
+                    is_system: true,
+                }) {
+                    warn!("Failed to send invitation display: {:?}", e);
+                }
+
+                // Send instructions via DisplayMessage
+                let instructions = format!(
+                    "💡 To respond: '/accept {}' or '/decline {}' or just '/accept' for latest",
+                    room_name, room_name
+                );
+                if let Err(e) = self.action_tx.send(Action::DisplayMessage {
+                    content: instructions,
+                    is_system: true,
+                }) {
+                    warn!("Failed to send instructions: {:?}", e);
+                }
+
+                // Send alternatives via DisplayMessage
+                let alternatives = format!(
+                    "   You can also use '/join {}' to accept or '/invites' to see all pending",
+                    room_name
+                );
+                if let Err(e) = self.action_tx.send(Action::DisplayMessage {
+                    content: alternatives,
+                    is_system: true,
+                }) {
+                    warn!("Failed to send alternatives: {:?}", e);
+                }
+                Ok(None)
+            }
+
+            Action::InviteError(error) => {
+                warn!("Invitation error: {}", error);
+                self.home_component
+                    .add_message_to_room(format!("❌ Invitation error: {}", error), true);
+                Ok(None)
+            }
+
+            Action::InvitationAccepted(room_name) => {
+                info!("Invitation accepted for room: {}", room_name);
+                // Automatically join the room
+                let _ = self.action_tx.send(Action::JoinRoom(room_name.clone()));
+                self.home_component.add_message_to_room(
+                    format!("✅ Accepted invitation to join room '{}'", room_name),
+                    true,
+                );
+                Ok(None)
+            }
+
+            Action::InvitationDeclined(room_name) => {
+                info!("Invitation declined for room: {}", room_name);
+                self.home_component.add_message_to_room(
+                    format!("❌ Declined invitation to join room '{}'", room_name),
+                    true,
+                );
+                Ok(None)
+            }
+
             // Pass other actions to appropriate components
             _ => {
                 match self.mode {
@@ -937,6 +1150,16 @@ impl App {
                 Ok(None)
             }
         }
+    }
+
+    /// Reset connection manager to clean state
+    async fn reset_connection(&self) {
+        info!("Resetting connection manager to clean state");
+        let connection_manager = Arc::clone(&self.connection_manager);
+        let mut manager = connection_manager.lock().await;
+        let _ = manager.disconnect().await;
+        // Small delay to ensure clean disconnect
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
 
     /// Modern authentication flow using ConnectionManager with server-compatible encryption
@@ -962,6 +1185,14 @@ impl App {
                     "Username must be at least 3 characters".to_string(),
                 ));
                 return;
+            }
+
+            // Ensure clean state by disconnecting first
+            {
+                info!("Ensuring clean connection state before login attempt");
+                let mut manager = connection_manager.lock().await;
+                let _ = manager.disconnect().await;
+                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
             }
 
             // Connect using ConnectionManager with server-compatible encryption
@@ -1010,12 +1241,13 @@ impl App {
                         };
 
                         // Add stabilization delay to ensure server-side login is complete
-                        // This prevents the first message sending issue after authentication
-                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
                         let _ = action_tx.send(Action::AuthenticationSuccess(auth_state));
                     }
                     Err(e) => {
                         error!("Login failed for {}: {}", credentials.username, e);
+
+                        // Immediately send failure action for quick UI response
                         let _ = action_tx.send(Action::AuthenticationFailure(format!(
                             "Login failed: {}",
                             e
@@ -1056,6 +1288,14 @@ impl App {
                     "Password must be at least 6 characters".to_string(),
                 ));
                 return;
+            }
+
+            // Ensure clean state by disconnecting first and waiting
+            {
+                info!("Ensuring clean connection state before registration attempt");
+                let mut manager = connection_manager.lock().await;
+                let _ = manager.disconnect().await;
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
             }
 
             // Connect using ConnectionManager with server-compatible encryption
@@ -1369,14 +1609,102 @@ impl App {
 
     /// Modern message sending using ConnectionManager only (synchronous version)
     fn handle_modern_send_message_sync(&mut self, message: String) {
+        info!(
+            "🔥 DEBUG: handle_modern_send_message_sync called with: '{}'",
+            message
+        );
+
         // Check if this is a DM message and handle it specially
         if message.starts_with("DM:") {
+            info!("📨 DEBUG: Detected DM message, routing to DM handler");
             self.handle_dm_message_send(message);
+            return;
+        }
+
+        // Check if this is a room command and send it directly without user prefix
+        if message.starts_with("CREATE_ROOM:")
+            || message.starts_with("JOIN_ROOM:")
+            || message == "LEAVE_ROOM"
+            || message == "LIST_ROOMS"
+            || message == "REQUEST_USER_LIST"
+            || message.starts_with("INVITE_USER:")
+            || message.starts_with("ACCEPT_INVITATION:")
+            || message.starts_with("DECLINE_INVITATION:")
+            || message == "LIST_INVITATIONS"
+            || message == "ACCEPT_ALL_INVITATIONS"
+        {
+            info!(
+                "🏠 DEBUG: Detected room command, sending directly: '{}'",
+                message
+            );
+            self.send_room_command_to_server(message);
             return;
         }
 
         // Send to server using extracted method
         self.send_message_to_server(message);
+    }
+
+    /// Send room commands directly to server without user prefix
+    fn send_room_command_to_server(&mut self, command: String) {
+        let command_to_send = command.clone();
+
+        // Check connection status
+        let connection_status = if let Ok(manager) = self.connection_manager.try_lock() {
+            manager.get_status_sync()
+        } else {
+            crate::transport::ConnectionStatus::DISCONNECTED
+        };
+
+        // Check if user is authenticated
+        let is_authenticated = match &self.auth_state {
+            AuthState::Authenticated { .. } => true,
+            _ => false,
+        };
+
+        if !is_authenticated {
+            info!("Room command attempt while not authenticated");
+            let _ = self.action_tx.send(Action::DisplayMessage {
+                content: "Cannot execute room command: Not logged in. Please log in first."
+                    .to_string(),
+                is_system: true,
+            });
+            return;
+        }
+
+        if connection_status == crate::transport::ConnectionStatus::CONNECTED {
+            info!("Sending room command via ConnectionManager: '{}'", command);
+
+            // Queue the command sending as an async task
+            let connection_manager = Arc::clone(&self.connection_manager);
+            let action_tx = self.action_tx.clone();
+            let command_clone = command.clone();
+
+            tokio::spawn(async move {
+                let send_result = {
+                    let mut manager = connection_manager.lock().await;
+                    manager.send_message(command_to_send).await
+                };
+
+                match send_result {
+                    Ok(()) => {
+                        info!("Room command sent successfully: {}", command_clone);
+                    }
+                    Err(e) => {
+                        let error_msg = format!("Failed to send room command: {}", e);
+                        tracing::error!("{}", error_msg);
+                        let _ = action_tx.send(Action::Error(error_msg));
+                    }
+                }
+            });
+        } else {
+            let error_msg = format!(
+                "Cannot send room command - not connected (status: {:?})",
+                connection_status
+            );
+            warn!("{}: {}", error_msg, command);
+            let _ = self.action_tx.send(Action::Error(error_msg));
+        }
     }
 
     /// Extract server sending logic to avoid recursion
@@ -1403,12 +1731,16 @@ impl App {
         };
 
         if !is_authenticated {
-            info!("Attempted to send message while not authenticated");
+            info!(
+                "Attempted to send message while not authenticated: auth_state={:?}",
+                self.auth_state
+            );
             // Show error message to user
             let tx = &self.action_tx;
-            let _ = tx.send(Action::ReceiveMessage(
-                "Cannot send message: Not logged in. Please log in first.".to_string(),
-            ));
+            let _ = tx.send(Action::DisplayMessage {
+                content: "Cannot send message: Not logged in. Please log in first.".to_string(),
+                is_system: true,
+            });
             return;
         }
 
@@ -1443,32 +1775,20 @@ impl App {
             let message_to_send_clone = message_to_send.clone();
 
             tokio::spawn(async move {
-                tracing::info!("DEBUG: Starting async message send task");
-
                 // Check connection status before attempting send
-                let pre_lock_status = {
+                let _pre_lock_status = {
                     if let Ok(manager) = connection_manager.try_lock() {
                         manager.get_status_sync()
                     } else {
                         crate::transport::ConnectionStatus::DISCONNECTED
                     }
                 };
-                tracing::info!("DEBUG: Pre-lock connection status: {:?}", pre_lock_status);
 
                 let send_result = {
-                    tracing::info!("DEBUG: Attempting to acquire ConnectionManager lock...");
                     let mut manager = connection_manager.lock().await;
-                    tracing::info!("DEBUG: Acquired ConnectionManager lock, checking status...");
-
-                    let pre_send_status = manager.get_status().await;
-                    tracing::info!("DEBUG: Pre-send connection status: {:?}", pre_send_status);
-
-                    tracing::info!("DEBUG: Calling send_message...");
+                    let _pre_send_status = manager.get_status().await;
                     let result = manager.send_message(message_to_send_clone).await;
-
-                    tracing::info!("DEBUG: send_message call completed, checking status...");
-                    let post_send_status = manager.get_status().await;
-                    tracing::info!("DEBUG: Post-send connection status: {:?}", post_send_status);
+                    let _post_send_status = manager.get_status().await;
 
                     result
                 };
@@ -1485,14 +1805,13 @@ impl App {
                 }
 
                 // Check final status after lock is released
-                let final_status = {
+                let _final_status = {
                     if let Ok(manager) = connection_manager.try_lock() {
                         manager.get_status_sync()
                     } else {
                         crate::transport::ConnectionStatus::DISCONNECTED
                     }
                 };
-                tracing::info!("DEBUG: Final connection status: {:?}", final_status);
 
                 match send_result {
                     Ok(()) => {
@@ -1501,9 +1820,15 @@ impl App {
                             message_clone
                         );
 
-                        // Display sent message to user
-                        let sent_message = format!("You: {}", message_clone);
-                        let _ = action_tx.send(Action::ReceiveMessage(sent_message));
+                        // Display sent message to user - but only for non-DM messages
+                        // DM messages are handled separately in handle_dm_message_send
+                        if !message_clone.starts_with("DM:") {
+                            let sent_message = format!("You: {}", message_clone);
+                            let _ = action_tx.send(Action::DisplayMessage {
+                                content: sent_message,
+                                is_system: false,
+                            });
+                        }
 
                         // Record sent message for status bar
                         let _ = action_tx.send(Action::MessageSent(message_clone));
@@ -1537,7 +1862,6 @@ impl App {
             );
             status
         } else {
-            tracing::warn!("DEBUG: get_connection_status failed to lock, returning DISCONNECTED");
             crate::transport::ConnectionStatus::DISCONNECTED
         }
     }
@@ -1635,21 +1959,89 @@ impl App {
         let partner = parts[1];
         let content = parts[2];
 
-        info!(
-            "📤 DEBUG: Parsed DM - partner: '{}', content: '{}'",
-            partner, content
-        );
+        // DM message parsed successfully
 
-        // Add to DM conversation manager first
+        // Start DM conversation if not already active
+        // This ensures the conversation is visible and properly initialized
+        let _ = self
+            .action_tx
+            .send(Action::StartDMConversation(partner.to_string()));
+
+        // Add sent message to local DM conversation immediately
+        info!(
+            "💬 DEBUG: Adding sent message to local DM conversation with {}",
+            partner
+        );
         self.home_component
             .add_dm_sent_message(partner.to_string(), content.to_string());
 
-        info!("✅ DEBUG: Added DM to local conversation manager");
-
-        // Then send to server (avoid recursion)
+        // Send to server
         info!("🚀 DEBUG: About to send DM to server: '{}'", message);
-        self.send_message_to_server(message);
+        self.send_dm_to_server(message);
         info!("📡 DEBUG: DM sent to server");
+    }
+
+    /// Send DM directly to server without local processing
+    fn send_dm_to_server(&mut self, message: String) {
+        let message_to_send = message.clone();
+
+        // Check connection status
+        let connection_status = if let Ok(manager) = self.connection_manager.try_lock() {
+            manager.get_status_sync()
+        } else {
+            crate::transport::ConnectionStatus::DISCONNECTED
+        };
+
+        // Check if user is authenticated
+        let is_authenticated = match &self.auth_state {
+            AuthState::Authenticated { .. } => true,
+            _ => false,
+        };
+
+        if !is_authenticated {
+            info!("DM attempt while not authenticated");
+            let _ = self.action_tx.send(Action::DisplayMessage {
+                content: "Cannot send DM: Not logged in. Please log in first.".to_string(),
+                is_system: true,
+            });
+            return;
+        }
+
+        if connection_status == crate::transport::ConnectionStatus::CONNECTED {
+            info!("Sending DM via ConnectionManager: '{}'", message);
+
+            // Queue the DM sending as an async task
+            let connection_manager = Arc::clone(&self.connection_manager);
+            let action_tx = self.action_tx.clone();
+            let message_clone = message.clone();
+
+            tokio::spawn(async move {
+                let send_result = {
+                    let mut manager = connection_manager.lock().await;
+                    manager.send_message(message_to_send).await
+                };
+
+                match send_result {
+                    Ok(()) => {
+                        info!("DM sent successfully: {}", message_clone);
+                        // Record sent message for status bar (but don't duplicate in chat)
+                        let _ = action_tx.send(Action::MessageSent(message_clone));
+                    }
+                    Err(e) => {
+                        let error_msg = format!("Failed to send DM: {}", e);
+                        tracing::error!("{}", error_msg);
+                        let _ = action_tx.send(Action::Error(error_msg));
+                    }
+                }
+            });
+        } else {
+            let error_msg = format!(
+                "Cannot send DM - not connected (status: {:?})",
+                connection_status
+            );
+            warn!("{}: {}", error_msg, message);
+            let _ = self.action_tx.send(Action::Error(error_msg));
+        }
     }
 }
 
@@ -1680,7 +2072,7 @@ mod tests {
         // Verify action was sent
         if let Some(action) = rx.try_recv().ok() {
             match action {
-                Action::ReceiveMessage(msg) => assert_eq!(msg, "Hello world"),
+                Action::RouteMessage(msg) => assert_eq!(msg, "Hello world"),
                 _ => panic!("Wrong action type received"),
             }
         } else {

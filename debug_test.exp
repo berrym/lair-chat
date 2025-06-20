@@ -1,0 +1,99 @@
+#!/usr/bin/expect -f
+set timeout 10
+
+puts "🔍 Debug Test - Simple Connection"
+puts "================================"
+
+spawn ./target/release/lair-chat-client
+puts "✅ Client spawned"
+
+expect {
+    "Welcome to Lair Chat!" {
+        puts "✅ Got welcome message"
+    }
+    timeout {
+        puts "❌ No welcome message - timeout"
+        exit 1
+    }
+    eof {
+        puts "❌ Client died unexpectedly"
+        exit 1
+    }
+}
+
+expect {
+    "Login with existing account? (y/n):" {
+        puts "✅ Got login prompt"
+        send "n\r"
+    }
+    timeout {
+        puts "❌ No login prompt - timeout"
+        exit 1
+    }
+}
+
+expect {
+    "Enter username:" {
+        puts "✅ Got username prompt"
+        send "testuser\r"
+    }
+    timeout {
+        puts "❌ No username prompt - timeout"
+        exit 1
+    }
+}
+
+expect {
+    "Enter password:" {
+        puts "✅ Got password prompt"
+        send "testpass\r"
+    }
+    timeout {
+        puts "❌ No password prompt - timeout"
+        exit 1
+    }
+}
+
+puts "⏳ Waiting for authentication..."
+
+expect {
+    "Registration successful" {
+        puts "✅ Registration successful"
+    }
+    "Authentication successful" {
+        puts "✅ Authentication successful"
+    }
+    timeout {
+        puts "❌ Authentication failed - timeout"
+        exit 1
+    }
+    eof {
+        puts "❌ Connection died during auth"
+        exit 1
+    }
+}
+
+puts "⏳ Waiting for lobby setup..."
+sleep 3
+
+puts "📝 Testing simple message..."
+send "Hello, testing basic functionality!\r"
+sleep 2
+
+puts "🏠 Testing room creation..."
+send "/create-room debugroom\r"
+sleep 3
+
+puts "👋 Quitting..."
+send "/quit\r"
+
+expect {
+    eof {
+        puts "✅ Clean exit"
+    }
+    timeout {
+        puts "❌ Quit timeout"
+    }
+}
+
+puts "🎉 Debug test completed!"

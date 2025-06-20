@@ -54,7 +54,10 @@ impl ErrorDisplay {
     /// Send a message via action system
     fn send_message(&self, message: String) {
         if let Some(sender) = &self.action_sender {
-            let _ = sender.send(Action::ReceiveMessage(message));
+            let _ = sender.send(Action::DisplayMessage {
+                content: message,
+                is_system: true,
+            });
         } else {
             // Log error if no action sender is available - this should not happen in modern usage
             tracing::error!(

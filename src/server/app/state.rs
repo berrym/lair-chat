@@ -27,6 +27,7 @@ pub struct SharedState {
     pub auth_service: Arc<AuthService>,
     pub connected_users: HashMap<String, ConnectedUser>,
     pub rooms: HashMap<String, Room>,
+    pub pending_invitations: HashMap<String, Vec<PendingInvitation>>,
 }
 
 #[derive(Debug, Clone)]
@@ -43,6 +44,13 @@ pub struct Room {
     pub users: Vec<String>,
     pub created_at: u64,
     pub is_lobby: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct PendingInvitation {
+    pub inviter: String,
+    pub room_name: String,
+    pub invited_at: u64,
 }
 
 impl SharedState {
@@ -69,6 +77,7 @@ impl SharedState {
             auth_service,
             connected_users: HashMap::new(),
             rooms,
+            pending_invitations: HashMap::new(),
         }
     }
 
@@ -116,6 +125,8 @@ impl SharedState {
             if let Some(room) = self.rooms.get_mut(&user.current_room) {
                 room.users.retain(|u| u != username);
             }
+            // Clear pending invitations when user disconnects
+            self.clear_pending_invitations(username);
             Some(user)
         } else {
             None
@@ -213,6 +224,15 @@ impl SharedState {
         }
     }
 
+    /// Send a message to a specific user by username
+    pub fn send_to_user(&self, username: &str, message: &str) -> bool {
+        if let Some(user) = self.connected_users.get(username) {
+            self.send_to_peer(&user.address, message)
+        } else {
+            false
+        }
+    }
+
     /// Send a message to users in a specific room
     pub fn broadcast_to_room(&self, room_name: &str, message: &str) {
         if let Some(room) = self.rooms.get(room_name) {
@@ -224,6 +244,45 @@ impl SharedState {
                 }
             }
         }
+    }
+
+    /// Add a pending invitation for a user
+    pub fn add_pending_invitation(&mut self, username: &str, invitation: PendingInvitation) {
+        self.pending_invitations
+            .entry(username.to_string())
+            .or_insert_with(Vec::new)
+            .push(invitation);
+    }
+
+    /// Get pending invitations for a user
+    pub fn get_pending_invitations(&self, username: &str) -> Vec<&PendingInvitation> {
+        self.pending_invitations
+            .get(username)
+            .map(|invites| invites.iter().collect())
+            .unwrap_or_default()
+    }
+
+    /// Remove a specific pending invitation
+    pub fn remove_pending_invitation(&mut self, username: &str, room_name: &str) -> bool {
+        if let Some(invitations) = self.pending_invitations.get_mut(username) {
+            let original_len = invitations.len();
+            invitations.retain(|inv| inv.room_name != room_name);
+            invitations.len() != original_len
+        } else {
+            false
+        }
+    }
+
+    /// Get the most recent pending invitation for a user
+    pub fn get_latest_invitation(&self, username: &str) -> Option<&PendingInvitation> {
+        self.pending_invitations
+            .get(username)
+            .and_then(|invites| invites.last())
+    }
+
+    /// Clear all pending invitations for a user
+    pub fn clear_pending_invitations(&mut self, username: &str) {
+        self.pending_invitations.remove(username);
     }
 
     /// Get statistics about the server state

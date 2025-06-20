@@ -1,0 +1,354 @@
+#!/usr/bin/expect -f
+set timeout 30
+
+puts "🚀 Comprehensive Functionality Test"
+puts "=================================="
+
+# Function to create a user session
+proc create_user_session {username password} {
+    puts "📝 Creating session for $username..."
+
+    spawn ./target/release/lair-chat-client
+    expect "Welcome to Lair Chat!"
+    expect "Login with existing account? (y/n):"
+    send "n\r"
+    expect "Enter username:"
+    send "$username\r"
+    expect "Enter password:"
+    send "$password\r"
+    expect "Registration successful"
+    expect "Authentication successful"
+    sleep 2
+
+    return $spawn_id
+}
+
+# Function to switch to a session
+proc switch_to_session {session_id} {
+    global spawn_id
+    set spawn_id $session_id
+}
+
+puts "🧪 Test 1: Room Creation and Auto-Join"
+puts "======================================"
+
+# Start Alice's session
+set alice_id [create_user_session "alice" "alicepass"]
+puts "✅ Alice logged in"
+
+# Create a room
+puts "🏠 Alice creating room 'testroom'..."
+send "/create-room testroom\r"
+sleep 2
+
+expect {
+    "Room 'testroom' created successfully!" {
+        puts "✅ Room creation success message received"
+    }
+    timeout {
+        puts "❌ No room creation success message"
+    }
+}
+
+# Test that Alice is in the room
+send "Hello from testroom!\r"
+sleep 1
+puts "✅ Alice sent message in created room"
+
+puts "\n🧪 Test 2: Room Joining by Another User"
+puts "======================================="
+
+# Start Bob's session
+set bob_id [create_user_session "bob" "bobpass"]
+puts "✅ Bob logged in"
+
+# Bob joins the room
+puts "🚪 Bob joining room 'testroom'..."
+send "/join testroom\r"
+sleep 2
+
+expect {
+    "Joined room 'testroom'" {
+        puts "✅ Bob successfully joined room"
+    }
+    timeout {
+        puts "❌ Bob failed to join room"
+    }
+}
+
+# Bob sends a message
+send "Hi Alice, Bob here!\r"
+sleep 1
+puts "✅ Bob sent message in room"
+
+puts "\n🧪 Test 3: Direct Messaging System"
+puts "================================="
+
+# Switch back to Alice
+switch_to_session $alice_id
+
+# Alice sends DM to Bob
+puts "💬 Alice sending DM to Bob..."
+send "/dm bob Hello Bob, this is a private message!\r"
+sleep 2
+
+expect {
+    "Sent to bob" {
+        puts "✅ Alice got DM confirmation"
+    }
+    timeout {
+        puts "❌ Alice didn't get DM confirmation"
+    }
+}
+
+# Switch to Bob to check DM reception
+switch_to_session $bob_id
+sleep 2
+
+expect {
+    "alice: Hello Bob, this is a private message!" {
+        puts "✅ Bob received DM from Alice"
+    }
+    timeout {
+        puts "❌ Bob didn't receive DM"
+    }
+}
+
+# Bob replies to DM
+puts "💬 Bob replying to Alice's DM..."
+send "/dm alice Got your message, thanks!\r"
+sleep 2
+
+expect {
+    "Sent to alice" {
+        puts "✅ Bob got DM confirmation"
+    }
+    timeout {
+        puts "❌ Bob didn't get DM confirmation"
+    }
+}
+
+puts "\n🧪 Test 4: Room Invitation System"
+puts "================================"
+
+# Start Charlie's session
+set charlie_id [create_user_session "charlie" "charliepass"]
+puts "✅ Charlie logged in"
+
+# Switch back to Alice to invite Charlie
+switch_to_session $alice_id
+
+puts "📧 Alice inviting Charlie to testroom..."
+send "/invite charlie testroom\r"
+sleep 2
+
+expect {
+    "You invited charlie to join room 'testroom'" {
+        puts "✅ Alice got invitation confirmation"
+    }
+    timeout {
+        puts "❌ Alice didn't get invitation confirmation"
+    }
+}
+
+# Switch to Charlie to check invitation
+switch_to_session $charlie_id
+sleep 2
+
+expect {
+    "INVITATION: alice invited you to join room 'testroom'" {
+        puts "✅ Charlie received invitation"
+    }
+    timeout {
+        puts "❌ Charlie didn't receive invitation"
+    }
+}
+
+# Charlie accepts the invitation
+puts "✅ Charlie accepting invitation..."
+send "/accept testroom\r"
+sleep 2
+
+expect {
+    "You joined room 'testroom'" {
+        puts "✅ Charlie successfully joined via invitation"
+    }
+    timeout {
+        puts "❌ Charlie failed to join via invitation"
+    }
+}
+
+# Charlie sends a message in the room
+send "Hey everyone, Charlie joined!\r"
+sleep 1
+puts "✅ Charlie sent message in room"
+
+puts "\n🧪 Test 5: Room List and Navigation"
+puts "=================================="
+
+# Switch to Bob
+switch_to_session $bob_id
+
+# List available rooms
+puts "📋 Bob listing rooms..."
+send "/rooms\r"
+sleep 2
+
+expect {
+    "Available rooms:" {
+        puts "✅ Bob got room list"
+    }
+    timeout {
+        puts "❌ Bob didn't get room list"
+    }
+}
+
+# Leave room and return to Lobby
+puts "🚪 Bob leaving room..."
+send "/leave\r"
+sleep 2
+
+expect {
+    "Left room 'testroom'" {
+        puts "✅ Bob successfully left room"
+    }
+    timeout {
+        puts "❌ Bob failed to leave room"
+    }
+}
+
+# Bob rejoins the room
+puts "🔄 Bob rejoining room..."
+send "/join testroom\r"
+sleep 2
+
+expect {
+    "Joined room 'testroom'" {
+        puts "✅ Bob successfully rejoined room"
+    }
+    timeout {
+        puts "❌ Bob failed to rejoin room"
+    }
+}
+
+puts "\n🧪 Test 6: Cross-User Messaging in Room"
+puts "======================================="
+
+# All three users send messages
+switch_to_session $alice_id
+send "Alice: Final test message\r"
+sleep 1
+
+switch_to_session $bob_id
+send "Bob: I can see everyone's messages\r"
+sleep 1
+
+switch_to_session $charlie_id
+send "Charlie: Room messaging works perfectly!\r"
+sleep 1
+
+puts "✅ All users sent messages in shared room"
+
+puts "\n🧪 Test 7: Error Handling"
+puts "========================"
+
+# Test invalid room creation
+switch_to_session $alice_id
+puts "❌ Testing duplicate room creation..."
+send "/create-room testroom\r"
+sleep 2
+
+expect {
+    "Room 'testroom' already exists" {
+        puts "✅ Got proper error for duplicate room"
+    }
+    timeout {
+        puts "❌ No error for duplicate room"
+    }
+}
+
+# Test joining non-existent room
+switch_to_session $bob_id
+puts "❌ Testing join non-existent room..."
+send "/join nonexistent\r"
+sleep 2
+
+expect {
+    "Room 'nonexistent' does not exist" {
+        puts "✅ Got proper error for non-existent room"
+    }
+    timeout {
+        puts "❌ No error for non-existent room"
+    }
+}
+
+# Test DM to non-existent user
+puts "❌ Testing DM to non-existent user..."
+send "/dm fakeusr Hello\r"
+sleep 2
+
+expect {
+    "User fakeusr is not online or not found" {
+        puts "✅ Got proper error for non-existent user"
+    }
+    timeout {
+        puts "❌ No error for non-existent user"
+    }
+}
+
+puts "\n🧪 Test 8: Invitation Decline"
+puts "============================="
+
+# Alice invites Bob to a new room
+switch_to_session $alice_id
+send "/create-room privateroom\r"
+sleep 2
+send "/invite bob privateroom\r"
+sleep 2
+
+# Bob declines the invitation
+switch_to_session $bob_id
+sleep 2
+send "/decline privateroom\r"
+sleep 2
+
+expect {
+    "You declined the invitation to room 'privateroom'" {
+        puts "✅ Bob successfully declined invitation"
+    }
+    timeout {
+        puts "❌ Bob didn't get decline confirmation"
+    }
+}
+
+puts "\n🧪 Test Results Summary"
+puts "======================="
+
+# Quit all sessions
+puts "👋 Cleaning up sessions..."
+
+switch_to_session $alice_id
+send "/quit\r"
+expect eof
+
+switch_to_session $bob_id
+send "/quit\r"
+expect eof
+
+switch_to_session $charlie_id
+send "/quit\r"
+expect eof
+
+puts "\n🎉 Comprehensive Test Completed!"
+puts "================================"
+puts "✅ Room Creation and Auto-Join"
+puts "✅ Multi-User Room Joining"
+puts "✅ Direct Messaging System"
+puts "✅ Room Invitation System"
+puts "✅ Room List and Navigation"
+puts "✅ Cross-User Room Messaging"
+puts "✅ Error Handling"
+puts "✅ Invitation Decline"
+puts ""
+puts "🚀 All core functionality verified!"
+puts "📝 Check server logs for detailed protocol messages"

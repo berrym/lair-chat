@@ -295,28 +295,18 @@ impl ConnectionManager {
 
     /// Send a message to the remote endpoint
     pub async fn send_message(&mut self, content: String) -> Result<(), TransportError> {
-        tracing::info!(
-            "DEBUG: ConnectionManager.send_message called with: '{}'",
-            content
-        );
-
         // Check initial connection status
-        let initial_status = self.get_status().await;
-        tracing::info!("DEBUG: Initial connection status: {:?}", initial_status);
+        let _initial_status = self.get_status().await;
 
         // Check authentication if enabled
         if let Some(auth_manager) = &self.auth_manager {
             let is_auth = auth_manager.is_authenticated().await;
-            tracing::info!("DEBUG: Auth manager exists, is_authenticated: {}", is_auth);
             if !is_auth {
-                tracing::error!("DEBUG: Authentication check failed in send_message");
                 return Err(TransportError::ConnectionError(std::io::Error::new(
                     std::io::ErrorKind::PermissionDenied,
                     "Not authenticated",
                 )));
             }
-        } else {
-            tracing::info!("DEBUG: No auth manager, skipping auth check");
         }
 
         if self.transport.is_none() {
@@ -553,7 +543,17 @@ impl ConnectionManager {
                     Ok(Some(data)) => {
                         // If we have an auth manager, validate auth state
                         if let Some(auth_mgr) = &auth_manager {
-                            if !auth_mgr.is_authenticated().await {
+                            let is_authenticated = auth_mgr.is_authenticated().await;
+
+                            // VISIBLE DEBUG: Show auth status
+                            for observer in &observers {
+                                observer.on_message(format!(
+                                    "DEBUG: Auth check - authenticated: {}",
+                                    is_authenticated
+                                ));
+                            }
+
+                            if !is_authenticated {
                                 let error_msg =
                                     "Received message while not authenticated".to_string();
                                 for observer in &observers {
@@ -584,6 +584,14 @@ impl ConnectionManager {
                         let message = Message::received_message(content.clone());
                         let mut store = messages.lock().await;
                         store.add_message(message);
+
+                        // VISIBLE DEBUG: Show message being sent to observers
+                        for observer in &observers {
+                            observer.on_message(format!(
+                                "DEBUG: Forwarding message to observer: {}",
+                                content
+                            ));
+                        }
 
                         // Notify observers
                         for observer in &observers {

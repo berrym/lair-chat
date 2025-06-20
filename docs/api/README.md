@@ -1,1069 +1,981 @@
-# Lair Chat API Documentation
+# API Documentation 🔌
 
-**Version**: 0.6.2  
-**Last Updated**: June 2025  
-**API Stability**: Stable
+This document provides comprehensive documentation for the Lair Chat REST API and WebSocket interfaces.
 
-## Table of Contents
+## 📋 Table of Contents
 
-1. [Overview](#overview)
-2. [Quick Start](#quick-start)
-3. [Core APIs](#core-apis)
-4. [Transport Layer](#transport-layer)
-5. [Encryption Services](#encryption-services)
-6. [Authentication](#authentication)
-7. [Chat Management](#chat-management)
-8. [Direct Messaging](#direct-messaging)
-9. [Error Handling](#error-handling)
-10. [Observer Pattern](#observer-pattern)
-11. [Configuration](#configuration)
-12. [Examples](#examples)
-13. [Migration Guide](#migration-guide)
+- [API Overview](#api-overview)
+- [Authentication](#authentication)
+- [REST API Endpoints](#rest-api-endpoints)
+- [WebSocket API](#websocket-api)
+- [Admin API](#admin-api)
+- [Rate Limiting](#rate-limiting)
+- [Error Handling](#error-handling)
+- [SDKs and Libraries](#sdks-and-libraries)
+- [Examples and Tutorials](#examples-and-tutorials)
 
-## Overview
+## 🌐 API Overview
 
-The Lair Chat API provides a modern, async-first interface for building secure chat applications. The API follows a modular architecture with clear separation between common functionality (shared between client/server), client-specific logic, and server-specific logic. The API is built around modular components that can be composed together for different use cases.
+Lair Chat provides two main API interfaces:
+- **REST API**: HTTP-based API for user management, configuration, and data retrieval
+- **WebSocket API**: Real-time messaging and live updates
 
-### Module Structure
+### Base URLs
+- **REST API**: `https://your-server.com/api/v1`
+- **WebSocket**: `wss://your-server.com/ws`
+- **Admin API**: `https://your-server.com/api/v1/admin`
 
-- **`src/common/`**: Shared functionality between client and server
-  - `protocol/`: Message types and protocol definitions
-  - `crypto/`: Encryption utilities and cryptographic services
-  - `transport/`: Network abstractions and transport layer
-  - `errors/`: Common error types and utilities
-
-- **`src/client/`**: Client-specific functionality
-  - `ui/components/`: Terminal UI components and interfaces
-  - `chat/`: Chat functionality and conversation management
-  - `auth/`: Client-side authentication handling
-  - `app.rs`: Main application logic and state management
-
-- **`src/server/`**: Server-specific functionality
-  - `app/`: Server application logic and configuration
-  - `chat/`: Message handling and room management
-  - `auth/`: Server-side authentication and session management
-  - `network/`: Connection handling and session management
-
-### Architecture Overview
-
-```mermaid
-graph TB
-    subgraph "Application Layer"
-        A[Your Application] --> B[ConnectionManager]
-        B --> C[ChatManager]
-        B --> D[DMManager]
-    end
-    
-    subgraph "Common Layer (src/common/)"
-        E[Protocol] --> F[Transport]
-        G[Crypto] --> F
-        H[Errors] --> F
-    end
-    
-    subgraph "Client Layer (src/client/)"
-        B --> I[UI Components]
-        B --> J[Auth Manager]
-        B --> K[App Logic]
-    end
-    
-    subgraph "Transport Layer"
-        F --> L[TcpTransport]
-        F --> M[EncryptedTransport]
-    end
-    
-    subgraph "Network"
-        L --> N[TCP Connection]
-        M --> N
-    end
+### API Architecture
+```
+┌─────────────────────────────────────────────────────────────┐
+│                       Client Applications                   │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
+│  │   Web App   │  │ Mobile App  │  │   Desktop Client    │ │
+│  └─────────────┘  └─────────────┘  └─────────────────────┘ │
+└─────────────┬───────────────┬───────────────┬───────────────┘
+              │               │               │
+              ▼               ▼               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      API Gateway                           │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
+│  │    REST     │  │  WebSocket  │  │      Admin API      │ │
+│  │   Handler   │  │   Handler   │  │      Handler        │ │
+│  └─────────────┘  └─────────────┘  └─────────────────────┘ │
+└─────────────┬───────────────┬───────────────┬───────────────┘
+              │               │               │
+              ▼               ▼               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Core Application                        │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
+│  │    Auth     │  │    Chat     │  │      Storage        │ │
+│  │   Service   │  │   Service   │  │      Service        │ │
+│  └─────────────┘  └─────────────┘  └─────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### Core Principles
+## 🔐 Authentication
 
-- **Async/Await**: All I/O operations are async
-- **Type Safety**: Comprehensive error types and Result handling
-- **Dependency Injection**: Configurable and testable components
-- **Observer Pattern**: Event-driven notifications
-- **Thread Safety**: Arc<Mutex<>> for shared state
-- **Zero-Copy**: Efficient message handling where possible
+### Authentication Methods
+1. **API Key Authentication** (for service accounts)
+2. **JWT Token Authentication** (for user sessions)
+3. **Session Authentication** (for web applications)
 
-## Quick Start
+### API Key Authentication
+```http
+GET /api/v1/users/me HTTP/1.1
+Host: your-server.com
+Authorization: Bearer sk_live_1234567890abcdef
+Content-Type: application/json
+```
 
-### Basic Usage
+### JWT Token Authentication
+```http
+POST /api/v1/auth/login HTTP/1.1
+Host: your-server.com
+Content-Type: application/json
 
-```rust
-use lair_chat::client::{
-    ConnectionManager, Credentials, TcpTransport,
-    ConnectionObserver, ConnectionStatus
+{
+  "username": "john.doe",
+  "password": "secure_password123"
+}
+```
+
+Response:
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "user": {
+    "id": "user_123",
+    "username": "john.doe",
+    "email": "john.doe@company.com",
+    "role": "user"
+  }
+}
+```
+
+### Token Refresh
+```http
+POST /api/v1/auth/refresh HTTP/1.1
+Host: your-server.com
+Content-Type: application/json
+
+{
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+## 🛠️ REST API Endpoints
+
+### Authentication Endpoints
+
+#### Login
+```http
+POST /api/v1/auth/login
+```
+
+**Request Body:**
+```json
+{
+  "username": "string",
+  "password": "string",
+  "remember_me": "boolean (optional)"
+}
+```
+
+**Response:**
+```json
+{
+  "access_token": "string",
+  "refresh_token": "string",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "user": {
+    "id": "string",
+    "username": "string",
+    "email": "string",
+    "role": "string",
+    "created_at": "string (ISO 8601)",
+    "last_login": "string (ISO 8601)"
+  }
+}
+```
+
+#### Logout
+```http
+POST /api/v1/auth/logout
+Authorization: Bearer {token}
+```
+
+#### Password Reset
+```http
+POST /api/v1/auth/password-reset
+```
+
+**Request Body:**
+```json
+{
+  "email": "string"
+}
+```
+
+### User Management Endpoints
+
+#### Get Current User
+```http
+GET /api/v1/users/me
+Authorization: Bearer {token}
+```
+
+**Response:**
+```json
+{
+  "id": "user_123",
+  "username": "john.doe",
+  "email": "john.doe@company.com",
+  "full_name": "John Doe",
+  "role": "user",
+  "avatar_url": "https://example.com/avatar.jpg",
+  "status": "active",
+  "created_at": "2024-01-15T10:30:00Z",
+  "last_login": "2024-12-21T09:15:00Z",
+  "preferences": {
+    "theme": "dark",
+    "notifications": true,
+    "language": "en"
+  }
+}
+```
+
+#### Update User Profile
+```http
+PUT /api/v1/users/me
+Authorization: Bearer {token}
+```
+
+**Request Body:**
+```json
+{
+  "full_name": "John D. Doe",
+  "email": "john.new@company.com",
+  "preferences": {
+    "theme": "light",
+    "notifications": false
+  }
+}
+```
+
+#### Upload Avatar
+```http
+POST /api/v1/users/me/avatar
+Authorization: Bearer {token}
+Content-Type: multipart/form-data
+
+avatar: [file]
+```
+
+### Room Management Endpoints
+
+#### List Rooms
+```http
+GET /api/v1/rooms
+Authorization: Bearer {token}
+```
+
+**Query Parameters:**
+- `limit`: Number of rooms to return (default: 50, max: 100)
+- `offset`: Number of rooms to skip (default: 0)
+- `type`: Filter by room type (`public`, `private`, `direct`)
+- `search`: Search rooms by name
+
+**Response:**
+```json
+{
+  "rooms": [
+    {
+      "id": "room_123",
+      "name": "General Discussion",
+      "description": "Main chat room for general topics",
+      "type": "public",
+      "created_by": "user_456",
+      "created_at": "2024-01-15T10:30:00Z",
+      "participant_count": 42,
+      "last_message": {
+        "id": "msg_789",
+        "content": "Hello everyone!",
+        "sender": {
+          "id": "user_456",
+          "username": "jane.doe"
+        },
+        "timestamp": "2024-12-21T09:15:00Z"
+      }
+    }
+  ],
+  "total": 15,
+  "limit": 50,
+  "offset": 0,
+  "has_more": false
+}
+```
+
+#### Create Room
+```http
+POST /api/v1/rooms
+Authorization: Bearer {token}
+```
+
+**Request Body:**
+```json
+{
+  "name": "Project Alpha",
+  "description": "Discussion room for Project Alpha",
+  "type": "private",
+  "participants": ["user_123", "user_456"]
+}
+```
+
+#### Get Room Details
+```http
+GET /api/v1/rooms/{room_id}
+Authorization: Bearer {token}
+```
+
+#### Join Room
+```http
+POST /api/v1/rooms/{room_id}/join
+Authorization: Bearer {token}
+```
+
+#### Leave Room
+```http
+POST /api/v1/rooms/{room_id}/leave
+Authorization: Bearer {token}
+```
+
+### Message Endpoints
+
+#### Get Messages
+```http
+GET /api/v1/rooms/{room_id}/messages
+Authorization: Bearer {token}
+```
+
+**Query Parameters:**
+- `limit`: Number of messages (default: 50, max: 100)
+- `before`: Get messages before this message ID
+- `after`: Get messages after this message ID
+- `search`: Search message content
+
+**Response:**
+```json
+{
+  "messages": [
+    {
+      "id": "msg_123",
+      "content": "Hello, how is everyone doing?",
+      "type": "text",
+      "sender": {
+        "id": "user_456",
+        "username": "jane.doe",
+        "avatar_url": "https://example.com/avatar.jpg"
+      },
+      "room_id": "room_789",
+      "timestamp": "2024-12-21T09:15:00Z",
+      "edited_at": null,
+      "reactions": [
+        {
+          "emoji": "👍",
+          "count": 3,
+          "users": ["user_123", "user_456", "user_789"]
+        }
+      ],
+      "thread_count": 2
+    }
+  ],
+  "has_more": true,
+  "next_cursor": "msg_122"
+}
+```
+
+#### Send Message
+```http
+POST /api/v1/rooms/{room_id}/messages
+Authorization: Bearer {token}
+```
+
+**Request Body:**
+```json
+{
+  "content": "Hello everyone!",
+  "type": "text",
+  "reply_to": "msg_456",
+  "attachments": [
+    {
+      "type": "file",
+      "url": "https://example.com/file.pdf",
+      "filename": "document.pdf",
+      "size": 1024000
+    }
+  ]
+}
+```
+
+#### Edit Message
+```http
+PUT /api/v1/messages/{message_id}
+Authorization: Bearer {token}
+```
+
+#### Delete Message
+```http
+DELETE /api/v1/messages/{message_id}
+Authorization: Bearer {token}
+```
+
+#### Add Reaction
+```http
+POST /api/v1/messages/{message_id}/reactions
+Authorization: Bearer {token}
+```
+
+**Request Body:**
+```json
+{
+  "emoji": "👍"
+}
+```
+
+### File Upload Endpoints
+
+#### Upload File
+```http
+POST /api/v1/files/upload
+Authorization: Bearer {token}
+Content-Type: multipart/form-data
+
+file: [file]
+room_id: "room_123"
+```
+
+**Response:**
+```json
+{
+  "id": "file_123",
+  "filename": "document.pdf",
+  "size": 1024000,
+  "mime_type": "application/pdf",
+  "url": "https://example.com/files/file_123",
+  "thumbnail_url": "https://example.com/thumbnails/file_123",
+  "uploaded_by": "user_456",
+  "uploaded_at": "2024-12-21T09:15:00Z"
+}
+```
+
+## 🔌 WebSocket API
+
+### Connection
+```javascript
+const ws = new WebSocket('wss://your-server.com/ws?token=' + accessToken);
+
+ws.onopen = function(event) {
+    console.log('Connected to Lair Chat');
 };
-use lair_chat::transport::ConnectionConfig;
-use async_trait::async_trait;
 
-// 1. Implement observer for connection events
-struct MyObserver;
+ws.onmessage = function(event) {
+    const message = JSON.parse(event.data);
+    handleMessage(message);
+};
+```
 
-#[async_trait]
-impl ConnectionObserver for MyObserver {
-    async fn on_message(&self, message: Message) {
-        println!("Received: {}", message.content);
-    }
-    
-    async fn on_status_change(&self, status: ConnectionStatus) {
-        println!("Status changed to: {:?}", status);
-    }
-    
-    async fn on_error(&self, error: TransportError) {
-        eprintln!("Connection error: {}", error);
-    }
+### Message Types
+
+#### Authentication
+```json
+{
+  "type": "auth",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 }
+```
+
+#### Join Room
+```json
+{
+  "type": "join_room",
+  "room_id": "room_123"
+}
+```
+
+#### Send Message
+```json
+{
+  "type": "message",
+  "room_id": "room_123",
+  "content": "Hello everyone!",
+  "message_type": "text"
+}
+```
+
+#### Receive Message
+```json
+{
+  "type": "message",
+  "message": {
+    "id": "msg_123",
+    "content": "Hello everyone!",
+    "sender": {
+      "id": "user_456",
+      "username": "jane.doe"
+    },
+    "room_id": "room_123",
+    "timestamp": "2024-12-21T09:15:00Z"
+  }
+}
+```
+
+#### User Status Updates
+```json
+{
+  "type": "user_status",
+  "user_id": "user_123",
+  "status": "online",
+  "last_seen": "2024-12-21T09:15:00Z"
+}
+```
+
+#### Typing Indicators
+```json
+{
+  "type": "typing",
+  "room_id": "room_123",
+  "user_id": "user_456",
+  "typing": true
+}
+```
+
+### WebSocket Events Flow
+```
+Client                                Server
+  │                                     │
+  ├─── auth ────────────────────────────▶│
+  │◄─── auth_success ───────────────────┤
+  │                                     │
+  ├─── join_room ───────────────────────▶│
+  │◄─── room_joined ────────────────────┤
+  │                                     │
+  ├─── message ─────────────────────────▶│
+  │◄─── message_sent ───────────────────┤
+  │◄─── message (broadcast) ────────────┤
+  │                                     │
+  ├─── typing ──────────────────────────▶│
+  │◄─── typing (broadcast) ─────────────┤
+  │                                     │
+```
+
+## 🛡️ Admin API
+
+### User Management
+
+#### List All Users
+```http
+GET /api/v1/admin/users
+Authorization: Bearer {admin_token}
+```
+
+**Query Parameters:**
+- `limit`: Number of users (default: 50)
+- `offset`: Pagination offset
+- `role`: Filter by role
+- `status`: Filter by status
+- `search`: Search by username or email
+
+#### Create User
+```http
+POST /api/v1/admin/users
+Authorization: Bearer {admin_token}
+```
+
+**Request Body:**
+```json
+{
+  "username": "new.user",
+  "email": "new.user@company.com",
+  "full_name": "New User",
+  "role": "user",
+  "password": "temporary_password",
+  "force_password_reset": true
+}
+```
+
+#### Update User
+```http
+PUT /api/v1/admin/users/{user_id}
+Authorization: Bearer {admin_token}
+```
+
+#### Suspend User
+```http
+POST /api/v1/admin/users/{user_id}/suspend
+Authorization: Bearer {admin_token}
+```
+
+**Request Body:**
+```json
+{
+  "reason": "Policy violation",
+  "duration": "7d",
+  "notify_user": true
+}
+```
+
+### System Monitoring
+
+#### Get System Metrics
+```http
+GET /api/v1/admin/metrics
+Authorization: Bearer {admin_token}
+```
+
+**Response:**
+```json
+{
+  "timestamp": "2024-12-21T09:15:00Z",
+  "system": {
+    "cpu_usage_percent": 25.3,
+    "memory_usage_bytes": 1073741824,
+    "memory_total_bytes": 4294967296,
+    "disk_usage_bytes": 48318382080,
+    "disk_total_bytes": 107374182400
+  },
+  "application": {
+    "active_connections": 142,
+    "total_users": 1250,
+    "online_users": 89,
+    "total_rooms": 45,
+    "messages_per_minute": 23.5
+  },
+  "database": {
+    "active_connections": 12,
+    "total_connections": 20,
+    "query_time_avg_ms": 15.2
+  }
+}
+```
+
+#### Get Audit Logs
+```http
+GET /api/v1/admin/audit-logs
+Authorization: Bearer {admin_token}
+```
+
+**Query Parameters:**
+- `start_date`: Start date (ISO 8601)
+- `end_date`: End date (ISO 8601)
+- `user_id`: Filter by user
+- `action`: Filter by action type
+- `limit`: Number of logs
+
+## ⚡ Rate Limiting
+
+### Rate Limit Headers
+```http
+HTTP/1.1 200 OK
+X-RateLimit-Limit: 1000
+X-RateLimit-Remaining: 999
+X-RateLimit-Reset: 1640995200
+```
+
+### Rate Limit Tiers
+- **Free Tier**: 100 requests/minute
+- **Basic Tier**: 1,000 requests/minute
+- **Premium Tier**: 10,000 requests/minute
+- **Enterprise**: Custom limits
+
+### Rate Limit Exceeded Response
+```json
+{
+  "error": {
+    "code": "RATE_LIMIT_EXCEEDED",
+    "message": "API rate limit exceeded",
+    "details": {
+      "limit": 1000,
+      "reset_at": "2024-12-21T10:00:00Z"
+    }
+  }
+}
+```
+
+## ❌ Error Handling
+
+### Error Response Format
+```json
+{
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human readable error message",
+    "details": {
+      "field": "Additional error details"
+    },
+    "request_id": "req_123456789"
+  }
+}
+```
+
+### Common Error Codes
+
+| HTTP Status | Error Code | Description |
+|-------------|------------|-------------|
+| 400 | `INVALID_REQUEST` | Malformed request |
+| 401 | `UNAUTHORIZED` | Invalid or missing authentication |
+| 403 | `FORBIDDEN` | Insufficient permissions |
+| 404 | `NOT_FOUND` | Resource not found |
+| 409 | `CONFLICT` | Resource already exists |
+| 422 | `VALIDATION_ERROR` | Request validation failed |
+| 429 | `RATE_LIMIT_EXCEEDED` | Too many requests |
+| 500 | `INTERNAL_ERROR` | Server error |
+| 503 | `SERVICE_UNAVAILABLE` | Service temporarily unavailable |
+
+### Validation Errors
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed",
+    "details": {
+      "username": ["Username is required", "Username must be at least 3 characters"],
+      "email": ["Invalid email format"]
+    }
+  }
+}
+```
+
+## 📚 SDKs and Libraries
+
+### Official SDKs
+
+#### JavaScript/TypeScript
+```bash
+npm install @lair-chat/sdk
+```
+
+```javascript
+import LairChat from '@lair-chat/sdk';
+
+const client = new LairChat({
+  apiKey: 'your-api-key',
+  baseUrl: 'https://your-server.com'
+});
+
+// Send a message
+await client.messages.send('room_123', {
+  content: 'Hello world!',
+  type: 'text'
+});
+
+// Listen for messages
+client.on('message', (message) => {
+  console.log('New message:', message);
+});
+```
+
+#### Python
+```bash
+pip install lair-chat-sdk
+```
+
+```python
+from lair_chat import LairChatClient
+
+client = LairChatClient(
+    api_key='your-api-key',
+    base_url='https://your-server.com'
+)
+
+# Send a message
+message = client.messages.send('room_123', {
+    'content': 'Hello world!',
+    'type': 'text'
+})
+
+# Get messages
+messages = client.messages.list('room_123', limit=50)
+```
+
+#### Rust
+```toml
+[dependencies]
+lair-chat-sdk = "0.1.0"
+```
+
+```rust
+use lair_chat_sdk::{Client, MessageBuilder};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 2. Create configuration
-    let config = ConnectionConfig {
-        address: "127.0.0.1:8080".parse()?,
-        timeout_ms: 5000,
-        reconnect_attempts: 3,
-        keepalive_interval: 30,
-    };
-
-    // 3. Create connection manager
-    let mut connection_manager = ConnectionManager::new(config.clone());
+    let client = Client::new("your-api-key", "https://your-server.com");
     
-    // 4. Set up observer
-    let observer = Arc::new(MyObserver);
-    connection_manager.set_observer(observer).await;
-
-    // 5. Connect and authenticate
-    let credentials = Credentials::new("username", "password");
-    connection_manager.connect_and_authenticate(credentials).await?;
-
-    // 6. Send a message
-    let message = Message::new("Hello, World!", MessageType::Text);
-    connection_manager.send_message(message).await?;
-
+    // Send a message
+    let message = MessageBuilder::new()
+        .content("Hello world!")
+        .message_type("text")
+        .build();
+    
+    client.messages().send("room_123", message).await?;
+    
     Ok(())
 }
 ```
 
-## Core APIs
+## 💡 Examples and Tutorials
 
-### ConnectionManager
-
-The primary interface for chat functionality.
-
-```rust
-pub struct ConnectionManager {
-    // Internal state
-}
-
-impl ConnectionManager {
-    /// Create a new connection manager
-    pub fn new(config: ConnectionConfig) -> Self;
-    
-    /// Set the connection observer
-    pub async fn set_observer(&mut self, observer: Arc<dyn ConnectionObserver>);
-    
-    /// Connect and authenticate
-    pub async fn connect_and_authenticate(
-        &mut self, 
-        credentials: Credentials
-    ) -> Result<(), ConnectionError>;
-    
-    /// Send a message to the current room
-    pub async fn send_message(&mut self, message: Message) -> Result<(), TransportError>;
-    
-    /// Join a chat room
-    pub async fn join_room(&mut self, room_name: &str) -> Result<(), ChatError>;
-    
-    /// Leave current room
-    pub async fn leave_room(&mut self) -> Result<(), ChatError>;
-    
-    /// Get current connection status
-    pub fn get_status(&self) -> ConnectionStatus;
-    
-    /// Disconnect from server
-    pub async fn disconnect(&mut self) -> Result<(), TransportError>;
-}
-```
-
-### Message Structure
-
-```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Message {
-    pub id: MessageId,
-    pub author: String,
-    pub content: String,
-    pub message_type: MessageType,
-    pub timestamp: DateTime<Utc>,
-    pub room: Option<String>,
-    pub metadata: HashMap<String, String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum MessageType {
-    Text,
-    System,
-    DirectMessage,
-    Notification,
-    File { filename: String, size: u64 },
-}
-
-impl Message {
-    /// Create a new text message
-    pub fn new(content: &str, message_type: MessageType) -> Self;
-    
-    /// Create a direct message
-    pub fn direct_message(recipient: &str, content: &str) -> Self;
-    
-    /// Create a system message
-    pub fn system(content: &str) -> Self;
-    
-    /// Add metadata to the message
-    pub fn with_metadata(mut self, key: &str, value: &str) -> Self;
-}
-```
-
-### Connection Flow
-
-```mermaid
-sequenceDiagram
-    participant App as Application
-    participant CM as ConnectionManager
-    participant Auth as AuthService
-    participant Trans as Transport
-    participant Server as Server
-    
-    App->>CM: new(config)
-    App->>CM: set_observer(observer)
-    App->>CM: connect_and_authenticate(credentials)
-    
-    CM->>Trans: connect()
-    Trans->>Server: TCP Connection
-    Server-->>Trans: Connection Established
-    Trans-->>CM: Connected
-    
-    CM->>Auth: authenticate(credentials)
-    Auth->>Server: Auth Request
-    Server-->>Auth: Auth Response
-    Auth-->>CM: Authentication Success
-    
-    CM-->>App: Ready for messaging
-    
-    App->>CM: send_message(message)
-    CM->>Trans: send(encrypted_message)
-    Trans->>Server: Message
-    Server-->>Trans: Acknowledgment
-    Trans-->>CM: Message Sent
-    CM-->>App: Observer::on_message_sent
-```
-
-## Transport Layer
-
-### Transport Trait
-
-```rust
-#[async_trait]
-pub trait Transport: Send + Sync {
-    /// Send data over the transport
-    async fn send(&mut self, data: &[u8]) -> Result<(), TransportError>;
-    
-    /// Receive data from the transport
-    async fn receive(&mut self) -> Result<Vec<u8>, TransportError>;
-    
-    /// Check if the transport is connected
-    fn is_connected(&self) -> bool;
-    
-    /// Close the transport connection
-    async fn close(&mut self) -> Result<(), TransportError>;
-    
-    /// Get transport statistics
-    fn stats(&self) -> TransportStats;
-}
-```
-
-### TCP Transport
-
-```rust
-pub struct TcpTransport {
-    stream: Option<TcpStream>,
-    config: TcpConfig,
-    stats: TransportStats,
-}
-
-impl TcpTransport {
-    /// Create a new TCP transport
-    pub fn new(config: TcpConfig) -> Self;
-    
-    /// Connect to the specified address
-    pub async fn connect(&mut self, addr: SocketAddr) -> Result<(), TransportError>;
-    
-    /// Set connection timeout
-    pub fn set_timeout(&mut self, timeout: Duration);
-    
-    /// Enable keep-alive
-    pub fn set_keepalive(&mut self, interval: Duration) -> Result<(), TransportError>;
-}
-
-#[derive(Debug, Clone)]
-pub struct TcpConfig {
-    pub connect_timeout: Duration,
-    pub read_timeout: Duration,
-    pub write_timeout: Duration,
-    pub keepalive_interval: Option<Duration>,
-    pub nodelay: bool,
-}
-```
-
-### Encrypted Transport
-
-```rust
-pub struct EncryptedTransport {
-    inner: Box<dyn Transport>,
-    encryption: Arc<dyn EncryptionService>,
-}
-
-impl EncryptedTransport {
-    /// Wrap a transport with encryption
-    pub fn new(
-        transport: Box<dyn Transport>,
-        encryption: Arc<dyn EncryptionService>
-    ) -> Self;
-    
-    /// Perform key exchange with the remote peer
-    pub async fn perform_key_exchange(&mut self) -> Result<(), EncryptionError>;
-}
-```
-
-## Encryption Services
-
-### Encryption Service Trait
-
-```rust
-#[async_trait]
-pub trait EncryptionService: Send + Sync {
-    /// Encrypt data
-    async fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>, EncryptionError>;
-    
-    /// Decrypt data
-    async fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>, EncryptionError>;
-    
-    /// Get encryption algorithm information
-    fn algorithm_info(&self) -> AlgorithmInfo;
-    
-    /// Perform key exchange
-    async fn key_exchange(&mut self, peer_public_key: &[u8]) -> Result<Vec<u8>, EncryptionError>;
-}
-```
-
-### AES-GCM Encryption
-
-```rust
-pub struct AesGcmEncryption {
-    cipher: Aes256Gcm,
-    nonce_counter: AtomicU64,
-}
-
-impl AesGcmEncryption {
-    /// Create a new AES-GCM encryption service
-    pub fn new(key: &[u8]) -> Result<Self, EncryptionError>;
-    
-    /// Create from X25519 shared secret
-    pub fn from_shared_secret(shared_secret: &[u8]) -> Result<Self, EncryptionError>;
-    
-    /// Generate a new random key
-    pub fn generate_key() -> [u8; 32];
-}
-```
-
-### Key Exchange
-
-```rust
-pub struct X25519KeyExchange {
-    private_key: StaticSecret,
-    public_key: PublicKey,
-}
-
-impl X25519KeyExchange {
-    /// Generate a new key pair
-    pub fn new() -> Self;
-    
-    /// Get the public key for sharing
-    pub fn public_key(&self) -> &PublicKey;
-    
-    /// Perform key exchange with peer's public key
-    pub fn exchange(&self, peer_public_key: &PublicKey) -> SharedSecret;
-}
-```
-
-### Encryption Flow
-
-```mermaid
-sequenceDiagram
-    participant Client as Client
-    participant Server as Server
-    
-    Note over Client,Server: Key Exchange Phase
-    Client->>Server: Client Public Key
-    Server->>Client: Server Public Key
-    
-    Note over Client: Generate Shared Secret
-    Note over Server: Generate Shared Secret
-    
-    Note over Client,Server: Encrypted Communication
-    Client->>Server: Encrypt(Message)
-    Server->>Client: Encrypt(Response)
-```
-
-## Authentication
-
-### Authentication Service
-
-```rust
-pub struct AuthService {
-    credentials: Option<Credentials>,
-    session: Option<Session>,
-    rate_limiter: RateLimiter,
-}
-
-impl AuthService {
-    /// Create a new authentication service
-    pub fn new(config: AuthConfig) -> Self;
-    
-    /// Authenticate with username and password
-    pub async fn authenticate(
-        &mut self,
-        credentials: Credentials
-    ) -> Result<Session, AuthError>;
-    
-    /// Register a new user
-    pub async fn register(
-        &mut self,
-        username: &str,
-        password: &str,
-        email: Option<&str>
-    ) -> Result<(), AuthError>;
-    
-    /// Refresh the current session
-    pub async fn refresh_session(&mut self) -> Result<Session, AuthError>;
-    
-    /// Logout and invalidate session
-    pub async fn logout(&mut self) -> Result<(), AuthError>;
-    
-    /// Check if currently authenticated
-    pub fn is_authenticated(&self) -> bool;
-}
-```
-
-### Credentials and Session
-
-```rust
-#[derive(Debug, Clone)]
-pub struct Credentials {
-    pub username: String,
-    pub password: String,
-}
-
-impl Credentials {
-    pub fn new(username: &str, password: &str) -> Self;
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Session {
-    pub token: String,
-    pub user_id: String,
-    pub username: String,
-    pub expires_at: DateTime<Utc>,
-    pub permissions: Vec<Permission>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Permission {
-    SendMessage,
-    CreateRoom,
-    ModerateRoom,
-    AdminAccess,
-}
-```
-
-### Authentication Flow
-
-```mermaid
-sequenceDiagram
-    participant Client as Client
-    participant Auth as AuthService
-    participant Server as Server
-    
-    Client->>Auth: authenticate(credentials)
-    Auth->>Server: AuthRequest
-    
-    alt Valid Credentials
-        Server-->>Auth: AuthResponse(session)
-        Auth-->>Client: Session
-    else Invalid Credentials
-        Server-->>Auth: AuthError
-        Auth-->>Client: AuthError
-    end
-    
-    Note over Client: Store session for future requests
-```
-
-## Chat Management
-
-### Room Manager
-
-```rust
-pub struct RoomManager {
-    current_room: Option<String>,
-    rooms: HashMap<String, RoomInfo>,
-    users: HashMap<String, UserInfo>,
-}
-
-impl RoomManager {
-    /// Create a new room manager
-    pub fn new() -> Self;
-    
-    /// Join a room
-    pub async fn join_room(&mut self, room_name: &str) -> Result<(), ChatError>;
-    
-    /// Leave the current room
-    pub async fn leave_room(&mut self) -> Result<(), ChatError>;
-    
-    /// Get current room information
-    pub fn current_room(&self) -> Option<&RoomInfo>;
-    
-    /// List available rooms
-    pub fn list_rooms(&self) -> Vec<&RoomInfo>;
-    
-    /// Get users in current room
-    pub fn room_users(&self) -> Vec<&UserInfo>;
-    
-    /// Send message to current room
-    pub async fn send_message(&mut self, content: &str) -> Result<(), ChatError>;
-}
-
-#[derive(Debug, Clone)]
-pub struct RoomInfo {
-    pub name: String,
-    pub topic: Option<String>,
-    pub user_count: usize,
-    pub room_type: RoomType,
-    pub created_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone)]
-pub enum RoomType {
-    Public,
-    Private,
-    Direct,
-}
-```
-
-## Direct Messaging
-
-### DM Conversation Manager
-
-```rust
-pub struct DMConversationManager {
-    conversations: HashMap<String, Conversation>,
-    unread_counts: HashMap<String, usize>,
-}
-
-impl DMConversationManager {
-    /// Create a new DM manager
-    pub fn new() -> Self;
-    
-    /// Start a new conversation
-    pub async fn start_conversation(&mut self, username: &str) -> Result<(), ChatError>;
-    
-    /// Send a direct message
-    pub async fn send_direct_message(
-        &mut self,
-        recipient: &str,
-        content: &str
-    ) -> Result<(), ChatError>;
-    
-    /// Get conversation history
-    pub fn get_conversation(&self, username: &str) -> Option<&Conversation>;
-    
-    /// List all conversations
-    pub fn list_conversations(&self) -> Vec<&Conversation>;
-    
-    /// Get unread message count
-    pub fn unread_count(&self, username: &str) -> usize;
-    
-    /// Mark conversation as read
-    pub fn mark_as_read(&mut self, username: &str);
-}
-
-#[derive(Debug, Clone)]
-pub struct Conversation {
-    pub participant: String,
-    pub messages: Vec<Message>,
-    pub last_activity: DateTime<Utc>,
-    pub unread_count: usize,
-}
-```
-
-### DM Flow
-
-```mermaid
-sequenceDiagram
-    participant User1 as User 1
-    participant DM1 as DM Manager 1
-    participant Server as Server
-    participant DM2 as DM Manager 2
-    participant User2 as User 2
-    
-    User1->>DM1: start_conversation("user2")
-    DM1->>Server: CreateConversation
-    Server->>DM2: ConversationInvite
-    DM2-->>User2: Conversation Started
-    
-    User1->>DM1: send_direct_message("user2", "Hello!")
-    DM1->>Server: DirectMessage
-    Server->>DM2: DirectMessage
-    DM2-->>User2: Message Received
-    
-    User2->>DM2: send_direct_message("user1", "Hi there!")
-    DM2->>Server: DirectMessage
-    Server->>DM1: DirectMessage
-    DM1-->>User1: Message Received
-```
-
-## Error Handling
-
-### Error Types
-
-```rust
-#[derive(thiserror::Error, Debug)]
-pub enum ConnectionError {
-    #[error("Transport error: {0}")]
-    Transport(#[from] TransportError),
-    
-    #[error("Authentication failed: {0}")]
-    Authentication(#[from] AuthError),
-    
-    #[error("Encryption error: {0}")]
-    Encryption(#[from] EncryptionError),
-    
-    #[error("Connection timeout")]
-    Timeout,
-    
-    #[error("Connection refused")]
-    Refused,
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum TransportError {
-    #[error("Network I/O error: {0}")]
-    Io(#[from] std::io::Error),
-    
-    #[error("Connection closed")]
-    ConnectionClosed,
-    
-    #[error("Protocol error: {message}")]
-    Protocol { message: String },
-    
-    #[error("Timeout occurred")]
-    Timeout,
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum ChatError {
-    #[error("Room not found: {room}")]
-    RoomNotFound { room: String },
-    
-    #[error("User not found: {user}")]
-    UserNotFound { user: String },
-    
-    #[error("Permission denied: {action}")]
-    PermissionDenied { action: String },
-    
-    #[error("Message too long: {length} > {max}")]
-    MessageTooLong { length: usize, max: usize },
-}
-```
-
-### Error Handling Patterns
-
-```rust
-// Result chaining
-async fn send_message_with_retry(
-    connection: &mut ConnectionManager,
-    message: Message,
-    max_retries: usize,
-) -> Result<(), ConnectionError> {
-    for attempt in 0..max_retries {
-        match connection.send_message(message.clone()).await {
-            Ok(()) => return Ok(()),
-            Err(e) if attempt < max_retries - 1 => {
-                eprintln!("Attempt {} failed: {}, retrying...", attempt + 1, e);
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
-            Err(e) => return Err(e.into()),
-        }
+### Basic Chat Application
+```javascript
+// Simple chat client example
+class SimpleChatClient {
+    constructor(apiKey, baseUrl) {
+        this.apiKey = apiKey;
+        this.baseUrl = baseUrl;
+        this.ws = null;
     }
-    unreachable!()
-}
-
-// Error context with map_err
-connection.send_message(message)
-    .await
-    .map_err(|e| ChatError::Protocol { 
-        message: format!("Failed to send message: {}", e) 
-    })?;
-```
-
-## Observer Pattern
-
-### Connection Observer
-
-```rust
-#[async_trait]
-pub trait ConnectionObserver: Send + Sync {
-    /// Called when a message is received
-    async fn on_message(&self, message: Message);
     
-    /// Called when connection status changes
-    async fn on_status_change(&self, status: ConnectionStatus);
+    async connect() {
+        // Get authentication token
+        const response = await fetch(`${this.baseUrl}/api/v1/auth/login`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.apiKey}`
+            },
+            body: JSON.stringify({
+                username: 'your-username',
+                password: 'your-password'
+            })
+        });
+        
+        const { access_token } = await response.json();
+        
+        // Connect WebSocket
+        this.ws = new WebSocket(`${this.baseUrl.replace('http', 'ws')}/ws?token=${access_token}`);
+        
+        this.ws.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            this.handleMessage(message);
+        };
+    }
     
-    /// Called when an error occurs
-    async fn on_error(&self, error: TransportError);
+    joinRoom(roomId) {
+        this.ws.send(JSON.stringify({
+            type: 'join_room',
+            room_id: roomId
+        }));
+    }
     
-    /// Called when a user joins the room
-    async fn on_user_joined(&self, user: UserInfo) {}
+    sendMessage(roomId, content) {
+        this.ws.send(JSON.stringify({
+            type: 'message',
+            room_id: roomId,
+            content: content,
+            message_type: 'text'
+        }));
+    }
     
-    /// Called when a user leaves the room
-    async fn on_user_left(&self, user: UserInfo) {}
-    
-    /// Called when a direct message is received
-    async fn on_direct_message(&self, message: Message) {}
-}
-
-#[derive(Debug, Clone)]
-pub enum ConnectionStatus {
-    Disconnected,
-    Connecting,
-    Connected,
-    Authenticating,
-    Authenticated,
-    Error { message: String },
-}
-```
-
-### Observer Implementation Example
-
-```rust
-use std::sync::Arc;
-use tokio::sync::Mutex;
-
-pub struct ChatObserver {
-    ui_sender: Arc<Mutex<mpsc::Sender<UiEvent>>>,
-}
-
-impl ChatObserver {
-    pub fn new(ui_sender: mpsc::Sender<UiEvent>) -> Self {
-        Self {
-            ui_sender: Arc::new(Mutex::new(ui_sender)),
+    handleMessage(message) {
+        switch (message.type) {
+            case 'message':
+                console.log(`New message: ${message.message.content}`);
+                break;
+            case 'user_status':
+                console.log(`User ${message.user_id} is now ${message.status}`);
+                break;
         }
     }
 }
-
-#[async_trait]
-impl ConnectionObserver for ChatObserver {
-    async fn on_message(&self, message: Message) {
-        let sender = self.ui_sender.lock().await;
-        let _ = sender.send(UiEvent::MessageReceived(message)).await;
-    }
-    
-    async fn on_status_change(&self, status: ConnectionStatus) {
-        let sender = self.ui_sender.lock().await;
-        let _ = sender.send(UiEvent::StatusChanged(status)).await;
-    }
-    
-    async fn on_error(&self, error: TransportError) {
-        let sender = self.ui_sender.lock().await;
-        let _ = sender.send(UiEvent::Error(error.to_string())).await;
-    }
-}
 ```
 
-## Configuration
-
-### Connection Configuration
-
-```rust
-#[derive(Debug, Clone)]
-pub struct ConnectionConfig {
-    /// Server address
-    pub address: SocketAddr,
+### File Upload Example
+```javascript
+async function uploadFile(file, roomId, accessToken) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('room_id', roomId);
     
-    /// Connection timeout in milliseconds
-    pub timeout_ms: u64,
+    const response = await fetch('/api/v1/files/upload', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${accessToken}`
+        },
+        body: formData
+    });
     
-    /// Number of reconnection attempts
-    pub reconnect_attempts: usize,
-    
-    /// Interval between keepalive messages
-    pub keepalive_interval: u64,
-    
-    /// Enable encryption
-    pub encryption_enabled: bool,
-    
-    /// Compression settings
-    pub compression: CompressionConfig,
-}
-
-#[derive(Debug, Clone)]
-pub struct CompressionConfig {
-    pub enabled: bool,
-    pub algorithm: CompressionAlgorithm,
-    pub level: u8,
-}
-
-#[derive(Debug, Clone)]
-pub enum CompressionAlgorithm {
-    None,
-    Gzip,
-    Deflate,
-    Brotli,
-}
-```
-
-### Configuration Loading
-
-```rust
-impl ConnectionConfig {
-    /// Load configuration from file
-    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, ConfigError>;
-    
-    /// Load from environment variables
-    pub fn from_env() -> Result<Self, ConfigError>;
-    
-    /// Create with defaults
-    pub fn default() -> Self;
-    
-    /// Builder pattern for configuration
-    pub fn builder() -> ConnectionConfigBuilder;
-}
-
-pub struct ConnectionConfigBuilder {
-    config: ConnectionConfig,
-}
-
-impl ConnectionConfigBuilder {
-    pub fn address(mut self, addr: SocketAddr) -> Self {
-        self.config.address = addr;
-        self
+    if (!response.ok) {
+        throw new Error('Upload failed');
     }
     
-    pub fn timeout(mut self, timeout_ms: u64) -> Self {
-        self.config.timeout_ms = timeout_ms;
-        self
-    }
+    const fileData = await response.json();
     
-    pub fn build(self) -> ConnectionConfig {
-        self.config
-    }
-}
-```
-
-## Examples
-
-### Complete Chat Client
-
-```rust
-use lair_chat::client::*;
-use std::sync::Arc;
-use tokio::sync::mpsc;
-
-struct SimpleChatClient {
-    connection: ConnectionManager,
-    ui_receiver: mpsc::Receiver<UiEvent>,
-}
-
-impl SimpleChatClient {
-    pub async fn new(server_addr: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let config = ConnectionConfig::builder()
-            .address(server_addr.parse()?)
-            .timeout(5000)
-            .build();
-        
-        let mut connection = ConnectionManager::new(config);
-        
-        let (ui_sender, ui_receiver) = mpsc::channel(100);
-        let observer = Arc::new(ChatObserver::new(ui_sender));
-        connection.set_observer(observer).await;
-        
-        Ok(Self {
-            connection,
-            ui_receiver,
+    // Send message with file attachment
+    await fetch(`/api/v1/rooms/${roomId}/messages`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({
+            content: `File shared: ${fileData.filename}`,
+            type: 'file',
+            attachments: [fileData]
         })
-    }
+    });
+}
+```
+
+### Pagination Example
+```javascript
+async function getAllMessages(roomId, accessToken) {
+    const messages = [];
+    let cursor = null;
     
-    pub async fn login(&mut self, username: &str, password: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let credentials = Credentials::new(username, password);
-        self.connection.connect_and_authenticate(credentials).await?;
-        Ok(())
-    }
+    do {
+        const url = new URL(`/api/v1/rooms/${roomId}/messages`, window.location.origin);
+        if (cursor) {
+            url.searchParams.set('before', cursor);
+        }
+        url.searchParams.set('limit', '100');
+        
+        const response = await fetch(url, {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`
+            }
+        });
+        
+        const data = await response.json();
+        messages.push(...data.messages);
+        
+        cursor = data.has_more ? data.next_cursor : null;
+        
+    } while (cursor);
     
-    pub async fn send_message(&mut self, content: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let message = Message::new(content, MessageType::Text);
-        self.connection.send_message(message).await?;
-        Ok(())
-    }
-    
-    pub async fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        loop {
-            tokio::select! {
-                event = self.ui_receiver.recv() => {
-                    match event {
-                        Some(UiEvent::MessageReceived(msg)) => {
-                            println!("[{}] {}: {}", msg.timestamp, msg.author, msg.content);
-                        }
-                        Some(UiEvent::StatusChanged(status)) => {
-                            println!("Status: {:?}", status);
-                        }
-                        Some(UiEvent::Error(err)) => {
-                            eprintln!("Error: {}", err);
-                        }
-                        None => break,
-                    }
-                }
-                _ = tokio::signal::ctrl_c() => {
-                    println!("Shutting down...");
+    return messages;
+}
+```
+
+### Error Handling Best Practices
+```javascript
+async function apiRequest(url, options = {}) {
+    try {
+        const response = await fetch(url, {
+            headers: {
+                'Content-Type': 'application/json',
+                ...options.headers
+            },
+            ...options
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            
+            switch (response.status) {
+                case 401:
+                    // Redirect to login
+                    window.location.href = '/login';
                     break;
-                }
+                case 429:
+                    // Rate limited - retry after delay
+                    const retryAfter = response.headers.get('Retry-After') || 60;
+                    await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+                    return apiRequest(url, options);
+                case 500:
+                    // Server error - show user-friendly message
+                    throw new Error('Server temporarily unavailable. Please try again later.');
+                default:
+                    throw new Error(error.error?.message || 'Request failed');
             }
         }
-        Ok(())
-    }
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut client = SimpleChatClient::new("127.0.0.1:8080").await?;
-    client.login("alice", "password123").await?;
-    client.run().await?;
-    Ok(())
-}
-```
-
-### Custom Transport Implementation
-
-```rust
-use async_trait::async_trait;
-use lair_chat::transport::{Transport, TransportError, TransportStats};
-
-pub struct WebSocketTransport {
-    // WebSocket implementation details
-}
-
-#[async_trait]
-impl Transport for WebSocketTransport {
-    async fn send(&mut self, data: &[u8]) -> Result<(), TransportError> {
-        // Send WebSocket message
-        Ok(())
-    }
-    
-    async fn receive(&mut self) -> Result<Vec<u8>, TransportError> {
-        // Receive WebSocket message
-        Ok(vec![])
-    }
-    
-    fn is_connected(&self) -> bool {
-        // Check WebSocket connection status
-        true
-    }
-    
-    async fn close(&mut self) -> Result<(), TransportError> {
-        // Close WebSocket connection
-        Ok(())
-    }
-    
-    fn stats(&self) -> TransportStats {
-        TransportStats::default()
+        
+        return await response.json();
+        
+    } catch (error) {
+        console.error('API request failed:', error);
+        throw error;
     }
 }
 ```
 
-## Migration Guide
+## 🔧 Testing the API
 
-### From v0.5.x to v0.6.x
+### Using cURL
+```bash
+# Login
+curl -X POST https://your-server.com/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "test", "password": "password"}'
 
-#### Breaking Changes
+# Get user profile
+curl -X GET https://your-server.com/api/v1/users/me \
+  -H "Authorization: Bearer your_token_here"
 
-1. **Connection API Changes**:
-   ```rust
-   // Old (v0.5.x)
-   let mut client = ChatClient::new();
-   client.connect("127.0.0.1:8080").await?;
-   client.authenticate("username", "password").await?;
-   
-   // New (v0.6.x)
-   let config = ConnectionConfig::builder()
-       .address("127.0.0.1:8080".parse()?)
-       .build();
-   let mut connection = ConnectionManager::new(config);
-   let credentials = Credentials::new("username", "password");
-   connection.connect_and_authenticate(credentials).await?;
-   ```
+# Send message
+curl -X POST https://your-server.com/api/v1/rooms/room_123/messages \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer your_token_here" \
+  -d '{"content": "Hello API!", "type": "text"}'
+```
 
-2. **Message Structure Changes**:
-   ```rust
-   // Old (v0.5.x)
-   let message = ChatMessage {
-       content: "Hello".to_string(),
-       user: "alice".to_string(),
-   };
-   
-   // New (v0.6.x)
-   let message = Message::new("Hello", MessageType::Text);
-   ```
+### Using Postman
+Import the [Postman Collection](../examples/postman/lair-chat-api.json) for ready-to-use API requests.
 
-3. **Error Handling**:
-   ```rust
-   // Old (v0.5.x)
-   match client.send_message(msg).await {
-       Ok(_) => println!("Sent"),
-       Err(e) => println!("Error: {}", e),
-   }
-   
-   // New (v0.6.x)
-   match connection.send_message(msg).await {
-       Ok(_) => println!("Sent"),
-       Err(ConnectionError::Transport(e)) => println!("Transport error: {}", e),
-       Err(ConnectionError::Authentication(e)) => println!("Auth error: {}", e),
-       Err(e) => println!("Other error: {}", e),
-   }
-   ```
-
-#### Migration Steps
-
-1. Update `Cargo.toml`:
-   ```toml
-   [dependencies]
-   lair-chat = "0.6.2"
-   ```
-
-2. Update imports:
-   ```rust
-   // Add new imports
-   use lair_chat::client::{ConnectionManager, Credentials};
-   use lair_chat::transport::ConnectionConfig;
-   ```
-
-3. Update connection code using the examples above
-
-4. Update error handling to use the new error types
-
-5. Test thoroughly, especially authentication and message sending
+### API Testing Checklist
+- [ ] Authentication flows work correctly
+- [ ] All endpoints return expected response formats
+- [ ] Error handling works as documented
+- [ ] Rate limiting is enforced
+- [ ] WebSocket connections are stable
+- [ ] File uploads work for various file types
+- [ ] Pagination works correctly
 
 ---
 
-For more examples and advanced usage, see the [examples/](../../examples/) directory and the [User Guide](../guides/USER_GUIDE.md).
-
----
-
-*Documentation last updated: June 2025 (reflects current v0.6.2 codebase)*
+**API Version**: v1  
+**Last Updated**: December 2024  
+**OpenAPI Specification**: [Download](openapi.yaml)

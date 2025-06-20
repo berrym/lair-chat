@@ -5,9 +5,11 @@
 
 pub mod crypto;
 pub mod errors;
+pub mod messaging;
 pub mod protocol;
 pub mod transport;
 
 // Re-export commonly used types for convenience
 pub use errors::*;
+pub use messaging::*;
 pub use protocol::*;

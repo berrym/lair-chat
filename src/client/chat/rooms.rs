@@ -638,6 +638,17 @@ impl RoomManager {
     pub fn total_user_count(&self) -> usize {
         self.user_rooms.len()
     }
+
+    /// Clear all messages from a room
+    pub fn clear_room_messages(&mut self, room_id: RoomId) -> ChatResult<()> {
+        let room = self
+            .rooms
+            .get_mut(&room_id)
+            .ok_or(ChatError::RoomNotFound(room_id))?;
+
+        room.messages.clear();
+        Ok(())
+    }
 }
 
 impl Default for RoomManager {

@@ -28,6 +28,7 @@ use crate::{
     chat::{
         ChatMessage, DMConversationManager, MessageType, RoomManager, RoomType, RoomUser, UserRole,
     },
+    commands::{CommandProcessor, CommandResult},
     config::Config,
     errors::display::{set_global_error_display_action_sender, show_info, show_validation_error},
     history::CommandHistory,
@@ -69,6 +70,8 @@ pub struct Home {
     room_manager: RoomManager,
     current_room_id: Option<uuid::Uuid>,
     current_user_id: Option<uuid::Uuid>,
+    current_room_name: Option<String>,
+    available_rooms: Vec<String>,
 
     // Scroll state fields to replace unsafe static variables
     scroll_offset: usize,
@@ -106,6 +109,9 @@ pub struct Home {
 
     // Notification overlay for cross-conversation messages
     notification_overlay: NotificationOverlay,
+
+    // Command processor for handling chat commands
+    command_processor: CommandProcessor,
 }
 
 // Static state variables for scrolling
@@ -144,6 +150,8 @@ impl Default for Home {
             room_manager: RoomManager::new(),
             current_room_id: None,
             current_user_id: None,
+            current_room_name: None,
+            available_rooms: vec!["Lobby".to_string()],
             scroll_offset: 0,
             prev_text_len: 0,
             manual_scroll: false,
@@ -216,6 +224,9 @@ impl Default for Home {
 
             // Initialize notification overlay
             notification_overlay: NotificationOverlay::new(),
+
+            // Initialize command processor
+            command_processor: CommandProcessor::new(),
         }
     }
 }
@@ -260,6 +271,7 @@ impl Home {
         // Set current context
         self.current_room_id = Some(room_id);
         self.current_user_id = Some(user_id);
+        self.current_room_name = Some("Lobby".to_string());
 
         // Initialize DM conversation manager
         self.dm_conversation_manager = Some(DMConversationManager::new(clean_username.clone()));
@@ -289,13 +301,14 @@ impl Home {
         // Only clear user context
         self.current_room_id = None;
         self.current_user_id = None;
+        self.current_room_name = None;
 
         // Reset DM state
         self.dm_mode = false;
         self.current_dm_partner = None;
         self.dm_conversation_manager = None;
 
-        tracing::info!("DEBUG: Chat state reset (keeping room manager)");
+        tracing::info!("Chat state reset (keeping room manager)");
 
         // Also reset the scroll position to default
         self.scroll_offset = 0;
@@ -341,14 +354,12 @@ impl Home {
                     );
                     return messages;
                 } else {
-                    tracing::warn!("DEBUG: DM conversation not found for partner: {}", partner);
                     return vec![(
                         format!("Starting new conversation with {}", partner),
                         MessageStyle::System,
                     )];
                 }
             } else {
-                tracing::warn!("DEBUG: DM mode but missing manager or partner");
                 return vec![(
                     "DM mode error - missing conversation data".to_string(),
                     MessageStyle::System,
@@ -401,8 +412,6 @@ impl Home {
                     room_id
                 );
             }
-        } else {
-            tracing::warn!("DEBUG: No current_room_id in get_display_messages_with_style");
         }
         Vec::new()
     }
@@ -427,27 +436,79 @@ impl Home {
 
     /// Add a message to current room
     pub fn add_message_to_room(&mut self, content: String, is_system: bool) {
-        tracing::info!(
-            "DEBUG: add_message_to_room called with: '{}', is_system: {}, room_id: {:?}, user_id: {:?}",
-            content,
-            is_system,
-            self.current_room_id,
-            self.current_user_id
-        );
+        // *** SMART FINAL FILTER: Block only obvious protocol spam ***
+        // This is a safety net for messages that shouldn't reach the UI
 
-        // First verify we have a valid room and user - if not, try to recreate them
-        if self.current_room_id.is_none() || self.current_user_id.is_none() {
-            tracing::warn!("DEBUG: Missing room or user context, attempting to recreate");
-            if let Err(e) = self.initialize_chat("ReconnectedUser".to_string()) {
-                tracing::error!("DEBUG: Failed to recreate chat context: {}", e);
+        // Log protocol-looking messages for debugging
+        if content.contains("USER_LIST")
+            || content.contains("ROOM_LIST")
+            || content.contains("CURRENT_ROOM")
+            || content.contains("ROOM_STATUS")
+            || content.contains("Reconnected User")
+            || content == "true"
+        {
+            tracing::info!(
+                "🏠 HOME: add_message_to_room called with potential protocol: '{}', is_system: {}",
+                content,
+                is_system
+            );
+        }
+
+        // SMART FILTER 1: Block Reconnected User protocol spam (never legitimate chat)
+        if content.starts_with("Reconnected User: ") && !content.contains(" joined the room") {
+            tracing::warn!(
+                "🚫 HOME FILTER: Blocked Reconnected User protocol: '{}'",
+                content
+            );
+            return;
+        }
+
+        // SMART FILTER 2: Block raw protocol messages that should have been processed
+        if content.starts_with("USER_LIST:")
+            || content.starts_with("ROOM_STATUS:")
+            || content.starts_with("ROOM_LIST:")
+            || content.starts_with("CURRENT_ROOM:")
+            || (content == "true" || content.trim() == "true")
+        {
+            tracing::warn!(
+                "🚫 HOME FILTER: Blocked raw protocol message: '{}'",
+                content
+            );
+            return;
+        }
+
+        // SMART FILTER 3: Block username: protocol patterns that slipped through
+        if content.contains(": ") && !content.starts_with("ERROR:") {
+            let parts: Vec<&str> = content.splitn(2, ": ").collect();
+            if parts.len() == 2 {
+                let from = parts[0];
+                let msg_content = parts[1];
+
+                // Block only clear protocol patterns
+                if (msg_content.starts_with("USER_LIST") && msg_content.len() < 100)
+                    || (msg_content.starts_with("ROOM_STATUS") && msg_content.len() < 100)
+                    || (msg_content.starts_with("CURRENT_ROOM") && msg_content.len() < 100)
+                    || (msg_content == "true" || msg_content.trim() == "true")
+                {
+                    tracing::warn!(
+                        "🚫 HOME FILTER: Blocked username protocol: from='{}', content='{}'",
+                        from,
+                        msg_content
+                    );
+                    return;
+                }
             }
         }
 
-        tracing::info!(
-            "DEBUG: After context check - room_id: {:?}, user_id: {:?}",
-            self.current_room_id,
-            self.current_user_id
-        );
+        // If we get here, allow the message to display
+        tracing::debug!("✅ HOME: Allowing message: '{}'", content);
+
+        // First verify we have a valid room and user - if not, try to recreate them
+        if self.current_room_id.is_none() || self.current_user_id.is_none() {
+            if let Err(e) = self.initialize_chat("ReconnectedUser".to_string()) {
+                tracing::error!("Failed to recreate chat context: {}", e);
+            }
+        }
 
         // Clean up content if it has multiple prefixes or username has '!' character
         let clean_content = if !is_system && content.contains(": ") {
@@ -482,8 +543,6 @@ impl Home {
 
         // Check if this message is already in the room
         if self.is_duplicate_message(&normalized_content) {
-            tracing::info!("DEBUG: Skipping duplicate message: '{}'", clean_content);
-
             // Even for duplicates, still count received messages for status bar
             // if this appears to be a message from another user
             if !is_system && !clean_content.starts_with("You: ") {
@@ -505,12 +564,11 @@ impl Home {
 
             // If user not in room, add them before proceeding (avoids borrow checker issues)
             if !user_in_room {
-                tracing::warn!("DEBUG: User not found in room, adding reconnected user");
                 let reconnected_user =
                     RoomUser::new(user_id, "Reconnected User".to_string(), UserRole::User);
 
                 if let Err(e) = self.room_manager.join_room(&room_id, reconnected_user) {
-                    tracing::error!("DEBUG: Failed to add user to room: {}", e);
+                    tracing::error!("Failed to add user to room: {}", e);
                 }
             }
 
@@ -528,7 +586,6 @@ impl Home {
                     ChatMessage::new_text(room_id, user_id, username, clean_content.clone())
                 };
 
-                tracing::info!("DEBUG: Adding message to room system: {:?}", message);
                 let _ = room.add_message(message);
 
                 // Count messages based on their type:
@@ -541,8 +598,11 @@ impl Home {
                     // Send an action to increment the received message count
                     if let Some(tx) = &self.command_tx {
                         match tx.send(Action::RecordReceivedMessage) {
-                            Ok(_) => tracing::info!("DEBUG: Successfully sent RecordReceivedMessage action for message: '{}'", clean_content),
-                            Err(e) => tracing::error!("DEBUG: Failed to send RecordReceivedMessage action: {}", e),
+                            Ok(_) => {}
+                            Err(e) => tracing::error!(
+                                "Failed to send RecordReceivedMessage action: {}",
+                                e
+                            ),
                         }
                     } else {
                         tracing::warn!(
@@ -552,13 +612,16 @@ impl Home {
                 }
             } else {
                 tracing::warn!(
-                    "DEBUG: Room not found in add_message_to_room for room_id: {:?}",
+                    "Room not found in add_message_to_room for room_id: {:?}",
                     room_id
                 );
             }
         } else {
-            tracing::error!("DEBUG: No room or user context to add message to room - room_id: {:?}, user_id: {:?}",
-                self.current_room_id, self.current_user_id);
+            tracing::error!(
+                "No room or user context to add message to room - room_id: {:?}, user_id: {:?}",
+                self.current_room_id,
+                self.current_user_id
+            );
 
             // We already tried to recreate the context at the beginning of this method,
             // so if we still don't have a room/user, we should log and return
@@ -566,9 +629,10 @@ impl Home {
 
             // Display an error to the user via action channel if available
             if let Some(tx) = &self.command_tx {
-                let _ = tx.send(Action::ReceiveMessage(
-                    "Error: Unable to send message due to connection issues. Please try disconnecting and logging in again.".to_string()
-                ));
+                let _ = tx.send(Action::DisplayMessage {
+                    content: "Error: Unable to send message due to connection issues. Please try disconnecting and logging in again.".to_string(),
+                    is_system: true,
+                });
             }
         }
     }
@@ -580,15 +644,40 @@ impl Home {
 
     /// Check for explicitly marked system messages
     fn is_explicit_system_message(&self, content: &str) -> bool {
-        content.starts_with("STATUS:")
+        // Check for direct protocol messages
+        if content.starts_with("STATUS:")
             || content.starts_with("SYSTEM:")
             || content.starts_with("Error:")
             || content.starts_with("USER_LIST:")
+            || content.starts_with("ROOM_LIST:")
+            || content.starts_with("CURRENT_ROOM:")
             || content.starts_with("ROOM_STATUS:")
             || content.starts_with("Lair Chat:")
             || content.contains("🔔")
             || content.starts_with("🔔")
             || content == "REQUEST_USER_LIST"
+            || content == "true"
+        {
+            return true;
+        }
+
+        // Check for protocol messages with username prefixes
+        if content.contains(": ") {
+            let parts: Vec<&str> = content.splitn(2, ": ").collect();
+            if parts.len() == 2 {
+                let message_content = parts[1];
+                return message_content.starts_with("USER_LIST:")
+                    || message_content.starts_with("ROOM_LIST:")
+                    || message_content.starts_with("CURRENT_ROOM:")
+                    || message_content.starts_with("ROOM_STATUS:")
+                    || message_content == "true"
+                    || message_content.starts_with("REQUEST_USER_LIST")
+                    || message_content.contains("Reconnected User:");
+            }
+        }
+
+        // Check for messages from "Reconnected User"
+        content.contains("Reconnected User:")
     }
 
     /// Check for server-generated system messages that may not have explicit prefixes
@@ -729,7 +818,10 @@ impl Home {
         } else {
             // Use modern action system instead of legacy
             if let Some(tx) = &self.command_tx {
-                let _ = tx.send(Action::ReceiveMessage(formatted_message));
+                let _ = tx.send(Action::DisplayMessage {
+                    content: formatted_message,
+                    is_system: false,
+                });
             }
         }
     }
@@ -1269,12 +1361,77 @@ impl Component for Home {
                                 }
                             });
 
-                            // Check if we're in DM mode and format message accordingly
+                            // Check if this is a command
+                            if CommandProcessor::is_command(&message) {
+                                // Process the command
+                                match self.command_processor.process_command(&message) {
+                                    CommandResult::Action(action) => {
+                                        self.input.reset();
+                                        return Ok(Some(action));
+                                    }
+                                    CommandResult::Actions(actions) => {
+                                        self.input.reset();
+                                        // Send all actions via command_tx for proper execution
+                                        if let Some(tx) = &self.command_tx {
+                                            for action in actions {
+                                                let _ = tx.send(action);
+                                            }
+                                        }
+                                        return Ok(Some(Action::Render));
+                                    }
+                                    CommandResult::Message(msg) => {
+                                        // Show the message to the user
+                                        if let Some(tx) = &self.command_tx {
+                                            let _ = tx.send(Action::DisplayMessage {
+                                                content: format!("System: {}", msg),
+                                                is_system: true,
+                                            });
+                                        }
+                                        self.input.reset();
+                                        return Ok(Some(Action::Render));
+                                    }
+                                    CommandResult::Messages(messages) => {
+                                        // Show multiple messages to the user
+                                        if let Some(tx) = &self.command_tx {
+                                            for msg in messages {
+                                                let _ = tx.send(Action::DisplayMessage {
+                                                    content: msg,
+                                                    is_system: true,
+                                                });
+                                            }
+                                        }
+                                        self.input.reset();
+                                        return Ok(Some(Action::Render));
+                                    }
+                                    CommandResult::Success => {
+                                        // Command processed successfully, no action needed
+                                        self.input.reset();
+                                        return Ok(Some(Action::Render));
+                                    }
+                                    CommandResult::Error(error_msg) => {
+                                        // Show error message to user
+                                        if let Some(tx) = &self.command_tx {
+                                            let _ = tx.send(Action::DisplayMessage {
+                                                content: format!("Error: {}", error_msg),
+                                                is_system: true,
+                                            });
+                                        }
+                                        self.input.reset();
+                                        return Ok(Some(Action::Render));
+                                    }
+                                    CommandResult::NotFound => {
+                                        // Not a valid command, treat as regular message
+                                        // Fall through to regular message handling
+                                    }
+                                }
+                            }
+
+                            // Format message based on current mode (regular message handling)
                             let formatted_message = if self.dm_mode {
                                 if let Some(partner) = &self.current_dm_partner {
                                     format!("DM:{}:{}", partner, message)
                                 } else {
-                                    message // Fallback if no partner set
+                                    message
                                 }
                             } else {
                                 message
@@ -1283,10 +1440,8 @@ impl Component for Home {
                             let action = Action::SendMessage(formatted_message);
                             self.input.reset();
                             return Ok(Some(action));
-                        } else {
-                            show_info("Please enter a message before pressing Enter");
                         }
-                        Action::Update
+                        Action::EnterNormal
                     }
                     KeyCode::Up => {
                         // Navigate to previous command in history
@@ -1359,7 +1514,13 @@ impl Component for Home {
                 }
             }
             Action::ToggleDM => {
+                tracing::info!(
+                    "🔄 DEBUG: ToggleDM action triggered - current state: show_dm_navigation={}",
+                    self.show_dm_navigation
+                );
+
                 self.show_dm_navigation = !self.show_dm_navigation;
+
                 if self.show_dm_navigation {
                     // Close user list if open
                     self.show_user_list = false;
@@ -1369,10 +1530,82 @@ impl Component for Home {
                     // Focus the DM navigation when opening
                     self.dm_navigation.state_mut().focused = true;
                     self.dm_navigation.state_mut().visible = true;
+
+                    // Exit input mode when opening DM navigation
+                    if self.mode == Mode::Insert {
+                        self.mode = Mode::Normal;
+                    }
                 } else {
                     // Unfocus when closing
                     self.dm_navigation.state_mut().focused = false;
                     self.dm_navigation.state_mut().visible = false;
+                }
+
+                tracing::info!(
+                    "✅ DEBUG: ToggleDM action completed - new state: show_dm_navigation={}",
+                    self.show_dm_navigation
+                );
+            }
+            Action::RoomJoined(room_name) => {
+                tracing::info!("Handling RoomJoined action for room: {}", room_name);
+
+                // Add room to available rooms if not already present
+                if !self.available_rooms.contains(&room_name) {
+                    self.available_rooms.push(room_name.clone());
+                }
+
+                // Create or get room in room manager
+                if let Some(user_id) = self.current_user_id {
+                    let room_id = match self.room_manager.get_or_create_shared_room(
+                        &room_name,
+                        RoomType::Public,
+                        user_id,
+                    ) {
+                        Ok(id) => id,
+                        Err(e) => {
+                            tracing::error!("Failed to create/get room {}: {}", room_name, e);
+                            return Ok(None);
+                        }
+                    };
+
+                    // Switch to the new room
+                    self.current_room_id = Some(room_id);
+                    self.current_room_name = Some(room_name.clone());
+                    self.dm_mode = false;
+                    self.current_dm_partner = None;
+
+                    tracing::info!("Successfully switched to room: {}", room_name);
+                }
+            }
+            Action::RoomCreated(room_name) => {
+                tracing::info!("Handling RoomCreated action for room: {}", room_name);
+
+                // Add room to available rooms if not already present
+                if !self.available_rooms.contains(&room_name) {
+                    self.available_rooms.push(room_name.clone());
+                }
+
+                // Create room in room manager and switch to it
+                if let Some(user_id) = self.current_user_id {
+                    let room_id = match self.room_manager.get_or_create_shared_room(
+                        &room_name,
+                        RoomType::Public,
+                        user_id,
+                    ) {
+                        Ok(id) => id,
+                        Err(e) => {
+                            tracing::error!("Failed to create room {}: {}", room_name, e);
+                            return Ok(None);
+                        }
+                    };
+
+                    // Switch to the new room
+                    self.current_room_id = Some(room_id);
+                    self.current_room_name = Some(room_name.clone());
+                    self.dm_mode = false;
+                    self.current_dm_partner = None;
+
+                    tracing::info!("Successfully created and switched to room: {}", room_name);
                 }
             }
             Action::EnterNormal => {
@@ -1465,6 +1698,16 @@ impl Component for Home {
                     dm_manager.mark_all_read();
                     show_info("All DM conversations marked as read");
                 }
+            }
+            Action::ClearScreen => {
+                // Clear all messages from the current room
+                if let Some(room_id) = self.current_room_id {
+                    let _ = self.room_manager.clear_room_messages(room_id);
+                }
+                // Reset scroll position
+                self.scroll_offset = 0;
+                self.manual_scroll = false;
+                show_info("Screen cleared");
             }
             // DisconnectClient is now handled by the main app using modern ConnectionManager
             // No need to handle it here anymore
@@ -2631,10 +2874,18 @@ impl Home {
         self.current_dm_partner.clone()
     }
 
-    /// Get list of available chats (Lobby + active DM conversations)
+    /// Get list of available chats (Lobby + rooms + active DM conversations)
     fn get_available_chats(&self) -> Vec<String> {
         let mut chats = vec!["Lobby".to_string()];
 
+        // Add available rooms (excluding Lobby since it's already added)
+        for room_name in &self.available_rooms {
+            if room_name != "Lobby" {
+                chats.push(room_name.clone());
+            }
+        }
+
+        // Add DM conversations
         if let Some(dm_manager) = &self.dm_conversation_manager {
             for conversation in dm_manager.get_all_conversations() {
                 if let Some(partner) = conversation
@@ -2667,6 +2918,13 @@ impl Home {
                 self.current_dm_partner = Some(partner.to_string());
                 if let Some(tx) = &self.command_tx {
                     let _ = tx.send(Action::StartDMConversation(partner.to_string()));
+                }
+            } else {
+                // Switch to room
+                self.dm_mode = false;
+                self.current_dm_partner = None;
+                if let Some(tx) = &self.command_tx {
+                    let _ = tx.send(Action::JoinRoom(selected_chat.clone()));
                 }
             }
         }

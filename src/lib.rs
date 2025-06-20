@@ -5,6 +5,7 @@
 
 // Common modules shared between client and server
 pub mod common;
+pub mod shared_types;
 
 // Include all client modules directly
 #[path = "client/action.rs"]
@@ -18,6 +19,9 @@ pub mod auth;
 
 #[path = "client/cli.rs"]
 pub mod cli;
+
+#[path = "client/commands.rs"]
+pub mod commands;
 
 #[path = "client/chat/mod.rs"]
 pub mod chat;
@@ -39,6 +43,9 @@ pub mod history;
 
 #[path = "client/logging.rs"]
 pub mod logging;
+
+#[path = "client/message_router.rs"]
+pub mod message_router;
 
 #[path = "client/tui.rs"]
 pub mod tui;
@@ -100,8 +107,8 @@ pub use common::transport;
 // Group client modules under a client namespace for cleaner imports
 pub mod client {
     pub use super::{
-        action::*, app::*, auth::*, chat::*, cli::*, components::*, config::*,
-        connection_manager::*, errors::*, history::*, logging::*, tui::*,
+        action::*, app::*, auth::*, chat::*, cli::*, commands::*, components::*, config::*,
+        connection_manager::*, errors::*, history::*, logging::*, message_router::*, tui::*,
     };
 
     // Re-export common functionality through client namespace

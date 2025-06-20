@@ -108,6 +108,18 @@ path = "src/bin/server.rs"
 name = "lair-chat-server-new"
 path = "src/bin/server_new.rs"
 
+[[bin]]
+name = "create_admin_user"
+path = "scripts/create_admin_user.rs"
+
+[[bin]]
+name = "debug_jwt_auth"
+path = "scripts/debug_jwt_auth.rs"
+
+[[bin]]
+name = "test_password"
+path = "scripts/test_password.rs"
+
 [[bench]]
 name = "transport_benchmarks"
 harness = false

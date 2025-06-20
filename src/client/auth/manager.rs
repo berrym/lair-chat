@@ -2,7 +2,9 @@
 //! Manages authentication state and coordinates authentication operations.
 
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{Mutex, RwLock};
+use tokio::time::timeout;
 
 use super::protocol::{AuthProtocol, AuthRequest};
 use super::storage::{StoredAuth, TokenStorage};
@@ -113,9 +115,9 @@ impl AuthManager {
                 return Err(error);
             }
 
-            // Wait for response
-            match transport.receive().await {
-                Ok(Some(response)) => {
+            // Wait for response with 5 second timeout to prevent hanging
+            match timeout(Duration::from_secs(5), transport.receive()).await {
+                Ok(Ok(Some(response))) => {
                     // Check if response indicates success or failure
                     if response.starts_with("Welcome back,")
                         || response.contains("successful")
@@ -181,7 +183,7 @@ impl AuthManager {
                         Err(error)
                     }
                 }
-                Ok(None) => {
+                Ok(Ok(None)) => {
                     let error = AuthError::ConnectionError("No response received".into());
                     let mut state = self.state.write().await;
                     *state = AuthState::Failed {
@@ -189,8 +191,17 @@ impl AuthManager {
                     };
                     Err(error)
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     let error = AuthError::ConnectionError(e.to_string());
+                    let mut state = self.state.write().await;
+                    *state = AuthState::Failed {
+                        reason: error.to_string(),
+                    };
+                    Err(error)
+                }
+                Err(_) => {
+                    // Timeout occurred
+                    let error = AuthError::ConnectionError("Registration request timed out".into());
                     let mut state = self.state.write().await;
                     *state = AuthState::Failed {
                         reason: error.to_string(),
@@ -234,9 +245,9 @@ impl AuthManager {
                 return Err(error);
             }
 
-            // Wait for response
-            match transport.receive().await {
-                Ok(Some(response)) => {
+            // Wait for response with 5 second timeout to prevent hanging
+            match timeout(Duration::from_secs(5), transport.receive()).await {
+                Ok(Ok(Some(response))) => {
                     // Check if response indicates success or failure
                     if response.starts_with("Welcome back,")
                         || response.contains("successful")
@@ -302,7 +313,7 @@ impl AuthManager {
                         Err(error)
                     }
                 }
-                Ok(None) => {
+                Ok(Ok(None)) => {
                     let error = AuthError::ConnectionError("No response received".into());
                     let mut state = self.state.write().await;
                     *state = AuthState::Failed {
@@ -310,8 +321,18 @@ impl AuthManager {
                     };
                     Err(error)
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     let error = AuthError::ConnectionError(e.to_string());
+                    let mut state = self.state.write().await;
+                    *state = AuthState::Failed {
+                        reason: error.to_string(),
+                    };
+                    Err(error)
+                }
+                Err(_) => {
+                    // Timeout occurred
+                    let error =
+                        AuthError::ConnectionError("Authentication request timed out".into());
                     let mut state = self.state.write().await;
                     *state = AuthState::Failed {
                         reason: error.to_string(),

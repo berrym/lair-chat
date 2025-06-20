@@ -96,12 +96,36 @@ pub async fn get_server_statistics(
         .await
         .unwrap_or(0) as u64;
 
+    // Get TCP server statistics from global state
+    let (tcp_connected_users, tcp_active_rooms, tcp_connected_peers) = {
+        let tcp_stats = crate::server::api::models::admin::get_tcp_stats()
+            .await
+            .unwrap_or_else(|| crate::shared_types::TcpServerStats {
+                connected_peers: 0,
+                authenticated_users: 0,
+                active_rooms: 0,
+                pending_invitations: 0,
+                room_user_counts: std::collections::HashMap::new(),
+                uptime_seconds: 0,
+            });
+
+        (
+            tcp_stats.authenticated_users as u32,
+            tcp_stats.active_rooms as u32,
+            tcp_stats.connected_peers as u32,
+        )
+    };
+
+    // Combine REST API and TCP server statistics
+    let combined_online_users = session_stats.active_sessions as u32 + tcp_connected_users;
+    let combined_active_rooms = std::cmp::max(total_rooms as u32, tcp_active_rooms);
+
     let stats = ServerStatistics {
         total_users,
         active_users: total_users as u32, // TODO: Implement active user tracking
-        online_users: session_stats.active_sessions as u32,
+        online_users: combined_online_users,
         total_rooms,
-        active_rooms: total_rooms as u32, // TODO: Implement active room tracking
+        active_rooms: combined_active_rooms,
         total_messages,
         messages_today: messages_today as u32,
         total_sessions: session_stats.total_sessions,
@@ -114,8 +138,8 @@ pub async fn get_server_statistics(
     };
 
     info!(
-        "Server statistics retrieved by admin: {}",
-        user_context.username
+        "Server statistics retrieved by admin: {} (TCP: {} users, {} peers, {} rooms)",
+        user_context.username, tcp_connected_users, tcp_connected_peers, tcp_active_rooms
     );
     Ok(responses::success(stats))
 }
@@ -201,6 +225,23 @@ pub async fn get_system_health(
         metadata: serde_json::json!({"active_sessions": session_health.2}),
     });
 
+    // TCP server health check (integrated mode only)
+    let tcp_start = SystemTime::now();
+    let tcp_health = check_tcp_server_health().await;
+    let tcp_response_time = tcp_start
+        .elapsed()
+        .unwrap_or(Duration::from_secs(30))
+        .as_millis() as u64;
+
+    components.push(ComponentHealth {
+        name: "TCP Server".to_string(),
+        status: tcp_health.0,
+        error: tcp_health.1,
+        response_time_ms: Some(tcp_response_time as u32),
+        last_check: now,
+        metadata: tcp_health.2,
+    });
+
     // Collect system metrics
     let metrics = collect_system_metrics().await;
 
@@ -276,6 +317,35 @@ async fn check_session_health(state: &ApiState) -> (HealthStatus, Option<String>
                 HealthStatus::Critical,
                 Some(format!("Session management failed: {}", e)),
                 0,
+            )
+        }
+    }
+}
+
+/// Check TCP server health using global state
+async fn check_tcp_server_health() -> (HealthStatus, Option<String>, serde_json::Value) {
+    // Try to get TCP stats from global state
+    match crate::server::api::models::get_tcp_stats().await {
+        Some(stats) => {
+            let metadata = serde_json::json!({
+                "connected_peers": stats.connected_peers,
+                "authenticated_users": stats.authenticated_users,
+                "active_rooms": stats.active_rooms,
+                "pending_invitations": stats.pending_invitations,
+                "room_user_counts": stats.room_user_counts,
+                "uptime_seconds": stats.uptime_seconds,
+                "tcp_server_running": true
+            });
+
+            // TCP server is healthy if we can get stats
+            (HealthStatus::Healthy, None, metadata)
+        }
+        None => {
+            warn!("Failed to get TCP server statistics for health check");
+            (
+                HealthStatus::Degraded,
+                Some("TCP server statistics unavailable".to_string()),
+                serde_json::json!({"error": "tcp_stats_unavailable", "tcp_server_running": false}),
             )
         }
     }

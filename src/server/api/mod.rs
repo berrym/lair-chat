@@ -25,13 +25,22 @@
 //! All endpoints are versioned under `/api/v1/` to support future API evolution
 //! while maintaining backward compatibility.
 
-use axum::{extract::State, http::StatusCode, response::Json, Router};
+use axum::{
+    extract::State,
+    http::StatusCode,
+    middleware::from_fn_with_state,
+    response::{Html, Json, Redirect},
+    routing::get,
+    Router,
+};
 use serde_json::{json, Value};
 use std::sync::Arc;
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tokio::sync::Mutex;
+use tower_http::{cors::CorsLayer, services::ServeDir, trace::TraceLayer};
 use tracing::{info, warn};
 
 use crate::server::storage::StorageManager;
+use crate::shared_types::SharedTcpState;
 
 pub mod handlers;
 pub mod middleware;
@@ -53,6 +62,8 @@ pub struct ApiState {
     pub jwt_secret: String,
     /// Server configuration
     pub config: Arc<crate::server::config::ServerConfig>,
+    /// TCP server state for monitoring (optional for integrated mode)
+    pub tcp_state: Option<SharedTcpState>,
 }
 
 impl ApiState {
@@ -66,7 +77,33 @@ impl ApiState {
             storage,
             jwt_secret,
             config,
+            tcp_state: None,
         }
+    }
+
+    /// Create new API state with TCP server state for integrated mode
+    pub fn new_with_tcp_state(
+        storage: Arc<StorageManager>,
+        jwt_secret: String,
+        config: Arc<crate::server::config::ServerConfig>,
+        tcp_state: SharedTcpState,
+    ) -> Self {
+        Self {
+            storage,
+            jwt_secret,
+            config,
+            tcp_state: Some(tcp_state),
+        }
+    }
+
+    /// Check if running in integrated mode with TCP server
+    pub fn is_integrated_mode(&self) -> bool {
+        self.tcp_state.is_some()
+    }
+
+    /// Get TCP server state if available
+    pub fn tcp_state(&self) -> Option<&SharedTcpState> {
+        self.tcp_state.as_ref()
     }
 }
 
@@ -81,13 +118,29 @@ pub fn create_api_router(state: ApiState) -> Router {
         // Authentication routes (no auth required)
         .nest("/auth", routes::auth::create_auth_routes())
         // User management routes (auth required)
-        .nest("/users", routes::users::create_user_routes())
+        .nest(
+            "/users",
+            routes::users::create_user_routes()
+                .layer(from_fn_with_state(state.clone(), jwt_auth_middleware)),
+        )
         // Room management routes (auth required)
-        .nest("/rooms", routes::rooms::create_room_routes())
+        .nest(
+            "/rooms",
+            routes::rooms::create_room_routes()
+                .layer(from_fn_with_state(state.clone(), jwt_auth_middleware)),
+        )
         // Message routes (auth required)
-        .nest("/messages", routes::messages::create_message_routes())
+        .nest(
+            "/messages",
+            routes::messages::create_message_routes()
+                .layer(from_fn_with_state(state.clone(), jwt_auth_middleware)),
+        )
         // Session management routes (auth required)
-        .nest("/sessions", routes::sessions::create_session_routes())
+        .nest(
+            "/sessions",
+            routes::sessions::create_session_routes()
+                .layer(from_fn_with_state(state.clone(), jwt_auth_middleware)),
+        )
         // Admin routes (admin auth required)
         .nest("/admin", routes::admin::create_admin_routes())
         // Add state to all routes
@@ -98,6 +151,8 @@ pub fn create_api_router(state: ApiState) -> Router {
         .nest("/api/v1", api_router)
         // Add Swagger UI documentation
         .merge(create_docs_router())
+        // Serve admin dashboard as static files
+        .merge(create_admin_dashboard_router())
         // Apply CORS configuration
         .layer(create_cors_layer())
         // Request tracing
@@ -144,10 +199,100 @@ fn create_cors_layer() -> CorsLayer {
 
 /// Create documentation router with Swagger UI
 fn create_docs_router() -> Router {
-    use axum::routing::get;
-
     // Simple docs router without OpenAPI for now
     Router::new().route("/docs", get(|| async { "API Documentation - Coming Soon" }))
+}
+
+/// Create admin dashboard router to serve static files
+fn create_admin_dashboard_router() -> Router {
+    // Check if admin dashboard directory exists
+    let dashboard_path = std::path::Path::new("admin-dashboard");
+
+    if dashboard_path.exists() && dashboard_path.is_dir() {
+        info!("Admin dashboard found at admin-dashboard/, serving static files");
+
+        Router::new()
+            // Serve the main dashboard at /admin
+            .route("/admin", get(|| async { Redirect::permanent("/admin/") }))
+            // Serve static files from admin-dashboard directory
+            .nest_service("/admin/", ServeDir::new("admin-dashboard"))
+            // Also serve at root path for convenience
+            .route("/", get(serve_root_redirect))
+    } else {
+        warn!("Admin dashboard not found at admin-dashboard/");
+        Router::new()
+            .route("/admin", get(|| async {
+                Html("<h1>Admin Dashboard Not Found</h1><p>Please ensure admin-dashboard/ directory exists</p>")
+            }))
+            .route("/", get(serve_root_info))
+    }
+}
+
+/// Serve root path with info about available services
+async fn serve_root_info() -> Html<&'static str> {
+    Html(
+        r#"
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Lair Chat Server</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background: #f5f7fa; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #34495e; }
+        .service { margin: 20px 0; padding: 15px; background: #ecf0f1; border-radius: 5px; }
+        .service h3 { margin: 0 0 10px 0; color: #2c3e50; }
+        a { color: #3498db; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .status { display: inline-block; width: 12px; height: 12px; background: #27ae60; border-radius: 50%; margin-right: 8px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Lair Chat Server</h1>
+        <p>Welcome to the Lair Chat administration server. Your server is running and ready!</p>
+
+        <div class="service">
+            <h3><span class="status"></span>Admin Dashboard</h3>
+            <p>Web-based administration interface</p>
+            <a href="/admin/">→ Open Admin Dashboard</a>
+        </div>
+
+        <div class="service">
+            <h3><span class="status"></span>REST API</h3>
+            <p>RESTful API for chat operations</p>
+            <a href="/api/v1/health">→ API Health Check</a>
+        </div>
+
+        <div class="service">
+            <h3><span class="status"></span>API Documentation</h3>
+            <p>Interactive API documentation</p>
+            <a href="/docs">→ View API Docs</a>
+        </div>
+
+        <hr style="margin: 30px 0; border: none; border-top: 1px solid #ecf0f1;">
+
+        <p><strong>Default Admin Credentials:</strong></p>
+        <ul>
+            <li>Username: <code>admin</code></li>
+            <li>Password: <code>AdminPassword123!</code></li>
+        </ul>
+    </div>
+</body>
+</html>
+    "#,
+    )
+}
+
+/// Redirect root to admin dashboard if available
+async fn serve_root_redirect() -> Result<Redirect, Html<&'static str>> {
+    let dashboard_path = std::path::Path::new("admin-dashboard/index.html");
+
+    if dashboard_path.exists() {
+        Ok(Redirect::permanent("/admin/"))
+    } else {
+        Err(serve_root_info().await)
+    }
 }
 
 /// Start the API server on the specified address
@@ -163,6 +308,8 @@ pub async fn start_api_server(
 
     info!("API server listening on http://{}", bind_addr);
     info!("API documentation available at http://{}/docs", bind_addr);
+    info!("Admin dashboard available at http://{}/admin/", bind_addr);
+    info!("Server info page available at http://{}/", bind_addr);
 
     axum::serve(listener, app)
         .await

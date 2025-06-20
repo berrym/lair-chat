@@ -76,6 +76,9 @@ impl ServerApp {
 
         info!("Server components initialized successfully");
 
+        // Display startup information
+        self.display_startup_info(&bind_addr);
+
         // Start REST API server
         let api_state_clone = api_state.clone();
         let server_task = tokio::spawn(async move {
@@ -116,6 +119,56 @@ impl ServerApp {
 
         info!("Server shutdown complete");
         Ok(())
+    }
+
+    /// Display startup information and access URLs
+    fn display_startup_info(&self, bind_addr: &std::net::SocketAddr) {
+        println!("\n🎉 Lair Chat Server Started Successfully!");
+        println!("==========================================");
+
+        // Check if admin dashboard exists
+        let dashboard_exists = std::path::Path::new("admin-dashboard/index.html").exists();
+
+        println!("\n📊 Available Services:");
+        println!("   • REST API:          http://{}/api/v1", bind_addr);
+        println!("   • API Health Check:  http://{}/api/v1/health", bind_addr);
+        println!("   • API Documentation: http://{}/docs", bind_addr);
+
+        if dashboard_exists {
+            println!("   • Admin Dashboard:    http://{}/admin/", bind_addr);
+            println!("   • Server Info:        http://{}/", bind_addr);
+
+            println!("\n🔐 Default Admin Credentials:");
+            println!("   Username: admin");
+            println!("   Password: AdminPassword123!");
+
+            println!("\n🎯 Quick Start:");
+            println!("   1. Open your browser");
+            println!("   2. Navigate to: http://{}/admin/", bind_addr);
+            println!("   3. Login with the credentials above");
+            println!("   4. Start managing your chat system!");
+        } else {
+            println!(
+                "   ⚠️  Admin Dashboard: Not available (admin-dashboard/ directory not found)"
+            );
+            println!("\n💡 To enable the admin dashboard:");
+            println!("   1. Run: ./setup_admin_system.sh");
+            println!("   2. Restart the server");
+        }
+
+        println!("\n🛠️  Management Commands:");
+        println!("   Create admin user:    cargo run --bin create_admin_user");
+        println!("   Debug authentication: cargo run --bin debug_jwt_auth");
+        println!("   Test API endpoints:   ./test_api.sh");
+        println!("   Verify system:        ./verify_system.sh");
+
+        println!("\n📁 Important Files:");
+        println!("   Configuration: .env");
+        println!("   Database:      data/lair_chat.db");
+        println!("   Logs:          logs/server.log");
+
+        println!("\n🚀 Server is ready! Press Ctrl+C to stop.");
+        println!("==========================================\n");
     }
 }
 

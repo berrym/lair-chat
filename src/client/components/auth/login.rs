@@ -21,6 +21,7 @@ pub enum LoginMode {
 pub struct LoginScreen {
     username: Input,
     password: Input,
+    password_confirm: Input,
     server: Input,
     port: Input,
     error_message: Option<String>,
@@ -38,6 +39,7 @@ impl LoginScreen {
         Self {
             username: Input::default(),
             password: Input::default(),
+            password_confirm: Input::default(),
             server: Input::new("127.0.0.1".into()),
             port: Input::new("8080".into()),
             error_message: None,
@@ -51,12 +53,31 @@ impl LoginScreen {
         }
     }
 
+    fn get_field_indexes(&self) -> (usize, usize, usize, usize, Option<usize>) {
+        // Returns (username, password, password_confirm/server, server/port, port/none)
+        match self.mode {
+            LoginMode::Login => (0, 1, 2, 3, None),
+            LoginMode::Register => (0, 1, 2, 3, Some(4)),
+        }
+    }
+
+    fn get_max_field(&self) -> usize {
+        match self.mode {
+            LoginMode::Login => 3,
+            LoginMode::Register => 4,
+        }
+    }
+
     fn toggle_mode(&mut self) {
         self.mode = match self.mode {
             LoginMode::Login => LoginMode::Register,
             LoginMode::Register => LoginMode::Login,
         };
         self.error_message = None;
+        // Clear password confirmation when switching modes
+        self.password_confirm = Input::default();
+        // Reset focus to username when switching modes
+        self.focused_field = 0;
     }
 
     fn submit(&mut self) -> Option<Action> {
@@ -78,6 +99,19 @@ impl LoginScreen {
             self.error_message = Some("Password cannot be empty".to_string());
 
             return None;
+        }
+
+        // For registration, validate password confirmation
+        if matches!(self.mode, LoginMode::Register) {
+            if self.password_confirm.value().trim().is_empty() {
+                self.error_message = Some("Password confirmation cannot be empty".to_string());
+                return None;
+            }
+
+            if self.password.value() != self.password_confirm.value() {
+                self.error_message = Some("Passwords do not match".to_string());
+                return None;
+            }
         }
 
         // Validate server and port
@@ -178,14 +212,16 @@ impl Component for LoginScreen {
         match key.code {
             crossterm::event::KeyCode::Tab => {
                 if !self.show_help && !self.show_error {
-                    self.focused_field = (self.focused_field + 1) % 4;
+                    let max_field = self.get_max_field();
+                    self.focused_field = (self.focused_field + 1) % (max_field + 1);
                 }
                 None
             }
             crossterm::event::KeyCode::BackTab => {
                 if !self.show_help && !self.show_error {
+                    let max_field = self.get_max_field();
                     self.focused_field = if self.focused_field == 0 {
-                        3
+                        max_field
                     } else {
                         self.focused_field - 1
                     };
@@ -284,17 +320,42 @@ impl Component for LoginScreen {
                             ));
                         }
                         2 => {
-                            self.server = self.server.clone().with_value(format!(
-                                "{}{}",
-                                self.server.value(),
-                                c
-                            ));
+                            if matches!(self.mode, LoginMode::Register) {
+                                self.password_confirm = self
+                                    .password_confirm
+                                    .clone()
+                                    .with_value(format!("{}{}", self.password_confirm.value(), c));
+                            } else {
+                                self.server = self.server.clone().with_value(format!(
+                                    "{}{}",
+                                    self.server.value(),
+                                    c
+                                ));
+                            }
                         }
                         3 => {
-                            self.port =
-                                self.port
-                                    .clone()
-                                    .with_value(format!("{}{}", self.port.value(), c));
+                            if matches!(self.mode, LoginMode::Register) {
+                                self.server = self.server.clone().with_value(format!(
+                                    "{}{}",
+                                    self.server.value(),
+                                    c
+                                ));
+                            } else {
+                                self.port = self.port.clone().with_value(format!(
+                                    "{}{}",
+                                    self.port.value(),
+                                    c
+                                ));
+                            }
+                        }
+                        4 => {
+                            if matches!(self.mode, LoginMode::Register) {
+                                self.port = self.port.clone().with_value(format!(
+                                    "{}{}",
+                                    self.port.value(),
+                                    c
+                                ));
+                            }
                         }
                         _ => {}
                     }
@@ -323,23 +384,55 @@ impl Component for LoginScreen {
                             }
                         }
                         2 => {
-                            let value = self.server.value();
-                            if !value.is_empty() {
-                                self.server = self
-                                    .server
-                                    .clone()
-                                    .with_value(value[..value.len() - 1].to_string());
+                            if matches!(self.mode, LoginMode::Register) {
+                                let value = self.password_confirm.value();
+                                if !value.is_empty() {
+                                    self.password_confirm = self
+                                        .password_confirm
+                                        .clone()
+                                        .with_value(value[..value.len() - 1].to_string());
+                                }
+                            } else {
+                                let value = self.server.value();
+                                if !value.is_empty() {
+                                    self.server = self
+                                        .server
+                                        .clone()
+                                        .with_value(value[..value.len() - 1].to_string());
+                                }
                             }
                         }
                         3 => {
-                            let value = self.port.value();
-                            if !value.is_empty() {
-                                self.port = self
-                                    .port
-                                    .clone()
-                                    .with_value(value[..value.len() - 1].to_string());
+                            if matches!(self.mode, LoginMode::Register) {
+                                let value = self.server.value();
+                                if !value.is_empty() {
+                                    self.server = self
+                                        .server
+                                        .clone()
+                                        .with_value(value[..value.len() - 1].to_string());
+                                }
+                            } else {
+                                let value = self.port.value();
+                                if !value.is_empty() {
+                                    self.port = self
+                                        .port
+                                        .clone()
+                                        .with_value(value[..value.len() - 1].to_string());
+                                }
                             }
                         }
+                        4 => {
+                            if matches!(self.mode, LoginMode::Register) {
+                                let value = self.port.value();
+                                if !value.is_empty() {
+                                    self.port = self
+                                        .port
+                                        .clone()
+                                        .with_value(value[..value.len() - 1].to_string());
+                                }
+                            }
+                        }
+
                         _ => {}
                     }
                 }
@@ -391,16 +484,30 @@ impl Component for LoginScreen {
         let form_chunks = Layout::default()
             .direction(Direction::Vertical)
             .margin(1)
-            .constraints([
-                Constraint::Length(4), // Mode selection and instructions
-                Constraint::Length(1), // Spacer
-                Constraint::Length(3), // Username input
-                Constraint::Length(3), // Password input
-                Constraint::Length(3), // Server input
-                Constraint::Length(3), // Port input
-                Constraint::Length(1), // Spacer
-                Constraint::Length(2), // Help label (taller for errors)
-            ])
+            .constraints(if matches!(self.mode, LoginMode::Register) {
+                vec![
+                    Constraint::Length(4), // Mode selection and instructions
+                    Constraint::Length(1), // Spacer
+                    Constraint::Length(3), // Username input
+                    Constraint::Length(3), // Password input
+                    Constraint::Length(3), // Password confirm
+                    Constraint::Length(3), // Server input
+                    Constraint::Length(3), // Port input
+                    Constraint::Length(1), // Spacer
+                    Constraint::Length(2), // Help label (taller for errors)
+                ]
+            } else {
+                vec![
+                    Constraint::Length(4), // Mode selection and instructions
+                    Constraint::Length(1), // Spacer
+                    Constraint::Length(3), // Username input
+                    Constraint::Length(3), // Password input
+                    Constraint::Length(3), // Server input
+                    Constraint::Length(3), // Port input
+                    Constraint::Length(1), // Spacer
+                    Constraint::Length(2), // Help label (taller for errors)
+                ]
+            })
             .split(form_area);
 
         // Draw mode selection and instructions
@@ -508,14 +615,55 @@ impl Component for LoginScreen {
             .wrap(ratatui::widgets::Wrap { trim: false });
         f.render_widget(password_input, form_chunks[3]);
 
+        // Draw password confirmation field (only in register mode)
+        let mut current_chunk = 4;
+        if matches!(self.mode, LoginMode::Register) {
+            let confirm_title = if self.focused_field == 2 {
+                "Confirm Password (FOCUSED - Type here)"
+            } else {
+                "Confirm Password"
+            };
+
+            let confirm_style = if self.focused_field == 2 {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+
+            let confirm_block = Block::default()
+                .borders(Borders::ALL)
+                .title(confirm_title)
+                .border_style(if self.focused_field == 2 {
+                    Style::default().fg(Color::Yellow)
+                } else {
+                    Style::default().fg(Color::Gray)
+                });
+
+            let masked_confirm = if self.focused_field == 2 {
+                format!("{}|", "•".repeat(self.password_confirm.value().len()))
+            } else {
+                "•".repeat(self.password_confirm.value().len())
+            };
+            let confirm_input = Paragraph::new(masked_confirm)
+                .style(confirm_style)
+                .block(confirm_block)
+                .wrap(ratatui::widgets::Wrap { trim: false });
+            f.render_widget(confirm_input, form_chunks[4]);
+            current_chunk = 5;
+        }
+
         // Draw server field with better styling
-        let server_title = if self.focused_field == 2 {
+        let (_, _, _, server_idx, port_idx) = self.get_field_indexes();
+        let server_focused = self.focused_field == server_idx;
+        let server_title = if server_focused {
             "Server (FOCUSED - Type here)"
         } else {
             "Server"
         };
 
-        let server_style = if self.focused_field == 2 {
+        let server_style = if server_focused {
             Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD)
@@ -526,13 +674,13 @@ impl Component for LoginScreen {
         let server_block = Block::default()
             .borders(Borders::ALL)
             .title(server_title)
-            .border_style(if self.focused_field == 2 {
+            .border_style(if server_focused {
                 Style::default().fg(Color::Yellow)
             } else {
                 Style::default().fg(Color::Gray)
             });
 
-        let server_display = if self.focused_field == 2 {
+        let server_display = if server_focused {
             format!("{}|", self.server.value())
         } else {
             self.server.value().to_string()
@@ -542,16 +690,18 @@ impl Component for LoginScreen {
             .style(server_style)
             .block(server_block)
             .wrap(ratatui::widgets::Wrap { trim: false });
-        f.render_widget(server_input, form_chunks[4]);
+        f.render_widget(server_input, form_chunks[current_chunk]);
 
         // Draw port field with better styling
-        let port_title = if self.focused_field == 3 {
+        let port_idx = port_idx.unwrap_or(server_idx + 1);
+        let port_focused = self.focused_field == port_idx;
+        let port_title = if port_focused {
             "Port (FOCUSED - Type here)"
         } else {
             "Port"
         };
 
-        let port_style = if self.focused_field == 3 {
+        let port_style = if port_focused {
             Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD)
@@ -562,13 +712,13 @@ impl Component for LoginScreen {
         let port_block = Block::default()
             .borders(Borders::ALL)
             .title(port_title)
-            .border_style(if self.focused_field == 3 {
+            .border_style(if port_focused {
                 Style::default().fg(Color::Yellow)
             } else {
                 Style::default().fg(Color::Gray)
             });
 
-        let port_display = if self.focused_field == 3 {
+        let port_display = if port_focused {
             format!("{}|", self.port.value())
         } else {
             self.port.value().to_string()
@@ -578,7 +728,7 @@ impl Component for LoginScreen {
             .style(port_style)
             .block(port_block)
             .wrap(ratatui::widgets::Wrap { trim: false });
-        f.render_widget(port_input, form_chunks[5]);
+        f.render_widget(port_input, form_chunks[current_chunk + 1]);
 
         // Draw simple help label
         let help_text = if self.processing {
@@ -646,9 +796,10 @@ impl LoginScreen {
                     .add_modifier(Modifier::BOLD),
             )]),
             Line::from("1. Enter your username and password"),
-            Line::from("2. Specify server address (e.g., 127.0.0.1)"),
-            Line::from("3. Enter port number (e.g., 8080)"),
-            Line::from("4. Press Enter to connect and authenticate"),
+            Line::from("2. For registration: confirm your password"),
+            Line::from("3. Specify server address (e.g., 127.0.0.1)"),
+            Line::from("4. Enter port number (e.g., 8080)"),
+            Line::from("5. Press Enter to connect and authenticate"),
             Line::from(""),
             Line::from(vec![Span::styled(
                 "Navigation:",
@@ -669,7 +820,10 @@ impl LoginScreen {
                     .add_modifier(Modifier::BOLD),
             )]),
             Line::from("Login - Sign in with existing account"),
+            Line::from("  • Username and password only"),
             Line::from("Register - Create new account"),
+            Line::from("  • Username, password, and password confirmation"),
+            Line::from("  • Passwords must match to proceed"),
             Line::from("(Use Ctrl+T to switch between modes)"),
             Line::from(""),
             Line::from(vec![Span::styled(
