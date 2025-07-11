@@ -538,3 +538,62 @@ pub struct AuditLogStats {
     pub entries_by_admin: std::collections::HashMap<String, u64>,
     pub most_active_admins: Vec<(String, u64)>,
 }
+
+/// Invitation storage operations
+#[async_trait]
+pub trait InvitationStorage: Send + Sync {
+    /// Create a new invitation
+    async fn create_invitation(&self, invitation: Invitation) -> StorageResult<Invitation>;
+
+    /// Get an invitation by ID
+    async fn get_invitation_by_id(&self, id: &str) -> StorageResult<Option<Invitation>>;
+
+    /// Update invitation status
+    async fn update_invitation_status(
+        &self,
+        id: &str,
+        status: InvitationStatus,
+        timestamp: u64,
+    ) -> StorageResult<()>;
+
+    /// List invitations for a user
+    async fn list_user_invitations(
+        &self,
+        user_id: &str,
+        status: Option<InvitationStatus>,
+    ) -> StorageResult<Vec<Invitation>>;
+
+    /// List invitations for a room
+    async fn list_room_invitations(
+        &self,
+        room_id: &str,
+        status: Option<InvitationStatus>,
+    ) -> StorageResult<Vec<Invitation>>;
+
+    /// Delete an invitation
+    async fn delete_invitation(&self, id: &str) -> StorageResult<()>;
+
+    /// Clean up expired invitations
+    async fn cleanup_expired_invitations(&self, before_timestamp: u64) -> StorageResult<u64>;
+
+    /// Get invitation statistics
+    async fn get_invitation_stats(&self, user_id: Option<&str>) -> StorageResult<InvitationStats>;
+
+    /// Get invitation by recipient and room (for checking existing invitations)
+    async fn get_invitation_by_recipient_and_room(
+        &self,
+        recipient_user_id: &str,
+        room_id: &str,
+        status: Option<InvitationStatus>,
+    ) -> StorageResult<Option<Invitation>>;
+
+    /// List invitations sent by a user
+    async fn list_sent_invitations(
+        &self,
+        sender_user_id: &str,
+        status: Option<InvitationStatus>,
+    ) -> StorageResult<Vec<Invitation>>;
+
+    /// Revoke an invitation (mark as revoked)
+    async fn revoke_invitation(&self, id: &str, timestamp: u64) -> StorageResult<()>;
+}

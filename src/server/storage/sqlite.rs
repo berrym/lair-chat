@@ -2993,3 +2993,387 @@ impl SqliteStorage {
         })
     }
 }
+
+#[async_trait]
+impl InvitationStorage for SqliteStorage {
+    async fn create_invitation(&self, invitation: Invitation) -> StorageResult<Invitation> {
+        let metadata_json = serde_json::to_string(&invitation.metadata).map_err(|e| {
+            StorageError::SerializationError {
+                message: e.to_string(),
+            }
+        })?;
+
+        let invitation_type_str = match invitation.invitation_type {
+            InvitationType::RoomInvitation => "room_invitation",
+            InvitationType::DirectMessage => "direct_message",
+            InvitationType::AdminInvitation => "admin_invitation",
+        };
+
+        let status_str = match invitation.status {
+            InvitationStatus::Pending => "pending",
+            InvitationStatus::Accepted => "accepted",
+            InvitationStatus::Declined => "declined",
+            InvitationStatus::Expired => "expired",
+            InvitationStatus::Revoked => "revoked",
+        };
+
+        sqlx::query(
+            r#"
+            INSERT INTO invitations (
+                id, sender_user_id, recipient_user_id, room_id, invitation_type, status,
+                message, created_at, expires_at, responded_at, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&invitation.id)
+        .bind(&invitation.sender_user_id)
+        .bind(&invitation.recipient_user_id)
+        .bind(&invitation.room_id)
+        .bind(invitation_type_str)
+        .bind(status_str)
+        .bind(&invitation.message)
+        .bind(invitation.created_at as i64)
+        .bind(invitation.expires_at.map(|t| t as i64))
+        .bind(invitation.responded_at.map(|t| t as i64))
+        .bind(metadata_json)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(invitation)
+    }
+
+    async fn get_invitation_by_id(&self, id: &str) -> StorageResult<Option<Invitation>> {
+        let row = sqlx::query(
+            r#"
+            SELECT id, sender_user_id, recipient_user_id, room_id, invitation_type, status,
+                   message, created_at, expires_at, responded_at, metadata
+            FROM invitations WHERE id = ?
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            Ok(Some(self.row_to_invitation(row)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn update_invitation_status(
+        &self,
+        id: &str,
+        status: InvitationStatus,
+        timestamp: u64,
+    ) -> StorageResult<()> {
+        let status_str = match status {
+            InvitationStatus::Pending => "pending",
+            InvitationStatus::Accepted => "accepted",
+            InvitationStatus::Declined => "declined",
+            InvitationStatus::Expired => "expired",
+            InvitationStatus::Revoked => "revoked",
+        };
+
+        sqlx::query("UPDATE invitations SET status = ?, responded_at = ? WHERE id = ?")
+            .bind(status_str)
+            .bind(timestamp as i64)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn list_user_invitations(
+        &self,
+        user_id: &str,
+        status: Option<InvitationStatus>,
+    ) -> StorageResult<Vec<Invitation>> {
+        let mut query = "SELECT id, sender_user_id, recipient_user_id, room_id, invitation_type, status, message, created_at, expires_at, responded_at, metadata FROM invitations WHERE recipient_user_id = ?".to_string();
+
+        if let Some(status) = &status {
+            let status_str = match status {
+                InvitationStatus::Pending => "pending",
+                InvitationStatus::Accepted => "accepted",
+                InvitationStatus::Declined => "declined",
+                InvitationStatus::Expired => "expired",
+                InvitationStatus::Revoked => "revoked",
+            };
+            query.push_str(&format!(" AND status = '{}'", status_str));
+        }
+
+        query.push_str(" ORDER BY created_at DESC");
+
+        let rows = sqlx::query(&query)
+            .bind(user_id)
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut invitations = Vec::new();
+        for row in rows {
+            invitations.push(self.row_to_invitation(row)?);
+        }
+
+        Ok(invitations)
+    }
+
+    async fn list_room_invitations(
+        &self,
+        room_id: &str,
+        status: Option<InvitationStatus>,
+    ) -> StorageResult<Vec<Invitation>> {
+        let mut query = "SELECT id, sender_user_id, recipient_user_id, room_id, invitation_type, status, message, created_at, expires_at, responded_at, metadata FROM invitations WHERE room_id = ?".to_string();
+
+        if let Some(status) = &status {
+            let status_str = match status {
+                InvitationStatus::Pending => "pending",
+                InvitationStatus::Accepted => "accepted",
+                InvitationStatus::Declined => "declined",
+                InvitationStatus::Expired => "expired",
+                InvitationStatus::Revoked => "revoked",
+            };
+            query.push_str(&format!(" AND status = '{}'", status_str));
+        }
+
+        query.push_str(" ORDER BY created_at DESC");
+
+        let rows = sqlx::query(&query)
+            .bind(room_id)
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut invitations = Vec::new();
+        for row in rows {
+            invitations.push(self.row_to_invitation(row)?);
+        }
+
+        Ok(invitations)
+    }
+
+    async fn delete_invitation(&self, id: &str) -> StorageResult<()> {
+        sqlx::query("DELETE FROM invitations WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn cleanup_expired_invitations(&self, before_timestamp: u64) -> StorageResult<u64> {
+        let result =
+            sqlx::query("DELETE FROM invitations WHERE expires_at IS NOT NULL AND expires_at < ?")
+                .bind(before_timestamp as i64)
+                .execute(&self.pool)
+                .await?;
+
+        Ok(result.rows_affected())
+    }
+
+    async fn get_invitation_stats(&self, user_id: Option<&str>) -> StorageResult<InvitationStats> {
+        let mut stats = InvitationStats::default();
+
+        let base_query = if let Some(user_id) = user_id {
+            format!("FROM invitations WHERE sender_user_id = '{}'", user_id)
+        } else {
+            "FROM invitations".to_string()
+        };
+
+        // Total invitations
+        let total_row = sqlx::query(&format!("SELECT COUNT(*) as count {}", base_query))
+            .fetch_one(&self.pool)
+            .await?;
+        stats.total_invitations = total_row.get::<i64, _>("count") as u64;
+
+        // Invitations by status
+        let status_rows = sqlx::query(&format!(
+            "SELECT status, COUNT(*) as count {} GROUP BY status",
+            base_query
+        ))
+        .fetch_all(&self.pool)
+        .await?;
+
+        for row in status_rows {
+            let status: String = row.get("status");
+            let count: i64 = row.get("count");
+            match status.as_str() {
+                "pending" => stats.pending_invitations = count as u64,
+                "accepted" => stats.accepted_invitations = count as u64,
+                "declined" => stats.declined_invitations = count as u64,
+                "expired" => stats.expired_invitations = count as u64,
+                "revoked" => stats.revoked_invitations = count as u64,
+                _ => {}
+            }
+        }
+
+        // Time-based statistics
+        let now = super::current_timestamp();
+        let day_ago = now - 86400;
+        let week_ago = now - (7 * 86400);
+        let month_ago = now - (30 * 86400);
+
+        let today_row = sqlx::query(&format!(
+            "SELECT COUNT(*) as count {} AND created_at >= ?",
+            base_query
+        ))
+        .bind(day_ago as i64)
+        .fetch_one(&self.pool)
+        .await?;
+        stats.invitations_today = today_row.get::<i64, _>("count") as u64;
+
+        let week_row = sqlx::query(&format!(
+            "SELECT COUNT(*) as count {} AND created_at >= ?",
+            base_query
+        ))
+        .bind(week_ago as i64)
+        .fetch_one(&self.pool)
+        .await?;
+        stats.invitations_this_week = week_row.get::<i64, _>("count") as u64;
+
+        let month_row = sqlx::query(&format!(
+            "SELECT COUNT(*) as count {} AND created_at >= ?",
+            base_query
+        ))
+        .bind(month_ago as i64)
+        .fetch_one(&self.pool)
+        .await?;
+        stats.invitations_this_month = month_row.get::<i64, _>("count") as u64;
+
+        // Most active inviters (global only)
+        if user_id.is_none() {
+            let inviter_rows = sqlx::query(
+                "SELECT sender_user_id, COUNT(*) as count FROM invitations GROUP BY sender_user_id ORDER BY count DESC LIMIT 10"
+            )
+            .fetch_all(&self.pool)
+            .await?;
+
+            for row in inviter_rows {
+                let sender_id: String = row.get("sender_user_id");
+                let count: i64 = row.get("count");
+                stats.most_active_inviters.push((sender_id, count as u64));
+            }
+        }
+
+        Ok(stats)
+    }
+
+    async fn get_invitation_by_recipient_and_room(
+        &self,
+        recipient_user_id: &str,
+        room_id: &str,
+        status: Option<InvitationStatus>,
+    ) -> StorageResult<Option<Invitation>> {
+        let mut query = "SELECT id, sender_user_id, recipient_user_id, room_id, invitation_type, status, message, created_at, expires_at, responded_at, metadata FROM invitations WHERE recipient_user_id = ? AND room_id = ?".to_string();
+
+        if let Some(status) = &status {
+            let status_str = match status {
+                InvitationStatus::Pending => "pending",
+                InvitationStatus::Accepted => "accepted",
+                InvitationStatus::Declined => "declined",
+                InvitationStatus::Expired => "expired",
+                InvitationStatus::Revoked => "revoked",
+            };
+            query.push_str(&format!(" AND status = '{}'", status_str));
+        }
+
+        query.push_str(" ORDER BY created_at DESC LIMIT 1");
+
+        let row = sqlx::query(&query)
+            .bind(recipient_user_id)
+            .bind(room_id)
+            .fetch_optional(&self.pool)
+            .await?;
+
+        if let Some(row) = row {
+            Ok(Some(self.row_to_invitation(row)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn list_sent_invitations(
+        &self,
+        sender_user_id: &str,
+        status: Option<InvitationStatus>,
+    ) -> StorageResult<Vec<Invitation>> {
+        let mut query = "SELECT id, sender_user_id, recipient_user_id, room_id, invitation_type, status, message, created_at, expires_at, responded_at, metadata FROM invitations WHERE sender_user_id = ?".to_string();
+
+        if let Some(status) = &status {
+            let status_str = match status {
+                InvitationStatus::Pending => "pending",
+                InvitationStatus::Accepted => "accepted",
+                InvitationStatus::Declined => "declined",
+                InvitationStatus::Expired => "expired",
+                InvitationStatus::Revoked => "revoked",
+            };
+            query.push_str(&format!(" AND status = '{}'", status_str));
+        }
+
+        query.push_str(" ORDER BY created_at DESC");
+
+        let rows = sqlx::query(&query)
+            .bind(sender_user_id)
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut invitations = Vec::new();
+        for row in rows {
+            invitations.push(self.row_to_invitation(row)?);
+        }
+
+        Ok(invitations)
+    }
+
+    async fn revoke_invitation(&self, id: &str, timestamp: u64) -> StorageResult<()> {
+        sqlx::query("UPDATE invitations SET status = 'revoked', responded_at = ? WHERE id = ?")
+            .bind(timestamp as i64)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+}
+
+impl SqliteStorage {
+    /// Helper method to convert a database row to an Invitation
+    fn row_to_invitation(&self, row: sqlx::sqlite::SqliteRow) -> StorageResult<Invitation> {
+        let invitation_type_str: String = row.get("invitation_type");
+        let invitation_type = match invitation_type_str.as_str() {
+            "room_invitation" => InvitationType::RoomInvitation,
+            "direct_message" => InvitationType::DirectMessage,
+            "admin_invitation" => InvitationType::AdminInvitation,
+            _ => InvitationType::RoomInvitation,
+        };
+
+        let status_str: String = row.get("status");
+        let status = match status_str.as_str() {
+            "pending" => InvitationStatus::Pending,
+            "accepted" => InvitationStatus::Accepted,
+            "declined" => InvitationStatus::Declined,
+            "expired" => InvitationStatus::Expired,
+            "revoked" => InvitationStatus::Revoked,
+            _ => InvitationStatus::Pending,
+        };
+
+        let metadata_json: String = row.get("metadata");
+        let metadata =
+            serde_json::from_str(&metadata_json).map_err(|e| StorageError::SerializationError {
+                message: format!("Failed to deserialize invitation metadata: {}", e),
+            })?;
+
+        Ok(Invitation {
+            id: row.get("id"),
+            sender_user_id: row.get("sender_user_id"),
+            recipient_user_id: row.get("recipient_user_id"),
+            room_id: row.get("room_id"),
+            invitation_type,
+            status,
+            message: row.get("message"),
+            created_at: row.get::<i64, _>("created_at") as u64,
+            expires_at: row.get::<Option<i64>, _>("expires_at").map(|t| t as u64),
+            responded_at: row.get::<Option<i64>, _>("responded_at").map(|t| t as u64),
+            metadata,
+        })
+    }
+}

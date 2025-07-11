@@ -347,6 +347,35 @@ CREATE INDEX idx_typing_indicators_user_id ON typing_indicators(user_id);
 CREATE INDEX idx_typing_indicators_expires_at ON typing_indicators(expires_at);
 "#;
 
+/// Migration 016: Add invitations table
+pub const MIGRATION_016_INVITATIONS: &str = r#"
+CREATE TABLE invitations (
+    id TEXT PRIMARY KEY,
+    sender_user_id TEXT NOT NULL,
+    recipient_user_id TEXT NOT NULL,
+    room_id TEXT NOT NULL,
+    invitation_type TEXT NOT NULL,
+    status TEXT NOT NULL,
+    message TEXT,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER,
+    responded_at INTEGER,
+    metadata TEXT NOT NULL DEFAULT '{}',
+    FOREIGN KEY (sender_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (recipient_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_invitations_recipient ON invitations(recipient_user_id);
+CREATE INDEX idx_invitations_sender ON invitations(sender_user_id);
+CREATE INDEX idx_invitations_room ON invitations(room_id);
+CREATE INDEX idx_invitations_status ON invitations(status);
+CREATE INDEX idx_invitations_expires ON invitations(expires_at);
+CREATE INDEX idx_invitations_recipient_room ON invitations(recipient_user_id, room_id);
+CREATE INDEX idx_invitations_sender_status ON invitations(sender_user_id, status);
+CREATE INDEX idx_invitations_created_at ON invitations(created_at);
+"#;
+
 /// Get all migrations in order
 pub fn get_all_migrations() -> Vec<(&'static str, &'static str)> {
     vec![
@@ -389,6 +418,7 @@ pub fn get_all_migrations() -> Vec<(&'static str, &'static str)> {
             "015_create_typing_indicators_table",
             MIGRATION_015_TYPING_INDICATORS,
         ),
+        ("016_create_invitations_table", MIGRATION_016_INVITATIONS),
     ]
 }
 
@@ -407,6 +437,7 @@ pub fn is_migration_reversible(name: &str) -> bool {
         "013_create_room_invites_table" => true,
         "014_create_user_moderation_table" => true,
         "015_create_typing_indicators_table" => true,
+        "016_create_invitations_table" => true,
         _ => false,
     }
 }
@@ -414,6 +445,7 @@ pub fn is_migration_reversible(name: &str) -> bool {
 /// Get rollback SQL for a migration (if supported)
 pub fn get_migration_rollback(name: &str) -> Option<&'static str> {
     match name {
+        "016_create_invitations_table" => Some("DROP TABLE invitations;"),
         "015_create_typing_indicators_table" => Some("DROP TABLE typing_indicators;"),
         "014_create_user_moderation_table" => Some("DROP TABLE user_moderation;"),
         "013_create_room_invites_table" => Some("DROP TABLE room_invites;"),

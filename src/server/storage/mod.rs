@@ -127,6 +127,7 @@ pub struct StorageManager {
     room_storage: Box<dyn RoomStorage>,
     session_storage: Box<dyn SessionStorage>,
     audit_log_storage: Box<dyn AuditLogStorage>,
+    invitation_storage: Box<dyn InvitationStorage>,
 }
 
 impl StorageManager {
@@ -140,7 +141,8 @@ impl StorageManager {
             message_storage: Box::new(backend.clone()),
             room_storage: Box::new(backend.clone()),
             session_storage: Box::new(backend.clone()),
-            audit_log_storage: Box::new(backend),
+            audit_log_storage: Box::new(backend.clone()),
+            invitation_storage: Box::new(backend),
         })
     }
 
@@ -167,6 +169,11 @@ impl StorageManager {
     /// Get audit log storage interface
     pub fn audit_logs(&self) -> &dyn AuditLogStorage {
         self.audit_log_storage.as_ref()
+    }
+
+    /// Get invitation storage interface
+    pub fn invitations(&self) -> &dyn InvitationStorage {
+        self.invitation_storage.as_ref()
     }
 
     /// Run health check on all storage backends
@@ -200,6 +207,10 @@ impl StorageManager {
     pub async fn cleanup(&self) -> StorageResult<()> {
         // Clean up expired sessions
         self.sessions().cleanup_expired_sessions().await?;
+
+        // Clean up expired invitations
+        let now = current_timestamp();
+        self.invitations().cleanup_expired_invitations(now).await?;
 
         // Clean up old messages if retention is configured
         // This would be configurable based on server settings

@@ -25,9 +25,10 @@ use lair_chat::server::{
     auth::{Role, UserStatus},
     config::ServerConfig,
     storage::{
-        current_timestamp, generate_id, DatabaseConfig, Message, MessageMetadata, MessageReaction,
-        MessageType, Pagination, Room, RoomPrivacy, RoomRole, RoomSettings, RoomType,
-        StorageManager, User, UserProfile, UserRole, UserSettings,
+        current_timestamp, generate_id, DatabaseConfig, Invitation, InvitationMetadata,
+        InvitationStatus, InvitationType, Message, MessageMetadata, MessageReaction, MessageType,
+        Pagination, Room, RoomMemberSettings, RoomMembership, RoomPrivacy, RoomRole, RoomSettings,
+        RoomType, StorageManager, User, UserProfile, UserRole, UserSettings,
     },
 };
 
@@ -900,7 +901,7 @@ async fn start_tcp_server(
         loop {
             interval.tick().await;
             if let Ok(shared_state) = stats_state.try_lock() {
-                let stats = shared_state.get_stats();
+                let stats = shared_state.get_stats().await;
 
                 // Create room user counts map
                 // TODO: Phase 2 - Get room user counts from database
@@ -1499,19 +1500,172 @@ async fn process(
 
                             let mut state_guard = state.lock().await;
 
-                            // TODO: Phase 4 - Check if room exists in database
-                            // For now, assume room exists and proceed
-                            let error_msg = format!(
-                                "SYSTEM_MESSAGE:TODO: Room invitation to '{}' - database implementation needed",
-                                room_name
-                            );
-                            if let Some((_key, sender)) = state_guard.peers.get(&addr) {
-                                let _ = sender.send(error_msg);
+                            // Check if room exists in database
+                            let room_result = state_guard
+                                .storage
+                                .rooms()
+                                .get_room_by_name(room_name)
+                                .await;
+                            let room = match room_result {
+                                Ok(Some(room)) => room,
+                                Ok(None) => {
+                                    let error_msg = format!(
+                                        "SYSTEM_MESSAGE:ERROR: Room '{}' does not exist",
+                                        room_name
+                                    );
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(error_msg);
+                                    }
+                                    continue;
+                                }
+                                Err(e) => {
+                                    let error_msg = format!(
+                                        "SYSTEM_MESSAGE:ERROR: Failed to check room: {}",
+                                        e
+                                    );
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(error_msg);
+                                    }
+                                    continue;
+                                }
+                            };
+
+                            // Check if target user exists
+                            let target_user = match state_guard
+                                .storage
+                                .users()
+                                .get_user_by_username(target_username)
+                                .await
+                            {
+                                Ok(Some(user)) => user,
+                                Ok(None) => {
+                                    let error_msg = format!(
+                                        "SYSTEM_MESSAGE:ERROR: User '{}' does not exist",
+                                        target_username
+                                    );
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(error_msg);
+                                    }
+                                    continue;
+                                }
+                                Err(e) => {
+                                    let error_msg = format!(
+                                        "SYSTEM_MESSAGE:ERROR: Failed to check user: {}",
+                                        e
+                                    );
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(error_msg);
+                                    }
+                                    continue;
+                                }
+                            };
+
+                            // Check if user is already a member of the room
+                            let is_member = match state_guard
+                                .storage
+                                .rooms()
+                                .is_room_member(&room.id, &target_user.id)
+                                .await
+                            {
+                                Ok(is_member) => is_member,
+                                Err(e) => {
+                                    let error_msg = format!(
+                                        "SYSTEM_MESSAGE:ERROR: Failed to check membership: {}",
+                                        e
+                                    );
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(error_msg);
+                                    }
+                                    continue;
+                                }
+                            };
+
+                            if is_member {
+                                let error_msg = format!(
+                                    "SYSTEM_MESSAGE:ERROR: User '{}' is already a member of room '{}'",
+                                    target_username, room_name
+                                );
+                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                    let _ = sender.send(error_msg);
+                                }
+                                continue;
                             }
 
-                            // TODO: Phase 6 - Add pending invitation to database
-                            tracing::info!("Would add invitation from {} to {} for room {} - TODO: implement database version",
-                                authenticated_user.username, target_username, room_name);
+                            // Check if there's already a pending invitation
+                            let existing_invitation = match state_guard
+                                .storage
+                                .invitations()
+                                .get_invitation_by_recipient_and_room(
+                                    &target_user.id,
+                                    &room.id,
+                                    Some(InvitationStatus::Pending),
+                                )
+                                .await
+                            {
+                                Ok(invitation) => invitation,
+                                Err(e) => {
+                                    let error_msg = format!(
+                                        "SYSTEM_MESSAGE:ERROR: Failed to check existing invitations: {}",
+                                        e
+                                    );
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(error_msg);
+                                    }
+                                    continue;
+                                }
+                            };
+
+                            if existing_invitation.is_some() {
+                                let error_msg = format!(
+                                    "SYSTEM_MESSAGE:ERROR: User '{}' already has a pending invitation to room '{}'",
+                                    target_username, room_name
+                                );
+                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                    let _ = sender.send(error_msg);
+                                }
+                                continue;
+                            }
+
+                            // Create invitation in database
+                            let invitation = Invitation {
+                                id: generate_id(),
+                                sender_user_id: authenticated_user.id.to_string(),
+                                recipient_user_id: target_user.id.clone(),
+                                room_id: room.id.clone(),
+                                invitation_type: InvitationType::RoomInvitation,
+                                status: InvitationStatus::Pending,
+                                message: Some(format!("Join room '{}'", room_name)),
+                                created_at: current_timestamp(),
+                                expires_at: Some(current_timestamp() + 86400 * 7), // 7 days
+                                responded_at: None,
+                                metadata: InvitationMetadata::default(),
+                            };
+
+                            match state_guard
+                                .storage
+                                .invitations()
+                                .create_invitation(invitation)
+                                .await
+                            {
+                                Ok(_) => {
+                                    tracing::info!(
+                                        "Created invitation from {} to {} for room {}",
+                                        authenticated_user.username,
+                                        target_username,
+                                        room_name
+                                    );
+                                }
+                                Err(e) => {
+                                    let error_msg = format!(
+                                        "SYSTEM_MESSAGE:ERROR: Failed to create invitation: {}",
+                                        e
+                                    );
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(error_msg);
+                                    }
+                                    continue;
+                                }
+                            }
 
                             // Send invitation to target user
                             let invitation_message = format!(
@@ -1549,21 +1703,181 @@ async fn process(
 
                         let mut state_guard = state.lock().await;
 
-                        // TODO: Phase 6 - Get invitation from database
-                        let room_name = if room_param == "LATEST" {
-                            // Placeholder - would get most recent invitation from database
-                            let error_msg =
-                                "SYSTEM_MESSAGE:ERROR: Invitation acceptance not implemented yet - database needed";
-                            if let Some((_key, sender)) = state_guard.peers.get(&addr) {
-                                let _ = sender.send(error_msg.to_string());
+                        // Get invitation from database
+                        let invitation = if room_param == "LATEST" {
+                            // Get most recent pending invitation for this user
+                            match state_guard
+                                .storage
+                                .invitations()
+                                .list_user_invitations(
+                                    &authenticated_user.id.to_string(),
+                                    Some(InvitationStatus::Pending),
+                                )
+                                .await
+                            {
+                                Ok(invitations) => {
+                                    if invitations.is_empty() {
+                                        let error_msg =
+                                            "SYSTEM_MESSAGE:ERROR: No pending invitations found";
+                                        if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                            let _ = sender.send(error_msg.to_string());
+                                        }
+                                        continue;
+                                    }
+                                    invitations[0].clone()
+                                }
+                                Err(e) => {
+                                    let error_msg = format!(
+                                        "SYSTEM_MESSAGE:ERROR: Failed to get invitations: {}",
+                                        e
+                                    );
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(error_msg);
+                                    }
+                                    continue;
+                                }
                             }
-                            continue; // Skip the rest of this handler
                         } else {
-                            room_param.to_string()
+                            // Get invitation for specific room
+                            match state_guard
+                                .storage
+                                .rooms()
+                                .get_room_by_name(room_param)
+                                .await
+                            {
+                                Ok(Some(room)) => {
+                                    match state_guard
+                                        .storage
+                                        .invitations()
+                                        .get_invitation_by_recipient_and_room(
+                                            &authenticated_user.id.to_string(),
+                                            &room.id,
+                                            Some(InvitationStatus::Pending),
+                                        )
+                                        .await
+                                    {
+                                        Ok(Some(invitation)) => invitation,
+                                        Ok(None) => {
+                                            let error_msg = format!(
+                                                "SYSTEM_MESSAGE:ERROR: No pending invitation found for room '{}'",
+                                                room_param
+                                            );
+                                            if let Some((_key, sender)) =
+                                                state_guard.peers.get(&addr)
+                                            {
+                                                let _ = sender.send(error_msg);
+                                            }
+                                            continue;
+                                        }
+                                        Err(e) => {
+                                            let error_msg = format!(
+                                                "SYSTEM_MESSAGE:ERROR: Failed to get invitation: {}",
+                                                e
+                                            );
+                                            if let Some((_key, sender)) =
+                                                state_guard.peers.get(&addr)
+                                            {
+                                                let _ = sender.send(error_msg);
+                                            }
+                                            continue;
+                                        }
+                                    }
+                                }
+                                Ok(None) => {
+                                    let error_msg = format!(
+                                        "SYSTEM_MESSAGE:ERROR: Room '{}' does not exist",
+                                        room_param
+                                    );
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(error_msg);
+                                    }
+                                    continue;
+                                }
+                                Err(e) => {
+                                    let error_msg =
+                                        format!("SYSTEM_MESSAGE:ERROR: Failed to get room: {}", e);
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(error_msg);
+                                    }
+                                    continue;
+                                }
+                            }
                         };
 
-                        // TODO: Phase 6 - Check and remove invitation from database
-                        // For now, assume invitation exists and proceed
+                        // Get room details
+                        let room = match state_guard
+                            .storage
+                            .rooms()
+                            .get_room_by_id(&invitation.room_id)
+                            .await
+                        {
+                            Ok(Some(room)) => room,
+                            Ok(None) => {
+                                let error_msg = "SYSTEM_MESSAGE:ERROR: Room no longer exists";
+                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                    let _ = sender.send(error_msg.to_string());
+                                }
+                                continue;
+                            }
+                            Err(e) => {
+                                let error_msg = format!(
+                                    "SYSTEM_MESSAGE:ERROR: Failed to get room details: {}",
+                                    e
+                                );
+                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                    let _ = sender.send(error_msg);
+                                }
+                                continue;
+                            }
+                        };
+
+                        let room_name = room.name.clone();
+
+                        // Update invitation status to accepted
+                        if let Err(e) = state_guard
+                            .storage
+                            .invitations()
+                            .update_invitation_status(
+                                &invitation.id,
+                                InvitationStatus::Accepted,
+                                current_timestamp(),
+                            )
+                            .await
+                        {
+                            let error_msg =
+                                format!("SYSTEM_MESSAGE:ERROR: Failed to update invitation: {}", e);
+                            if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                let _ = sender.send(error_msg);
+                            }
+                            continue;
+                        }
+
+                        // Add user to room membership
+                        let membership = RoomMembership {
+                            id: generate_id(),
+                            room_id: room.id.clone(),
+                            user_id: authenticated_user.id.to_string(),
+                            role: RoomRole::Member,
+                            joined_at: current_timestamp(),
+                            last_activity: Some(current_timestamp()),
+                            is_active: true,
+                            settings: RoomMemberSettings::default(),
+                        };
+                        if let Err(e) = state_guard
+                            .storage
+                            .rooms()
+                            .add_room_member(membership)
+                            .await
+                        {
+                            let error_msg =
+                                format!("SYSTEM_MESSAGE:ERROR: Failed to add user to room: {}", e);
+                            if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                let _ = sender.send(error_msg);
+                            }
+                            continue;
+                        }
+
+                        // User state already updated above
 
                         // Move user to the room (updates connection state)
                         if let Some(user) = state_guard
@@ -1612,52 +1926,410 @@ async fn process(
 
                         let state_guard = state.lock().await;
 
-                        // Determine the actual room name
-                        // TODO: Phase 6 - Get invitation from database
-                        let room_name = if room_param == "LATEST" {
-                            // Placeholder - would get most recent invitation from database
-                            let error_msg =
-                                "SYSTEM_MESSAGE:ERROR: Invitation decline not implemented yet - database needed";
-                            if let Some((_key, sender)) = state_guard.peers.get(&addr) {
-                                let _ = sender.send(error_msg.to_string());
+                        // Get invitation from database
+                        let invitation = if room_param == "LATEST" {
+                            // Get most recent pending invitation for this user
+                            match state_guard
+                                .storage
+                                .invitations()
+                                .list_user_invitations(
+                                    &authenticated_user.id.to_string(),
+                                    Some(InvitationStatus::Pending),
+                                )
+                                .await
+                            {
+                                Ok(invitations) => {
+                                    if invitations.is_empty() {
+                                        let error_msg =
+                                            "SYSTEM_MESSAGE:ERROR: No pending invitations found";
+                                        if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                            let _ = sender.send(error_msg.to_string());
+                                        }
+                                        continue;
+                                    }
+                                    invitations[0].clone()
+                                }
+                                Err(e) => {
+                                    let error_msg = format!(
+                                        "SYSTEM_MESSAGE:ERROR: Failed to get invitations: {}",
+                                        e
+                                    );
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(error_msg);
+                                    }
+                                    continue;
+                                }
                             }
-                            continue; // Skip the rest of this handler
                         } else {
-                            room_param.to_string()
+                            // Get invitation for specific room
+                            match state_guard
+                                .storage
+                                .rooms()
+                                .get_room_by_name(room_param)
+                                .await
+                            {
+                                Ok(Some(room)) => {
+                                    match state_guard
+                                        .storage
+                                        .invitations()
+                                        .get_invitation_by_recipient_and_room(
+                                            &authenticated_user.id.to_string(),
+                                            &room.id,
+                                            Some(InvitationStatus::Pending),
+                                        )
+                                        .await
+                                    {
+                                        Ok(Some(invitation)) => invitation,
+                                        Ok(None) => {
+                                            let error_msg = format!(
+                                                "SYSTEM_MESSAGE:ERROR: No pending invitation found for room '{}'",
+                                                room_param
+                                            );
+                                            if let Some((_key, sender)) =
+                                                state_guard.peers.get(&addr)
+                                            {
+                                                let _ = sender.send(error_msg);
+                                            }
+                                            continue;
+                                        }
+                                        Err(e) => {
+                                            let error_msg = format!(
+                                                "SYSTEM_MESSAGE:ERROR: Failed to get invitation: {}",
+                                                e
+                                            );
+                                            if let Some((_key, sender)) =
+                                                state_guard.peers.get(&addr)
+                                            {
+                                                let _ = sender.send(error_msg);
+                                            }
+                                            continue;
+                                        }
+                                    }
+                                }
+                                Ok(None) => {
+                                    let error_msg = format!(
+                                        "SYSTEM_MESSAGE:ERROR: Room '{}' does not exist",
+                                        room_param
+                                    );
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(error_msg);
+                                    }
+                                    continue;
+                                }
+                                Err(e) => {
+                                    let error_msg =
+                                        format!("SYSTEM_MESSAGE:ERROR: Failed to get room: {}", e);
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(error_msg);
+                                    }
+                                    continue;
+                                }
+                            }
                         };
 
-                        // TODO: Phase 6 - Remove invitation from database
+                        // Get room details for the confirmation message
+                        let room = match state_guard
+                            .storage
+                            .rooms()
+                            .get_room_by_id(&invitation.room_id)
+                            .await
+                        {
+                            Ok(Some(room)) => room,
+                            Ok(None) => {
+                                let error_msg = "SYSTEM_MESSAGE:ERROR: Room no longer exists";
+                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                    let _ = sender.send(error_msg.to_string());
+                                }
+                                continue;
+                            }
+                            Err(e) => {
+                                let error_msg = format!(
+                                    "SYSTEM_MESSAGE:ERROR: Failed to get room details: {}",
+                                    e
+                                );
+                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                    let _ = sender.send(error_msg);
+                                }
+                                continue;
+                            }
+                        };
+
+                        // Update invitation status to declined
+                        if let Err(e) = state_guard
+                            .storage
+                            .invitations()
+                            .update_invitation_status(
+                                &invitation.id,
+                                InvitationStatus::Declined,
+                                current_timestamp(),
+                            )
+                            .await
+                        {
+                            let error_msg =
+                                format!("SYSTEM_MESSAGE:ERROR: Failed to update invitation: {}", e);
+                            if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                let _ = sender.send(error_msg);
+                            }
+                            continue;
+                        }
+
+                        // Send confirmation message
                         let confirmation = format!(
                             "SYSTEM_MESSAGE:You declined the invitation to room '{}'",
-                            room_name
+                            room.name
                         );
                         if let Some((_key, sender)) = state_guard.peers.get(&addr) {
                             let _ = sender.send(confirmation);
                         }
                     } else if decrypted_message == "LIST_INVITATIONS" {
                         let state_guard = state.lock().await;
-                        // TODO: Phase 6 - Get pending invitations from database
-                        let invitations: Vec<String> = Vec::new(); // Placeholder
 
-                        if invitations.is_empty() {
-                            let msg = "SYSTEM_MESSAGE:No pending invitations";
-                            if let Some((_key, sender)) = state_guard.peers.get(&addr) {
-                                let _ = sender.send(msg.to_string());
+                        // Get pending invitations from database
+                        match state_guard
+                            .storage
+                            .invitations()
+                            .list_user_invitations(
+                                &authenticated_user.id.to_string(),
+                                Some(InvitationStatus::Pending),
+                            )
+                            .await
+                        {
+                            Ok(invitations) => {
+                                if invitations.is_empty() {
+                                    let msg = "SYSTEM_MESSAGE:No pending invitations";
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(msg.to_string());
+                                    }
+                                } else {
+                                    // Build invitation list with details
+                                    let mut invitation_list = Vec::new();
+
+                                    for invitation in invitations {
+                                        // Get room details
+                                        match state_guard
+                                            .storage
+                                            .rooms()
+                                            .get_room_by_id(&invitation.room_id)
+                                            .await
+                                        {
+                                            Ok(Some(room)) => {
+                                                // Get sender details
+                                                match state_guard
+                                                    .storage
+                                                    .users()
+                                                    .get_user_by_id(&invitation.sender_user_id)
+                                                    .await
+                                                {
+                                                    Ok(Some(sender)) => {
+                                                        let invitation_info = format!(
+                                                            "• Room: '{}' from {} (ID: {})",
+                                                            room.name,
+                                                            sender.username,
+                                                            invitation.id
+                                                        );
+                                                        invitation_list.push(invitation_info);
+                                                    }
+                                                    Ok(None) => {
+                                                        let invitation_info = format!(
+                                                            "• Room: '{}' from unknown user (ID: {})",
+                                                            room.name, invitation.id
+                                                        );
+                                                        invitation_list.push(invitation_info);
+                                                    }
+                                                    Err(_) => {
+                                                        let invitation_info = format!(
+                                                            "• Room: '{}' from unknown user (ID: {})",
+                                                            room.name, invitation.id
+                                                        );
+                                                        invitation_list.push(invitation_info);
+                                                    }
+                                                }
+                                            }
+                                            Ok(None) => {
+                                                let invitation_info = format!(
+                                                    "• Room: (deleted) (ID: {})",
+                                                    invitation.id
+                                                );
+                                                invitation_list.push(invitation_info);
+                                            }
+                                            Err(_) => {
+                                                let invitation_info = format!(
+                                                    "• Room: (unknown) (ID: {})",
+                                                    invitation.id
+                                                );
+                                                invitation_list.push(invitation_info);
+                                            }
+                                        }
+                                    }
+
+                                    let msg = format!(
+                                        "SYSTEM_MESSAGE:Pending invitations:\n{}",
+                                        invitation_list.join("\n")
+                                    );
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(msg);
+                                    }
+                                }
                             }
-                        } else {
-                            // TODO: Phase 6 - List invitations from database
-                            let msg = "SYSTEM_MESSAGE:Invitation listing not implemented yet - database needed";
-                            if let Some((_key, sender)) = state_guard.peers.get(&addr) {
-                                let _ = sender.send(msg.to_string());
+                            Err(e) => {
+                                let error_msg = format!(
+                                    "SYSTEM_MESSAGE:ERROR: Failed to get invitations: {}",
+                                    e
+                                );
+                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                    let _ = sender.send(error_msg);
+                                }
                             }
                         }
                     } else if decrypted_message == "ACCEPT_ALL_INVITATIONS" {
-                        let state_guard = state.lock().await;
+                        let mut state_guard = state.lock().await;
 
-                        // TODO: Phase 6 - Accept all invitations from database
-                        let msg = "SYSTEM_MESSAGE:Accept all invitations not implemented yet - database needed";
-                        if let Some((_key, sender)) = state_guard.peers.get(&addr) {
-                            let _ = sender.send(msg.to_string());
+                        // Get all pending invitations for this user
+                        match state_guard
+                            .storage
+                            .invitations()
+                            .list_user_invitations(
+                                &authenticated_user.id.to_string(),
+                                Some(InvitationStatus::Pending),
+                            )
+                            .await
+                        {
+                            Ok(invitations) => {
+                                if invitations.is_empty() {
+                                    let msg = "SYSTEM_MESSAGE:No pending invitations to accept";
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(msg.to_string());
+                                    }
+                                } else {
+                                    let mut accepted_count = 0;
+                                    let mut failed_count = 0;
+                                    let mut accepted_rooms = Vec::new();
+
+                                    for invitation in invitations {
+                                        // Get room details
+                                        match state_guard
+                                            .storage
+                                            .rooms()
+                                            .get_room_by_id(&invitation.room_id)
+                                            .await
+                                        {
+                                            Ok(Some(room)) => {
+                                                // Check if user is already a member
+                                                match state_guard
+                                                    .storage
+                                                    .rooms()
+                                                    .is_room_member(
+                                                        &room.id,
+                                                        &authenticated_user.id.to_string(),
+                                                    )
+                                                    .await
+                                                {
+                                                    Ok(true) => {
+                                                        // User is already a member, just update invitation status
+                                                        let _ = state_guard
+                                                            .storage
+                                                            .invitations()
+                                                            .update_invitation_status(
+                                                                &invitation.id,
+                                                                InvitationStatus::Accepted,
+                                                                current_timestamp(),
+                                                            )
+                                                            .await;
+                                                        accepted_count += 1;
+                                                        accepted_rooms.push(room.name.clone());
+                                                    }
+                                                    Ok(false) => {
+                                                        // Accept invitation and add to room
+                                                        let update_result = state_guard
+                                                            .storage
+                                                            .invitations()
+                                                            .update_invitation_status(
+                                                                &invitation.id,
+                                                                InvitationStatus::Accepted,
+                                                                current_timestamp(),
+                                                            )
+                                                            .await;
+
+                                                        let membership = RoomMembership {
+                                                            id: generate_id(),
+                                                            room_id: room.id.clone(),
+                                                            user_id: authenticated_user
+                                                                .id
+                                                                .to_string(),
+                                                            role: RoomRole::Member,
+                                                            joined_at: current_timestamp(),
+                                                            last_activity: Some(current_timestamp()),
+                                                            is_active: true,
+                                                            settings: RoomMemberSettings::default(),
+                                                        };
+                                                        let member_result = state_guard
+                                                            .storage
+                                                            .rooms()
+                                                            .add_room_member(membership)
+                                                            .await;
+
+                                                        if update_result.is_ok()
+                                                            && member_result.is_ok()
+                                                        {
+                                                            accepted_count += 1;
+                                                            accepted_rooms.push(room.name.clone());
+                                                        } else {
+                                                            failed_count += 1;
+                                                        }
+                                                    }
+                                                    Err(_) => {
+                                                        failed_count += 1;
+                                                    }
+                                                }
+                                            }
+                                            Ok(None) => {
+                                                // Room doesn't exist, mark invitation as expired
+                                                let _ = state_guard
+                                                    .storage
+                                                    .invitations()
+                                                    .update_invitation_status(
+                                                        &invitation.id,
+                                                        InvitationStatus::Expired,
+                                                        current_timestamp(),
+                                                    )
+                                                    .await;
+                                                failed_count += 1;
+                                            }
+                                            Err(_) => {
+                                                failed_count += 1;
+                                            }
+                                        }
+                                    }
+
+                                    let msg = if failed_count == 0 {
+                                        format!(
+                                            "SYSTEM_MESSAGE:Accepted {} invitations. Joined rooms: {}",
+                                            accepted_count,
+                                            accepted_rooms.join(", ")
+                                        )
+                                    } else {
+                                        format!(
+                                            "SYSTEM_MESSAGE:Accepted {} invitations, {} failed. Joined rooms: {}",
+                                            accepted_count,
+                                            failed_count,
+                                            accepted_rooms.join(", ")
+                                        )
+                                    };
+
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(msg);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                let error_msg = format!(
+                                    "SYSTEM_MESSAGE:ERROR: Failed to get invitations: {}",
+                                    e
+                                );
+                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                    let _ = sender.send(error_msg);
+                                }
+                            }
                         }
                     } else if decrypted_message == "SHOW_HELP" {
                         let state_guard = state.lock().await;
@@ -2153,12 +2825,21 @@ impl Peer {
 }
 
 impl SharedState {
-    fn get_stats(&self) -> TcpServerStats {
+    async fn get_stats(&self) -> TcpServerStats {
+        // Get pending invitations count from database
+        let pending_invitations = self
+            .storage
+            .invitations()
+            .get_invitation_stats(None)
+            .await
+            .map(|stats| stats.pending_invitations)
+            .unwrap_or(0);
+
         TcpServerStats {
             connected_peers: self.peers.len(),
             authenticated_users: self.connected_users.len(),
-            active_rooms: 0,        // TODO: Query from database
-            pending_invitations: 0, // TODO: Query from database
+            active_rooms: 0, // TODO: Query from database
+            pending_invitations: pending_invitations as usize,
         }
     }
 

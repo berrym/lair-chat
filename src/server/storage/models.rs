@@ -815,6 +815,139 @@ pub struct SearchResult {
     pub execution_time: u64,
 }
 
+// ===== INVITATION MODELS =====
+
+/// Invitation to join a room or participate in a conversation
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Invitation {
+    /// Unique invitation identifier
+    pub id: String,
+    /// User ID of the invitation sender
+    pub sender_user_id: String,
+    /// User ID of the invitation recipient
+    pub recipient_user_id: String,
+    /// Room ID for the invitation
+    pub room_id: String,
+    /// Type of invitation
+    pub invitation_type: InvitationType,
+    /// Current status of the invitation
+    pub status: InvitationStatus,
+    /// Optional message accompanying the invitation
+    pub message: Option<String>,
+    /// Timestamp when invitation was created
+    pub created_at: u64,
+    /// Optional expiration timestamp
+    pub expires_at: Option<u64>,
+    /// Timestamp when invitation was responded to
+    pub responded_at: Option<u64>,
+    /// Additional metadata for the invitation
+    pub metadata: InvitationMetadata,
+}
+
+/// Status of an invitation
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum InvitationStatus {
+    /// Invitation is pending response
+    Pending,
+    /// Invitation has been accepted
+    Accepted,
+    /// Invitation has been declined
+    Declined,
+    /// Invitation has expired
+    Expired,
+    /// Invitation has been revoked by sender
+    Revoked,
+}
+
+impl Default for InvitationStatus {
+    fn default() -> Self {
+        InvitationStatus::Pending
+    }
+}
+
+/// Type of invitation
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum InvitationType {
+    /// Invitation to join a room
+    RoomInvitation,
+    /// Invitation to start a direct message
+    DirectMessage,
+    /// Administrative invitation with special permissions
+    AdminInvitation,
+}
+
+impl Default for InvitationType {
+    fn default() -> Self {
+        InvitationType::RoomInvitation
+    }
+}
+
+/// Metadata associated with an invitation
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct InvitationMetadata {
+    /// Permissions of the sender at time of invitation
+    pub sender_permissions: Vec<String>,
+    /// Intended permissions for the recipient
+    pub recipient_permissions: Vec<String>,
+    /// Optional context about the invitation
+    pub invitation_context: Option<String>,
+    /// Custom fields for extensibility
+    pub custom_fields: HashMap<String, String>,
+}
+
+impl Default for InvitationMetadata {
+    fn default() -> Self {
+        InvitationMetadata {
+            sender_permissions: Vec::new(),
+            recipient_permissions: Vec::new(),
+            invitation_context: None,
+            custom_fields: HashMap::new(),
+        }
+    }
+}
+
+/// Statistics about invitations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InvitationStats {
+    /// Total number of invitations
+    pub total_invitations: u64,
+    /// Number of pending invitations
+    pub pending_invitations: u64,
+    /// Number of accepted invitations
+    pub accepted_invitations: u64,
+    /// Number of declined invitations
+    pub declined_invitations: u64,
+    /// Number of expired invitations
+    pub expired_invitations: u64,
+    /// Number of revoked invitations
+    pub revoked_invitations: u64,
+    /// Invitations sent today
+    pub invitations_today: u64,
+    /// Invitations sent this week
+    pub invitations_this_week: u64,
+    /// Invitations sent this month
+    pub invitations_this_month: u64,
+    /// Most active inviters
+    pub most_active_inviters: Vec<(String, u64)>,
+}
+
+impl Default for InvitationStats {
+    fn default() -> Self {
+        InvitationStats {
+            total_invitations: 0,
+            pending_invitations: 0,
+            accepted_invitations: 0,
+            declined_invitations: 0,
+            expired_invitations: 0,
+            revoked_invitations: 0,
+            invitations_today: 0,
+            invitations_this_week: 0,
+            invitations_this_month: 0,
+            most_active_inviters: Vec::new(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -892,5 +1025,47 @@ mod tests {
         let json = serde_json::to_string(&user).unwrap();
         let deserialized: User = serde_json::from_str(&json).unwrap();
         assert_eq!(user, deserialized);
+    }
+
+    #[test]
+    fn test_invitation_status_default() {
+        let status = InvitationStatus::default();
+        assert_eq!(status, InvitationStatus::Pending);
+    }
+
+    #[test]
+    fn test_invitation_type_default() {
+        let invitation_type = InvitationType::default();
+        assert_eq!(invitation_type, InvitationType::RoomInvitation);
+    }
+
+    #[test]
+    fn test_invitation_metadata_default() {
+        let metadata = InvitationMetadata::default();
+        assert_eq!(metadata.sender_permissions, Vec::<String>::new());
+        assert_eq!(metadata.recipient_permissions, Vec::<String>::new());
+        assert_eq!(metadata.invitation_context, None);
+        assert_eq!(metadata.custom_fields, HashMap::new());
+    }
+
+    #[test]
+    fn test_invitation_serialization() {
+        let invitation = Invitation {
+            id: "inv1".to_string(),
+            sender_user_id: "user1".to_string(),
+            recipient_user_id: "user2".to_string(),
+            room_id: "room1".to_string(),
+            invitation_type: InvitationType::RoomInvitation,
+            status: InvitationStatus::Pending,
+            message: Some("Join us!".to_string()),
+            created_at: 1234567890,
+            expires_at: Some(1234567890 + 86400),
+            responded_at: None,
+            metadata: InvitationMetadata::default(),
+        };
+
+        let json = serde_json::to_string(&invitation).unwrap();
+        let deserialized: Invitation = serde_json::from_str(&json).unwrap();
+        assert_eq!(invitation, deserialized);
     }
 }
