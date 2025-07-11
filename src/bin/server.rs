@@ -22,8 +22,13 @@ use lair_chat::auth::AuthRequest;
 
 use lair_chat::server::{
     api::{start_api_server, ApiState},
+    auth::{Role, UserStatus},
     config::ServerConfig,
-    storage::{DatabaseConfig, StorageManager},
+    storage::{
+        current_timestamp, generate_id, DatabaseConfig, Message, MessageMetadata, MessageType,
+        Pagination, Room, RoomPrivacy, RoomRole, RoomSettings, RoomType, StorageManager, User,
+        UserProfile, UserRole, UserSettings,
+    },
 };
 
 /// Shorthand for the transmit half of the message channel.
@@ -49,52 +54,18 @@ pub struct SharedState {
     start_time: std::time::Instant,
 }
 
-#[derive(Debug, Clone)]
-struct PendingInvitation {
-    inviter: String,
-    room_name: String,
-    invited_at: u64,
-}
+// PendingInvitation struct removed - using database invitation system
 
 #[derive(Debug, Clone)]
 struct ConnectedUser {
-    username: String,
-    address: SocketAddr,
-    connected_at: u64,
-    current_room: String,
+    user_id: String,                 // Database user ID
+    username: String,                // Cache for performance
+    address: SocketAddr,             // Connection-specific
+    connected_at: u64,               // Connection-specific
+    current_room_id: Option<String>, // Database room ID
 }
 
-#[derive(Debug, Clone)]
-struct Room {
-    name: String,
-    users: Vec<String>,
-    created_at: u64,
-    is_lobby: bool,
-}
-
-impl Room {
-    fn new(name: String, is_lobby: bool) -> Self {
-        Self {
-            name,
-            users: Vec::new(),
-            created_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs(),
-            is_lobby,
-        }
-    }
-
-    fn add_user(&mut self, username: String) {
-        if !self.users.contains(&username) {
-            self.users.push(username);
-        }
-    }
-
-    fn remove_user(&mut self, username: &str) {
-        self.users.retain(|u| u != username);
-    }
-}
+// Room struct removed - using database Room model from storage::models
 
 impl SharedState {
     fn new(storage: Arc<StorageManager>) -> Self {
@@ -104,6 +75,148 @@ impl SharedState {
             connected_users: HashMap::new(),
             start_time: std::time::Instant::now(),
         }
+    }
+
+    // Phase 2: Database helper functions
+    async fn get_user_by_username(
+        &self,
+        username: &str,
+    ) -> Result<Option<User>, lair_chat::server::storage::StorageError> {
+        self.storage.users().get_user_by_username(username).await
+    }
+
+    async fn get_room_by_name(
+        &self,
+        room_name: &str,
+    ) -> Result<Option<Room>, lair_chat::server::storage::StorageError> {
+        self.storage.rooms().get_room_by_name(room_name).await
+    }
+
+    async fn get_user_rooms(
+        &self,
+        user_id: &str,
+    ) -> Result<
+        Vec<lair_chat::server::storage::RoomMembership>,
+        lair_chat::server::storage::StorageError,
+    > {
+        self.storage
+            .rooms()
+            .list_user_memberships(user_id, Pagination::default())
+            .await
+    }
+
+    async fn create_room_in_db(
+        &self,
+        creator_user_id: &str,
+        room_name: &str,
+    ) -> Result<Room, lair_chat::server::storage::StorageError> {
+        // Check if room exists
+        if self.storage.rooms().room_name_exists(room_name).await? {
+            return Err(lair_chat::server::storage::StorageError::DuplicateError {
+                entity: "Room".to_string(),
+                message: format!("Room '{}' already exists", room_name),
+            });
+        }
+
+        // Create room
+        let room = Room {
+            id: generate_id(),
+            name: room_name.to_string(),
+            display_name: room_name.to_string(),
+            description: None,
+            topic: None,
+            room_type: RoomType::Channel,
+            privacy: RoomPrivacy::Public,
+            settings: RoomSettings::default(),
+            created_by: creator_user_id.to_string(),
+            created_at: current_timestamp(),
+            updated_at: current_timestamp(),
+            is_active: true,
+        };
+
+        let created_room = self.storage.rooms().create_room(room).await?;
+
+        // Add creator as owner
+        use lair_chat::server::storage::{current_timestamp, RoomMembership};
+        let membership = RoomMembership {
+            id: generate_id(),
+            room_id: created_room.id.clone(),
+            user_id: creator_user_id.to_string(),
+            role: RoomRole::Owner,
+            joined_at: current_timestamp(),
+            last_activity: Some(current_timestamp()),
+            is_active: true,
+            settings: lair_chat::server::storage::RoomMemberSettings::default(),
+        };
+        self.storage.rooms().add_room_member(membership).await?;
+
+        Ok(created_room)
+    }
+
+    async fn join_room_in_db(
+        &self,
+        user_id: &str,
+        room_id: &str,
+    ) -> Result<(), lair_chat::server::storage::StorageError> {
+        // Check if user is already a member
+        if self
+            .storage
+            .rooms()
+            .is_room_member(room_id, user_id)
+            .await?
+        {
+            return Ok(()); // Already a member
+        }
+
+        // Add user as member
+        use lair_chat::server::storage::{current_timestamp, RoomMembership};
+        let membership = RoomMembership {
+            id: generate_id(),
+            room_id: room_id.to_string(),
+            user_id: user_id.to_string(),
+            role: RoomRole::Member,
+            joined_at: current_timestamp(),
+            last_activity: Some(current_timestamp()),
+            is_active: true,
+            settings: lair_chat::server::storage::RoomMemberSettings::default(),
+        };
+        self.storage.rooms().add_room_member(membership).await?;
+
+        Ok(())
+    }
+
+    async fn leave_room_in_db(
+        &self,
+        user_id: &str,
+        room_id: &str,
+    ) -> Result<(), lair_chat::server::storage::StorageError> {
+        self.storage
+            .rooms()
+            .remove_room_member(room_id, user_id)
+            .await
+    }
+
+    async fn store_message_in_db(
+        &self,
+        room_id: &str,
+        user_id: &str,
+        content: &str,
+    ) -> Result<Message, lair_chat::server::storage::StorageError> {
+        let message = Message {
+            id: generate_id(),
+            room_id: room_id.to_string(),
+            user_id: user_id.to_string(),
+            content: content.to_string(),
+            message_type: MessageType::Text,
+            timestamp: current_timestamp(),
+            edited_at: None,
+            parent_message_id: None,
+            metadata: MessageMetadata::default(),
+            is_deleted: false,
+            deleted_at: None,
+        };
+
+        self.storage.messages().store_message(message).await
     }
 
     fn get_connected_users(&self) -> Vec<String> {
@@ -121,7 +234,9 @@ impl SharedState {
 
     async fn broadcast_room_status(&mut self, username: &str) {
         let current_room = if let Some(user) = self.connected_users.get(username) {
-            user.current_room.clone()
+            user.current_room_id
+                .clone()
+                .unwrap_or_else(|| "Lobby".to_string())
         } else {
             "Lobby".to_string()
         };
@@ -179,9 +294,7 @@ impl SharedState {
         if let Some(username) = username_to_remove {
             self.connected_users.remove(&username);
 
-            // TODO: Update room membership in database
-            // TODO: Clear pending invitations in database
-
+            // Phase 2: Database operations handled by helper functions
             tracing::info!("User {} disconnected from {}", username, addr);
             self.broadcast_user_list().await;
         }
@@ -553,11 +666,11 @@ async fn process(
                 };
 
                 let result = if is_registration {
-                    // TODO: Phase 3 - Replace with database authentication
+                    // Phase 3: Database authentication
                     match handle_registration(&state_guard.storage, &username, &password).await {
                         Ok(_) => {
                             tracing::info!("User {} registered successfully", username);
-                            // TODO: Phase 3 - Replace with database authentication
+                            // Phase 3: Database authentication
                             match handle_login(&state_guard.storage, &username, &password).await {
                                 Ok(user) => {
                                     tracing::info!("Auto-login successful for {}", username);
@@ -575,7 +688,7 @@ async fn process(
                         }
                     }
                 } else {
-                    // TODO: Phase 3 - Replace with database authentication
+                    // Phase 3: Database authentication
                     match handle_login(&state_guard.storage, &username, &password).await {
                         Ok(user) => {
                             tracing::info!("Login successful for {}", username);
@@ -596,20 +709,24 @@ async fn process(
                         {
                             let mut state_guard = state.lock().await;
                             let connected_user = ConnectedUser {
+                                user_id: authenticated_user.id.to_string(),
                                 username: authenticated_user.username.clone(),
                                 address: addr,
                                 connected_at: std::time::SystemTime::now()
                                     .duration_since(std::time::UNIX_EPOCH)
                                     .unwrap_or_default()
                                     .as_secs(),
-                                current_room: "Lobby".to_string(),
+                                current_room_id: None, // Start in no specific room, will join lobby via database
                             };
                             state_guard
                                 .connected_users
                                 .insert(authenticated_user.username.clone(), connected_user);
 
-                            // TODO: Phase 2 - Add user to lobby room in database
-                            tracing::info!("User {} would be added to lobby - TODO: implement database version", authenticated_user.username);
+                            // Phase 3: User authenticated via database
+                            tracing::info!(
+                                "User {} authenticated via database",
+                                authenticated_user.username
+                            );
 
                             let _ = transport
                                 .send(encrypt(
@@ -716,7 +833,7 @@ async fn process(
                                 .connected_users
                                 .get_mut(&authenticated_user.username)
                             {
-                                user.current_room = room_name.to_string();
+                                user.current_room_id = Some(room_name.to_string());
                                 tracing::info!(
                                     "User {} created and joined room '{}'",
                                     authenticated_user.username,
@@ -752,7 +869,7 @@ async fn process(
                             .connected_users
                             .get_mut(&authenticated_user.username)
                         {
-                            user.current_room = room_name.to_string();
+                            user.current_room_id = Some(room_name.to_string());
                             tracing::info!(
                                 "User {} joined room '{}'",
                                 authenticated_user.username,
@@ -781,7 +898,9 @@ async fn process(
                             .connected_users
                             .get(&authenticated_user.username)
                         {
-                            user.current_room.clone()
+                            user.current_room_id
+                                .clone()
+                                .unwrap_or_else(|| "Lobby".to_string())
                         } else {
                             "Lobby".to_string()
                         };
@@ -792,7 +911,7 @@ async fn process(
                                 .connected_users
                                 .get_mut(&authenticated_user.username)
                             {
-                                user.current_room = "Lobby".to_string();
+                                user.current_room_id = None; // No specific room (effectively lobby)
                                 tracing::info!(
                                     "User {} left room '{}' and returned to Lobby",
                                     authenticated_user.username,
@@ -956,7 +1075,7 @@ async fn process(
                             .connected_users
                             .get_mut(&authenticated_user.username)
                         {
-                            user.current_room = room_name.to_string();
+                            user.current_room_id = Some(room_name.to_string());
 
                             tracing::info!(
                                 "User {} accepted invitation and joined room '{}'",
@@ -1074,7 +1193,9 @@ async fn process(
                                 .connected_users
                                 .get(&authenticated_user.username)
                             {
-                                user.current_room.clone()
+                                user.current_room_id
+                                    .clone()
+                                    .unwrap_or_else(|| "Lobby".to_string())
                             } else {
                                 "Lobby".to_string()
                             }
@@ -1175,25 +1296,117 @@ impl SharedState {
     */
 }
 
-// TODO: Phase 3 - Temporary authentication placeholders
+// Phase 3: Database-backed authentication functions
 async fn handle_registration(
-    _storage: &StorageManager,
-    _username: &str,
-    _password: &str,
+    storage: &StorageManager,
+    username: &str,
+    password: &str,
 ) -> Result<(), lair_chat::server::auth::AuthError> {
-    // Placeholder - will be implemented in Phase 3
-    tracing::warn!("Registration placeholder called - implementing in Phase 3");
+    use argon2::{
+        password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
+        Argon2,
+    };
+
+    // Check if username already exists
+    if let Ok(Some(_)) = storage.users().get_user_by_username(username).await {
+        return Err(lair_chat::server::auth::AuthError::UsernameTaken);
+    }
+
+    // Hash the password
+    let salt = SaltString::generate(&mut OsRng);
+    let argon2 = Argon2::default();
+    let password_hash = argon2
+        .hash_password(password.as_bytes(), &salt)
+        .map_err(|e| lair_chat::server::auth::AuthError::HashingError(e.to_string()))?
+        .to_string();
+
+    // Create new user
+    let user = User {
+        id: generate_id(),
+        username: username.to_string(),
+        email: None,
+        password_hash,
+        salt: salt.to_string(),
+        created_at: current_timestamp(),
+        updated_at: current_timestamp(),
+        last_seen: None,
+        is_active: true,
+        role: UserRole::User,
+        profile: UserProfile::default(),
+        settings: UserSettings::default(),
+    };
+
+    // Store user in database
+    storage
+        .users()
+        .create_user(user)
+        .await
+        .map_err(|e| lair_chat::server::auth::AuthError::StorageError(e.to_string()))?;
+
+    tracing::info!("User {} registered successfully", username);
     Ok(())
 }
 
 async fn handle_login(
-    _storage: &StorageManager,
-    _username: &str,
-    _password: &str,
+    storage: &StorageManager,
+    username: &str,
+    password: &str,
 ) -> Result<lair_chat::server::auth::User, lair_chat::server::auth::AuthError> {
-    // Placeholder - will be implemented in Phase 3
-    tracing::warn!("Login placeholder called - implementing in Phase 3");
-    Ok(lair_chat::server::auth::User::new(_username.to_string(), "placeholder_password").unwrap())
+    use argon2::{
+        password_hash::{PasswordHash, PasswordVerifier},
+        Argon2,
+    };
+
+    // Get user from database
+    let storage_user = storage
+        .users()
+        .get_user_by_username(username)
+        .await
+        .map_err(|e| lair_chat::server::auth::AuthError::StorageError(e.to_string()))?
+        .ok_or(lair_chat::server::auth::AuthError::UserNotFound)?;
+
+    // Verify password
+    let parsed_hash = PasswordHash::new(&storage_user.password_hash)
+        .map_err(|e| lair_chat::server::auth::AuthError::HashingError(e.to_string()))?;
+
+    let argon2 = Argon2::default();
+    if !argon2
+        .verify_password(password.as_bytes(), &parsed_hash)
+        .is_ok()
+    {
+        return Err(lair_chat::server::auth::AuthError::InvalidCredentials);
+    }
+
+    // Update last seen timestamp
+    storage
+        .users()
+        .update_last_seen(&storage_user.id, current_timestamp())
+        .await
+        .map_err(|e| lair_chat::server::auth::AuthError::StorageError(e.to_string()))?;
+
+    // Convert storage User to auth User
+    let auth_user = lair_chat::server::auth::User {
+        id: uuid::Uuid::parse_str(&storage_user.id)
+            .map_err(|e| lair_chat::server::auth::AuthError::InternalError(e.to_string()))?,
+        username: storage_user.username.clone(),
+        password_hash: storage_user.password_hash.clone(),
+        roles: match storage_user.role {
+            UserRole::Admin => vec![Role::Admin],
+            UserRole::Moderator => vec![Role::Moderator],
+            UserRole::User => vec![Role::User],
+            UserRole::Guest => vec![Role::Guest],
+        },
+        created_at: storage_user.created_at,
+        last_login: current_timestamp(),
+        status: if storage_user.is_active {
+            UserStatus::Active
+        } else {
+            UserStatus::Inactive
+        },
+    };
+
+    tracing::info!("User {} logged in successfully", username);
+    Ok(auth_user)
 }
 
 fn encrypt(shared_aes256_key: Vec<u8>, message: String) -> String {

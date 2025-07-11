@@ -6,7 +6,7 @@ mod service;
 mod storage;
 mod types;
 
-pub use types::{AuthError, AuthRequest, AuthResult, Session, User};
+pub use types::{AuthError, AuthRequest, AuthResult, Role, Session, User, UserStatus};
 
 pub use storage::{MemorySessionStorage, MemoryUserStorage, UserStorage};
 
