@@ -20,6 +20,7 @@ use sqlx::{
 };
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, info};
 
@@ -61,6 +62,11 @@ impl SqliteStorage {
 
         info!("SQLite storage backend initialized successfully");
         Ok(storage)
+    }
+
+    /// Get access to the connection pool
+    pub fn get_pool(&self) -> Arc<SqlitePool> {
+        Arc::new(self.pool.clone())
     }
 
     /// Run database migrations

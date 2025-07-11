@@ -5,18 +5,23 @@
 //! data management for users, messages, rooms, and sessions.
 
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 use uuid::Uuid;
 
+pub mod atomic_operations;
 pub mod migrations;
 pub mod models;
 pub mod sqlite;
 pub mod traits;
+pub mod transactions;
 
+pub use atomic_operations::*;
 pub use models::*;
 pub use sqlite::SqliteStorage;
 pub use traits::*;
+pub use transactions::*;
 
 /// Storage layer errors
 #[derive(Debug, Error)]
@@ -128,6 +133,8 @@ pub struct StorageManager {
     session_storage: Box<dyn SessionStorage>,
     audit_log_storage: Box<dyn AuditLogStorage>,
     invitation_storage: Box<dyn InvitationStorage>,
+    transaction_manager: Arc<dyn TransactionManager>,
+    transaction_operations: Arc<dyn TransactionOperations>,
 }
 
 impl StorageManager {
@@ -136,6 +143,11 @@ impl StorageManager {
         // For now, we only support SQLite, but this can be extended
         let backend = sqlite::SqliteStorage::new(config).await?;
 
+        // Create transaction manager with the pool
+        let pool = backend.get_pool();
+        let transaction_manager = Arc::new(DatabaseTransactionManager::with_defaults(pool));
+        let transaction_operations = Arc::new(AtomicOperations::new());
+
         Ok(Self {
             user_storage: Box::new(backend.clone()),
             message_storage: Box::new(backend.clone()),
@@ -143,6 +155,8 @@ impl StorageManager {
             session_storage: Box::new(backend.clone()),
             audit_log_storage: Box::new(backend.clone()),
             invitation_storage: Box::new(backend),
+            transaction_manager,
+            transaction_operations,
         })
     }
 
@@ -174,6 +188,16 @@ impl StorageManager {
     /// Get invitation storage interface
     pub fn invitations(&self) -> &dyn InvitationStorage {
         self.invitation_storage.as_ref()
+    }
+
+    /// Get transaction manager interface
+    pub fn transactions(&self) -> &dyn TransactionManager {
+        self.transaction_manager.as_ref()
+    }
+
+    /// Get transaction operations interface
+    pub fn atomic_operations(&self) -> &dyn TransactionOperations {
+        self.transaction_operations.as_ref()
     }
 
     /// Run health check on all storage backends
@@ -216,6 +240,93 @@ impl StorageManager {
         // This would be configurable based on server settings
 
         Ok(())
+    }
+
+    /// Execute atomic invitation creation with membership
+    pub async fn create_invitation_atomically(
+        &self,
+        invitation: Invitation,
+        membership: RoomMembership,
+    ) -> TransactionResult<(Invitation, RoomMembership)> {
+        let mut transaction = self.transaction_manager.begin_transaction().await?;
+
+        match self
+            .transaction_operations
+            .create_invitation_with_membership(&mut transaction, invitation, membership)
+            .await
+        {
+            Ok(result) => {
+                self.transaction_manager
+                    .commit_transaction(transaction)
+                    .await?;
+                Ok(result)
+            }
+            Err(e) => {
+                let _ = self
+                    .transaction_manager
+                    .rollback_transaction(transaction)
+                    .await;
+                Err(e)
+            }
+        }
+    }
+
+    /// Execute atomic user registration with session
+    pub async fn register_user_atomically(
+        &self,
+        user: User,
+        session: Session,
+    ) -> TransactionResult<(User, Session)> {
+        let mut transaction = self.transaction_manager.begin_transaction().await?;
+
+        match self
+            .transaction_operations
+            .user_registration_transaction(&mut transaction, user, session)
+            .await
+        {
+            Ok(result) => {
+                self.transaction_manager
+                    .commit_transaction(transaction)
+                    .await?;
+                Ok(result)
+            }
+            Err(e) => {
+                let _ = self
+                    .transaction_manager
+                    .rollback_transaction(transaction)
+                    .await;
+                Err(e)
+            }
+        }
+    }
+
+    /// Execute atomic room creation with membership
+    pub async fn create_room_atomically(
+        &self,
+        room: Room,
+        creator_membership: RoomMembership,
+    ) -> TransactionResult<(Room, RoomMembership)> {
+        let mut transaction = self.transaction_manager.begin_transaction().await?;
+
+        match self
+            .transaction_operations
+            .create_room_with_membership(&mut transaction, room, creator_membership)
+            .await
+        {
+            Ok(result) => {
+                self.transaction_manager
+                    .commit_transaction(transaction)
+                    .await?;
+                Ok(result)
+            }
+            Err(e) => {
+                let _ = self
+                    .transaction_manager
+                    .rollback_transaction(transaction)
+                    .await;
+                Err(e)
+            }
+        }
     }
 }
 
