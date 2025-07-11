@@ -20,6 +20,8 @@ pub struct PerformanceMonitor {
     alerting: Arc<RwLock<AlertingSystem>>,
     /// Performance thresholds
     thresholds: Arc<RwLock<PerformanceThresholds>>,
+    /// Security metrics
+    security_metrics: Arc<RwLock<SecurityMetrics>>,
 }
 
 /// Metrics storage
@@ -101,6 +103,18 @@ pub struct ConnectionMetrics {
     pub connection_failures: u64,
 }
 
+/// Security-related metrics
+#[derive(Debug, Clone, Default)]
+pub struct SecurityMetrics {
+    pub failed_logins: u64,
+    pub blocked_ips: u64,
+    pub suspicious_activities: u64,
+    pub automated_blocks: u64,
+    pub security_events: HashMap<String, u64>,
+    pub threat_levels: HashMap<String, u64>,
+    pub last_security_event: Option<u64>,
+}
+
 /// Alerting system
 #[derive(Debug, Clone, Default)]
 pub struct AlertingSystem {
@@ -137,6 +151,8 @@ pub enum AlertType {
     SystemOverload,
     DatabaseIssue,
     SecurityThreat,
+    AutomatedBlock,
+    SuspiciousActivity,
 }
 
 /// Alert levels
@@ -190,6 +206,7 @@ impl PerformanceMonitor {
             metrics: Arc::new(RwLock::new(MetricsStorage::default())),
             alerting: Arc::new(RwLock::new(AlertingSystem::default())),
             thresholds: Arc::new(RwLock::new(PerformanceThresholds::default())),
+            security_metrics: Arc::new(RwLock::new(SecurityMetrics::default())),
         }
     }
 
@@ -266,6 +283,82 @@ impl PerformanceMonitor {
                 self.record_error(&tcp_error).await;
             }
         }
+    }
+
+    /// Record security event
+    pub async fn record_security_event(&self, event_type: &str, description: &str) {
+        let mut security_metrics = self.security_metrics.write().await;
+
+        // Update security event counters
+        *security_metrics
+            .security_events
+            .entry(event_type.to_string())
+            .or_insert(0) += 1;
+
+        match event_type {
+            "failed_login" => security_metrics.failed_logins += 1,
+            "ip_blocked" => security_metrics.blocked_ips += 1,
+            "suspicious_activity" => security_metrics.suspicious_activities += 1,
+            "automated_block" => security_metrics.automated_blocks += 1,
+            _ => {}
+        }
+
+        security_metrics.last_security_event = Some(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        );
+
+        // Check if we should create security alerts
+        self.check_security_thresholds(&security_metrics).await;
+    }
+
+    /// Check security thresholds and create alerts
+    async fn check_security_thresholds(&self, security_metrics: &SecurityMetrics) {
+        let mut alerting = self.alerting.write().await;
+
+        // Alert on high number of failed logins
+        if security_metrics.failed_logins > 10 {
+            let alert = Alert {
+                alert_type: AlertType::SecurityThreat,
+                level: AlertLevel::Warning,
+                message: format!(
+                    "High number of failed logins: {}",
+                    security_metrics.failed_logins
+                ),
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+                active: true,
+            };
+            alerting.active_alerts.push(alert);
+        }
+
+        // Alert on automated blocks
+        if security_metrics.automated_blocks > 5 {
+            let alert = Alert {
+                alert_type: AlertType::AutomatedBlock,
+                level: AlertLevel::Critical,
+                message: format!(
+                    "Multiple automated blocks triggered: {}",
+                    security_metrics.automated_blocks
+                ),
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+                active: true,
+            };
+            alerting.active_alerts.push(alert);
+        }
+    }
+
+    /// Get security metrics
+    pub async fn get_security_metrics(&self) -> SecurityMetrics {
+        let security_metrics = self.security_metrics.read().await;
+        security_metrics.clone()
     }
 
     /// Update system metrics
@@ -394,6 +487,7 @@ impl PerformanceMonitor {
     /// Get performance report
     pub async fn get_performance_report(&self) -> String {
         let metrics = self.get_metrics().await;
+        let security_metrics = self.get_security_metrics().await;
         let alerts = self.get_active_alerts().await;
 
         let mut report = String::new();
@@ -407,6 +501,33 @@ impl PerformanceMonitor {
         ));
         report.push_str(&format!("Active Rooms: {}\n", metrics.system.active_rooms));
         report.push_str(&format!("Active Users: {}\n", metrics.system.active_users));
+        report.push_str("\n");
+
+        // Security metrics
+        report.push_str("Security Summary:\n");
+        report.push_str(&format!(
+            "  Failed Logins: {}\n",
+            security_metrics.failed_logins
+        ));
+        report.push_str(&format!(
+            "  Blocked IPs: {}\n",
+            security_metrics.blocked_ips
+        ));
+        report.push_str(&format!(
+            "  Suspicious Activities: {}\n",
+            security_metrics.suspicious_activities
+        ));
+        report.push_str(&format!(
+            "  Automated Blocks: {}\n",
+            security_metrics.automated_blocks
+        ));
+
+        if !security_metrics.security_events.is_empty() {
+            report.push_str("  Security Events:\n");
+            for (event_type, count) in &security_metrics.security_events {
+                report.push_str(&format!("    {}: {}\n", event_type, count));
+            }
+        }
         report.push_str("\n");
 
         // Operation metrics

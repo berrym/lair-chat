@@ -24,6 +24,8 @@ use lair_chat::server::{
     api::{start_api_server, ApiState},
     auth::{Role, UserStatus},
     config::ServerConfig,
+    monitoring::{get_performance_monitor, init_performance_monitor},
+    security::{get_security_middleware, init_security_middleware, SecurityMiddleware},
     storage::{
         current_timestamp, generate_id, DatabaseConfig, Invitation, InvitationMetadata,
         InvitationStatus, InvitationType, Message, MessageMetadata, MessageReaction, MessageType,
@@ -746,6 +748,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         general_purpose::STANDARD.encode(secret)
     });
 
+    // Initialize security and monitoring middleware
+    init_security_middleware().await;
+    init_performance_monitor().await;
+
+    println!("Security middleware initialized");
+    println!("Performance monitoring initialized");
+
     // Create TCP server state using shared storage
     let tcp_state = Arc::new(Mutex::new(SharedState::new(Arc::clone(&storage))));
 
@@ -949,6 +958,19 @@ async fn process(
 ) -> Result<(), Box<dyn Error>> {
     let mut transport = Framed::new(stream, LinesCodec::new());
 
+    // Get security middleware for connection monitoring
+    let security_middleware = get_security_middleware().await;
+
+    // Log new connection attempt
+    security_middleware
+        .log_security_event(
+            addr.ip(),
+            None,
+            "connection_attempt",
+            format!("New connection from {}", addr),
+        )
+        .await;
+
     // Send server public key for handshake
     transport
         .send(BASE64_STANDARD.encode(server_public_key))
@@ -958,14 +980,38 @@ async fn process(
     let peer_public_key_string = match transport.next().await {
         Some(Ok(key_string)) => {
             tracing::info!("Got public key from: {}", addr);
+            security_middleware
+                .log_security_event(
+                    addr.ip(),
+                    None,
+                    "handshake_received",
+                    "Client public key received".to_string(),
+                )
+                .await;
             key_string
         }
         Some(Err(e)) => {
             tracing::error!("Error receiving public key from {}: {}", addr, e);
+            security_middleware
+                .log_security_event(
+                    addr.ip(),
+                    None,
+                    "handshake_error",
+                    format!("Error receiving public key: {}", e),
+                )
+                .await;
             return Ok(());
         }
         None => {
             tracing::info!("Client {} disconnected during handshake", addr);
+            security_middleware
+                .log_security_event(
+                    addr.ip(),
+                    None,
+                    "handshake_disconnect",
+                    "Client disconnected during handshake".to_string(),
+                )
+                .await;
             return Ok(());
         }
     };
@@ -975,12 +1021,30 @@ async fn process(
         Ok(decoded) => decoded,
         Err(e) => {
             tracing::error!("Failed to decode base64 public key from {}: {}", addr, e);
+            security_middleware
+                .record_suspicious_activity(
+                    addr.ip(),
+                    None,
+                    "invalid_key_format",
+                    "Failed to decode client public key",
+                )
+                .await
+                .ok();
             return Ok(());
         }
     };
 
     if peer_public_key_vec.len() != 32 {
         tracing::error!("Invalid public key length from {}", addr);
+        security_middleware
+            .record_suspicious_activity(
+                addr.ip(),
+                None,
+                "invalid_key_length",
+                "Client sent invalid public key length",
+            )
+            .await
+            .ok();
         return Ok(());
     }
 
@@ -1010,11 +1074,38 @@ async fn process(
     while user.is_none() {
         match transport.next().await {
             Some(Ok(message)) => {
+                // Check security before processing auth request
+                let security_middleware = get_security_middleware().await;
+
+                // Validate request security
+                match security_middleware
+                    .validate_request(addr.ip(), None, "auth")
+                    .await
+                {
+                    Ok(_) => {}
+                    Err(e) => {
+                        tracing::warn!("Security check failed for {}: {}", addr, e);
+                        let _ = transport
+                            .send(encrypt(
+                                shared_aes256_key.clone(),
+                                "Request blocked for security reasons".to_string(),
+                            ))
+                            .await;
+                        continue;
+                    }
+                }
+
                 let auth_request: AuthRequest =
                     match serde_json::from_str(&decrypt(shared_aes256_key.clone(), message)) {
                         Ok(req) => req,
                         Err(e) => {
                             tracing::error!("Invalid auth request from {}: {}", addr, e);
+
+                            // Record failed authentication attempt for security
+                            let _ = security_middleware
+                                .record_failed_login(addr.ip(), None)
+                                .await;
+
                             let _ = transport
                                 .send(encrypt(
                                     shared_aes256_key.clone(),
@@ -1066,6 +1157,12 @@ async fn process(
                         }
                         Err(e) => {
                             tracing::error!("Registration failed for {}: {}", username, e);
+
+                            // Record failed registration attempt for security
+                            let _ = security_middleware
+                                .record_failed_login(addr.ip(), Some(username.clone()))
+                                .await;
+
                             Err(e)
                         }
                     }
@@ -1078,6 +1175,12 @@ async fn process(
                         }
                         Err(e) => {
                             tracing::error!("Login failed for {}: {}", username, e);
+
+                            // Record failed login attempt for security
+                            let _ = security_middleware
+                                .record_failed_login(addr.ip(), Some(username.clone()))
+                                .await;
+
                             Err(e)
                         }
                     }
@@ -1086,6 +1189,19 @@ async fn process(
 
                 match result {
                     Ok(authenticated_user) => {
+                        // Log successful authentication
+                        security_middleware
+                            .log_security_event(
+                                addr.ip(),
+                                Some(authenticated_user.username.clone()),
+                                "authentication_success",
+                                format!(
+                                    "User {} successfully authenticated",
+                                    authenticated_user.username
+                                ),
+                            )
+                            .await;
+
                         user = Some(authenticated_user.clone());
 
                         {
@@ -1129,6 +1245,16 @@ async fn process(
                         );
                     }
                     Err(e) => {
+                        // Log authentication failure
+                        security_middleware
+                            .log_security_event(
+                                addr.ip(),
+                                None,
+                                "authentication_failure",
+                                format!("Authentication failed: {}", e),
+                            )
+                            .await;
+
                         let error_msg = format!("Authentication failed: {}", e);
                         let _ = transport
                             .send(encrypt(shared_aes256_key.clone(), error_msg))
@@ -1139,10 +1265,26 @@ async fn process(
             }
             Some(Err(e)) => {
                 tracing::error!("Error reading auth message from {}: {}", addr, e);
+                security_middleware
+                    .log_security_event(
+                        addr.ip(),
+                        None,
+                        "auth_message_error",
+                        format!("Error reading auth message: {}", e),
+                    )
+                    .await;
                 return Err(e.into());
             }
             None => {
                 tracing::info!("Client {} disconnected during authentication", addr);
+                security_middleware
+                    .log_security_event(
+                        addr.ip(),
+                        None,
+                        "auth_disconnect",
+                        "Client disconnected during authentication".to_string(),
+                    )
+                    .await;
                 return Ok(());
             }
         }
@@ -1179,12 +1321,127 @@ async fn process(
                 Ok(message) => {
                     let decrypted_message = decrypt(aes_key.clone(), message);
 
+                    // Security validation for each command
+                    let security_middleware = get_security_middleware().await;
+                    let performance_monitor = get_performance_monitor().await;
+
+                    // Check if IP should be blocked
+                    if security_middleware.should_block_user(addr.ip()).await {
+                        tracing::warn!("Blocking command from suspicious IP: {}", addr.ip());
+                        break;
+                    }
+
+                    // Advanced threat detection for suspicious patterns
+                    let is_suspicious = decrypted_message.len() > 10000 // Extremely long messages
+                        || decrypted_message.contains("<script>") // XSS attempts
+                        || decrypted_message.contains("javascript:") // JS injection
+                        || decrypted_message.contains("SELECT") && decrypted_message.contains("FROM") // SQL injection
+                        || decrypted_message.contains("UNION") && decrypted_message.contains("SELECT") // SQL injection
+                        || decrypted_message.contains("../") && decrypted_message.contains("..") // Path traversal
+                        || decrypted_message.matches("INVITE_USER:").count() > 1 // Command injection
+                        || decrypted_message.matches("CREATE_ROOM:").count() > 1 // Command injection
+                        || decrypted_message.contains("\x00") // Null byte injection
+                        || decrypted_message.contains("<?php") // PHP injection
+                        || decrypted_message.contains("exec(") // Code execution
+                        || decrypted_message.contains("eval(") // Code execution
+                        || decrypted_message.contains("system(") // System command execution
+                        || decrypted_message.contains("rm -rf") // Dangerous commands
+                        || decrypted_message.contains("DROP TABLE") // Database destruction
+                        || decrypted_message.contains("DELETE FROM") && decrypted_message.contains("*"); // Mass deletion
+
+                    if is_suspicious {
+                        tracing::warn!(
+                            "Suspicious message detected from {}: {}",
+                            addr,
+                            decrypted_message.chars().take(100).collect::<String>()
+                        );
+
+                        // Record suspicious activity
+                        let _ = security_middleware
+                            .record_suspicious_activity(
+                                addr.ip(),
+                                Some(authenticated_user.username.clone()),
+                                "suspicious_message_pattern",
+                                "Detected potentially malicious message content",
+                            )
+                            .await;
+
+                        // Block the message and potentially the user
+                        let _ = transport
+                            .send(encrypt(
+                                aes_key.clone(),
+                                "Message blocked: Suspicious content detected".to_string(),
+                            ))
+                            .await;
+                        continue;
+                    }
+
+                    // Validate command request
+                    match security_middleware
+                        .validate_request(
+                            addr.ip(),
+                            Some(authenticated_user.username.clone()),
+                            "command",
+                        )
+                        .await
+                    {
+                        Ok(_) => {}
+                        Err(e) => {
+                            tracing::warn!(
+                                "Security check failed for command from {}: {}",
+                                addr,
+                                e
+                            );
+                            continue;
+                        }
+                    }
+
+                    // Record operation start time for performance monitoring
+                    let operation_start = std::time::Instant::now();
+
+                    // Record security event for command processing
+                    let command_type = if decrypted_message.starts_with("CREATE_ROOM:") {
+                        "create_room"
+                    } else if decrypted_message.starts_with("JOIN_ROOM:") {
+                        "join_room"
+                    } else if decrypted_message == "LEAVE_ROOM" {
+                        "leave_room"
+                    } else if decrypted_message == "LIST_ROOMS" {
+                        "list_rooms"
+                    } else if decrypted_message.starts_with("DM:") {
+                        "direct_message"
+                    } else if decrypted_message.starts_with("INVITE_USER:") {
+                        "invite_user"
+                    } else {
+                        "message_send"
+                    };
+
+                    let _ = performance_monitor
+                        .record_security_event(
+                            "command_processed",
+                            &format!(
+                                "User {} executed command: {}",
+                                authenticated_user.username, command_type
+                            ),
+                        )
+                        .await;
+
                     // Handle room commands
                     if decrypted_message.starts_with("CREATE_ROOM:") {
                         let room_name = decrypted_message
                             .strip_prefix("CREATE_ROOM:")
                             .unwrap()
                             .trim();
+
+                        // Log security event for room creation
+                        let _ = security_middleware
+                            .log_security_event(
+                                addr.ip(),
+                                Some(authenticated_user.username.clone()),
+                                "room_creation_attempt",
+                                format!("User attempting to create room: {}", room_name),
+                            )
+                            .await;
 
                         let mut state_guard = state.lock().await;
 
@@ -1207,6 +1464,19 @@ async fn process(
                                 .await
                             {
                                 Ok(created_room) => {
+                                    // Record successful operation
+                                    let _ = performance_monitor
+                                        .record_operation("create_room", operation_start.elapsed())
+                                        .await;
+
+                                    let _ = security_middleware
+                                        .log_security_event(
+                                            addr.ip(),
+                                            Some(authenticated_user.username.clone()),
+                                            "room_created",
+                                            format!("Room '{}' created successfully", room_name),
+                                        )
+                                        .await;
                                     // Move user to the new room (updates in-memory connection state)
                                     if let Some(user) = state_guard
                                         .connected_users
@@ -1240,6 +1510,20 @@ async fn process(
                                     }
                                 }
                                 Err(e) => {
+                                    // Record error
+                                    let _ = performance_monitor
+                                        .record_error("create_room", e.to_string())
+                                        .await;
+
+                                    let _ = security_middleware
+                                        .log_security_event(
+                                            addr.ip(),
+                                            Some(authenticated_user.username.clone()),
+                                            "room_creation_failed",
+                                            format!("Failed to create room '{}': {}", room_name, e),
+                                        )
+                                        .await;
+
                                     let error_msg = if e.to_string().contains("already exists") {
                                         format!("ROOM_ERROR:Room '{}' already exists", room_name)
                                     } else {
@@ -1256,6 +1540,16 @@ async fn process(
                         let room_name =
                             decrypted_message.strip_prefix("JOIN_ROOM:").unwrap().trim();
 
+                        // Log security event for room join attempt
+                        let _ = security_middleware
+                            .log_security_event(
+                                addr.ip(),
+                                Some(authenticated_user.username.clone()),
+                                "room_join_attempt",
+                                format!("User attempting to join room: {}", room_name),
+                            )
+                            .await;
+
                         let mut state_guard = state.lock().await;
 
                         // Phase 4: Check if room exists in database
@@ -1267,6 +1561,23 @@ async fn process(
                                     .await
                                 {
                                     Ok(()) => {
+                                        // Record successful operation
+                                        let _ = performance_monitor
+                                            .record_operation(
+                                                "join_room",
+                                                operation_start.elapsed(),
+                                            )
+                                            .await;
+
+                                        let _ = security_middleware
+                                            .log_security_event(
+                                                addr.ip(),
+                                                Some(authenticated_user.username.clone()),
+                                                "room_joined",
+                                                format!("Successfully joined room: {}", room_name),
+                                            )
+                                            .await;
+
                                         // Update in-memory connection state
                                         if let Some(user) = state_guard
                                             .connected_users
@@ -1303,6 +1614,23 @@ async fn process(
                                         }
                                     }
                                     Err(e) => {
+                                        // Record error
+                                        let _ = performance_monitor
+                                            .record_error("join_room", e.to_string())
+                                            .await;
+
+                                        let _ = security_middleware
+                                            .log_security_event(
+                                                addr.ip(),
+                                                Some(authenticated_user.username.clone()),
+                                                "room_join_failed",
+                                                format!(
+                                                    "Failed to join room '{}': {}",
+                                                    room_name, e
+                                                ),
+                                            )
+                                            .await;
+
                                         let error_msg =
                                             format!("ROOM_ERROR:Failed to join room: {}", e);
                                         if let Some((_key, sender)) = state_guard.peers.get(&addr) {
@@ -1337,6 +1665,16 @@ async fn process(
                             }
                         }
                     } else if decrypted_message == "LEAVE_ROOM" {
+                        // Log security event for room leave attempt
+                        let _ = security_middleware
+                            .log_security_event(
+                                addr.ip(),
+                                Some(authenticated_user.username.clone()),
+                                "room_leave_attempt",
+                                "User attempting to leave room".to_string(),
+                            )
+                            .await;
+
                         let mut state_guard = state.lock().await;
 
                         let current_room = if let Some(user) = state_guard
@@ -1357,6 +1695,20 @@ async fn process(
                                 .await
                             {
                                 Ok(()) => {
+                                    // Record successful operation
+                                    let _ = performance_monitor
+                                        .record_operation("leave_room", operation_start.elapsed())
+                                        .await;
+
+                                    let _ = security_middleware
+                                        .log_security_event(
+                                            addr.ip(),
+                                            Some(authenticated_user.username.clone()),
+                                            "room_left",
+                                            format!("Successfully left room: {}", current_room),
+                                        )
+                                        .await;
+
                                     // Update in-memory connection state
                                     if let Some(user) = state_guard
                                         .connected_users
@@ -1387,6 +1739,23 @@ async fn process(
                                     }
                                 }
                                 Err(e) => {
+                                    // Record error
+                                    let _ = performance_monitor
+                                        .record_error("leave_room", e.to_string())
+                                        .await;
+
+                                    let _ = security_middleware
+                                        .log_security_event(
+                                            addr.ip(),
+                                            Some(authenticated_user.username.clone()),
+                                            "room_leave_failed",
+                                            format!(
+                                                "Failed to leave room '{}': {}",
+                                                current_room, e
+                                            ),
+                                        )
+                                        .await;
+
                                     let error_msg =
                                         format!("ROOM_ERROR:Failed to leave room: {}", e);
                                     if let Some((_key, sender)) = state_guard.peers.get(&addr) {
@@ -1401,16 +1770,36 @@ async fn process(
                             }
                         }
                     } else if decrypted_message == "LIST_ROOMS" {
+                        // Log security event for room list request
+                        let _ = security_middleware
+                            .log_security_event(
+                                addr.ip(),
+                                Some(authenticated_user.username.clone()),
+                                "room_list_request",
+                                "User requesting room list".to_string(),
+                            )
+                            .await;
+
                         let state_guard = state.lock().await;
                         // Phase 4: Get room list from database
                         match state_guard.get_room_list_from_db().await {
                             Ok(room_names) => {
+                                // Record successful operation
+                                let _ = performance_monitor
+                                    .record_operation("list_rooms", operation_start.elapsed())
+                                    .await;
+
                                 if let Some((_key, sender)) = state_guard.peers.get(&addr) {
                                     let _ =
                                         sender.send(format!("ROOM_LIST:{}", room_names.join(",")));
                                 }
                             }
                             Err(e) => {
+                                // Record error
+                                let _ = performance_monitor
+                                    .record_error("list_rooms", e.to_string())
+                                    .await;
+
                                 let error_msg =
                                     format!("ROOM_ERROR:Failed to get room list: {}", e);
                                 if let Some((_key, sender)) = state_guard.peers.get(&addr) {
@@ -1424,6 +1813,16 @@ async fn process(
                         if parts.len() == 2 {
                             let target_username = parts[0];
                             let dm_content = parts[1];
+
+                            // Log security event for DM attempt
+                            let _ = security_middleware
+                                .log_security_event(
+                                    addr.ip(),
+                                    Some(authenticated_user.username.clone()),
+                                    "dm_attempt",
+                                    format!("User sending DM to: {}", target_username),
+                                )
+                                .await;
 
                             tracing::info!(
                                 "Processing DM from {} to {}: '{}'",
@@ -1490,6 +1889,19 @@ async fn process(
                         if parts.len() == 2 {
                             let target_username = parts[0];
                             let room_name = parts[1];
+
+                            // Log security event for invitation attempt
+                            let _ = security_middleware
+                                .log_security_event(
+                                    addr.ip(),
+                                    Some(authenticated_user.username.clone()),
+                                    "invitation_attempt",
+                                    format!(
+                                        "User inviting {} to room: {}",
+                                        target_username, room_name
+                                    ),
+                                )
+                                .await;
 
                             tracing::info!(
                                 "Processing invitation from {} to {} for room '{}'",
@@ -1678,6 +2090,23 @@ async fn process(
 
                             // Send confirmation to inviter
                             if sent {
+                                // Record successful operation
+                                let _ = performance_monitor
+                                    .record_operation("send_invitation", operation_start.elapsed())
+                                    .await;
+
+                                let _ = security_middleware
+                                    .log_security_event(
+                                        addr.ip(),
+                                        Some(authenticated_user.username.clone()),
+                                        "invitation_sent",
+                                        format!(
+                                            "Invitation sent to {} for room: {}",
+                                            target_username, room_name
+                                        ),
+                                    )
+                                    .await;
+
                                 let confirmation = format!(
                                     "SYSTEM_MESSAGE:You invited {} to join room '{}'",
                                     target_username, room_name
@@ -1686,6 +2115,23 @@ async fn process(
                                     let _ = sender.send(confirmation);
                                 }
                             } else {
+                                // Record error
+                                let _ = performance_monitor
+                                    .record_error("send_invitation", "User not online".to_string())
+                                    .await;
+
+                                let _ = security_middleware
+                                    .log_security_event(
+                                        addr.ip(),
+                                        Some(authenticated_user.username.clone()),
+                                        "invitation_failed",
+                                        format!(
+                                            "Failed to invite {} (not online) to room: {}",
+                                            target_username, room_name
+                                        ),
+                                    )
+                                    .await;
+
                                 let error_msg = format!(
                                     "SYSTEM_MESSAGE:ERROR: User {} is not online",
                                     target_username
@@ -1700,6 +2146,16 @@ async fn process(
                             .strip_prefix("ACCEPT_INVITATION:")
                             .unwrap()
                             .trim();
+
+                        // Log security event for invitation acceptance
+                        let _ = security_middleware
+                            .log_security_event(
+                                addr.ip(),
+                                Some(authenticated_user.username.clone()),
+                                "invitation_accept_attempt",
+                                format!("User attempting to accept invitation: {}", room_param),
+                            )
+                            .await;
 
                         let mut state_guard = state.lock().await;
 
@@ -2082,6 +2538,16 @@ async fn process(
                             let _ = sender.send(confirmation);
                         }
                     } else if decrypted_message == "LIST_INVITATIONS" {
+                        // Log security event for invitation list request
+                        let _ = security_middleware
+                            .log_security_event(
+                                addr.ip(),
+                                Some(authenticated_user.username.clone()),
+                                "invitation_list_request",
+                                "User requesting invitation list".to_string(),
+                            )
+                            .await;
+
                         let state_guard = state.lock().await;
 
                         // Get pending invitations from database
@@ -2707,6 +3173,20 @@ async fn process(
                         }
                     } else {
                         // Regular chat message - broadcast to users in same room
+
+                        // Log security event for message sending
+                        let _ = security_middleware
+                            .log_security_event(
+                                addr.ip(),
+                                Some(authenticated_user.username.clone()),
+                                "message_send",
+                                format!(
+                                    "User sending message: {}",
+                                    decrypted_message.chars().take(50).collect::<String>()
+                                ),
+                            )
+                            .await;
+
                         let current_room = {
                             let state_guard = state.lock().await;
                             if let Some(user) = state_guard
@@ -2739,12 +3219,40 @@ async fn process(
                                 .await
                             {
                                 Ok(_) => {
+                                    // Record successful operation
+                                    let _ = performance_monitor
+                                        .record_operation("send_message", operation_start.elapsed())
+                                        .await;
+
+                                    let _ = security_middleware
+                                        .log_security_event(
+                                            addr.ip(),
+                                            Some(authenticated_user.username.clone()),
+                                            "message_sent",
+                                            format!("Message sent to room: {}", current_room),
+                                        )
+                                        .await;
+
                                     tracing::info!(
                                         "Message stored in database for room '{}'",
                                         current_room
                                     );
                                 }
                                 Err(e) => {
+                                    // Record error
+                                    let _ = performance_monitor
+                                        .record_error("send_message", e.to_string())
+                                        .await;
+
+                                    let _ = security_middleware
+                                        .log_security_event(
+                                            addr.ip(),
+                                            Some(authenticated_user.username.clone()),
+                                            "message_send_failed",
+                                            format!("Failed to send message: {}", e),
+                                        )
+                                        .await;
+
                                     tracing::error!("Failed to store message in database: {}", e);
                                 }
                             }
@@ -2782,14 +3290,55 @@ async fn process(
                 }
                 Err(e) => {
                     tracing::error!("Error reading message from {}: {}", addr, e);
+
+                    // Log connection error for security monitoring
+                    let security_middleware = get_security_middleware().await;
+                    security_middleware
+                        .log_security_event(
+                            addr.ip(),
+                            Some(authenticated_user.username.clone()),
+                            "connection_error",
+                            format!(
+                                "Connection error for user {}: {}",
+                                authenticated_user.username, e
+                            ),
+                        )
+                        .await;
                     break;
                 }
             }
         }
 
+        // Log user disconnection for security monitoring
+        let security_middleware = get_security_middleware().await;
+        security_middleware
+            .log_security_event(
+                addr.ip(),
+                Some(authenticated_user.username.clone()),
+                "user_disconnect",
+                format!(
+                    "User {} disconnected from {}",
+                    authenticated_user.username, addr
+                ),
+            )
+            .await;
+
         send_task.abort();
         let mut state_guard = state.lock().await;
         state_guard.remove_peer(addr).await;
+
+        // Log cleanup completion
+        security_middleware
+            .log_security_event(
+                addr.ip(),
+                Some(authenticated_user.username.clone()),
+                "cleanup_completed",
+                format!(
+                    "Connection cleanup completed for user {}",
+                    authenticated_user.username
+                ),
+            )
+            .await;
     }
 
     Ok(())

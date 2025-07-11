@@ -382,11 +382,259 @@ impl SecurityMiddleware {
             .await;
     }
 
+    /// Record suspicious activity and trigger automated response
+    pub async fn record_suspicious_activity(
+        &self,
+        ip_address: std::net::IpAddr,
+        user_id: Option<String>,
+        activity_type: &str,
+        description: &str,
+    ) -> SecurityResult<()> {
+        let mut intrusion_detector = self.intrusion_detector.write().await;
+        intrusion_detector
+            .record_suspicious_activity(&ip_address.to_string(), user_id.as_deref(), activity_type)
+            .await?;
+
+        // Log security event
+        self.log_security_event(
+            ip_address,
+            user_id.clone(),
+            activity_type,
+            description.to_string(),
+        )
+        .await;
+
+        // Check if we should trigger automated response
+        let should_block = self
+            .should_trigger_automated_block(&ip_address.to_string(), activity_type)
+            .await;
+        if should_block {
+            // Automatic blocking for severe threats
+            let block_duration = match activity_type {
+                "suspicious_message_pattern" => std::time::Duration::from_secs(300), // 5 minutes
+                "brute_force_attack" => std::time::Duration::from_secs(3600),        // 1 hour
+                "injection_attempt" => std::time::Duration::from_secs(1800),         // 30 minutes
+                "rate_limit_exceeded" => std::time::Duration::from_secs(600),        // 10 minutes
+                _ => std::time::Duration::from_secs(300), // Default 5 minutes
+            };
+
+            intrusion_detector
+                .block_ip(
+                    &ip_address.to_string(),
+                    &format!("Automated block: {}", activity_type),
+                    block_duration,
+                )
+                .await;
+
+            // Log the automated response
+            self.log_security_event(
+                ip_address,
+                user_id,
+                "automated_block",
+                format!(
+                    "Automatically blocked IP for {} minutes due to: {}",
+                    block_duration.as_secs() / 60,
+                    activity_type
+                ),
+            )
+            .await;
+        }
+
+        Ok(())
+    }
+
+    /// Check if IP should be blocked
+    pub async fn should_block_user(&self, ip_address: std::net::IpAddr) -> bool {
+        let intrusion_detector = self.intrusion_detector.read().await;
+        intrusion_detector.is_ip_blocked(&ip_address.to_string())
+    }
+
+    /// Log security event with IP address
+    pub async fn log_security_event(
+        &self,
+        ip_address: std::net::IpAddr,
+        user_id: Option<String>,
+        event_type: &str,
+        description: String,
+    ) {
+        let event = format!(
+            "[{}] IP: {} | User: {} | Event: {} | Description: {}",
+            chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
+            ip_address,
+            user_id.unwrap_or_else(|| "unknown".to_string()),
+            event_type,
+            description
+        );
+
+        let mut audit_logger = self.audit_logger.write().await;
+        audit_logger.log_event(event).await;
+    }
+
+    /// Check if automated blocking should be triggered
+    async fn should_trigger_automated_block(&self, ip_address: &str, activity_type: &str) -> bool {
+        let intrusion_detector = self.intrusion_detector.read().await;
+
+        // Check existing suspicious activities for this IP
+        if let Some(activities) = intrusion_detector.suspicious_activities.get(ip_address) {
+            let recent_activities = activities
+                .iter()
+                .filter(|activity| {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs();
+                    now - activity.last_seen < 300 // Last 5 minutes
+                })
+                .count();
+
+            // Trigger blocking if:
+            // - More than 3 suspicious activities in 5 minutes
+            // - Any injection attempt
+            // - Severe threat patterns
+            match activity_type {
+                "suspicious_message_pattern" | "injection_attempt" | "brute_force_attack" => true,
+                _ => recent_activities > 3,
+            }
+        } else {
+            // First time offense - block only for severe threats
+            matches!(activity_type, "injection_attempt" | "brute_force_attack")
+        }
+    }
+
+    /// Suspend user account
+    pub async fn suspend_user(&self, user_id: &str, reason: &str, duration: std::time::Duration) {
+        // Log suspension event
+        self.log_security_event(
+            std::net::IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)), // Placeholder IP
+            Some(user_id.to_string()),
+            "user_suspended",
+            format!(
+                "User suspended for {} seconds. Reason: {}",
+                duration.as_secs(),
+                reason
+            ),
+        )
+        .await;
+
+        // Note: User suspension would be implemented in the user management system
+        // For now, we log the event for audit purposes
+        tracing::warn!("User {} suspended for: {}", user_id, reason);
+    }
+
     /// Get security statistics
     pub async fn get_security_stats(&self) -> SecurityEventStats {
         let audit_logger = self.audit_logger.read().await;
         audit_logger.stats.clone()
     }
+
+    /// Generate security report
+    pub async fn generate_security_report(&self) -> String {
+        let audit_logger = self.audit_logger.read().await;
+        let intrusion_detector = self.intrusion_detector.read().await;
+
+        let total_events = audit_logger.events.len();
+        let blocked_ips = intrusion_detector.blocked_ips.len();
+        let suspicious_activities = intrusion_detector.suspicious_activities.len();
+
+        format!(
+            "=== SECURITY REPORT ===\n\
+            Total Security Events: {}\n\
+            Blocked IPs: {}\n\
+            IPs with Suspicious Activity: {}\n\
+            Report Generated: {}\n\
+            ========================",
+            total_events,
+            blocked_ips,
+            suspicious_activities,
+            chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+        )
+    }
+
+    /// Security health check
+    pub async fn security_health_check(&self) -> SecurityHealthStatus {
+        let intrusion_detector = self.intrusion_detector.read().await;
+        let audit_logger = self.audit_logger.read().await;
+
+        let active_blocks = intrusion_detector.blocked_ips.len();
+        let recent_suspicious = intrusion_detector
+            .suspicious_activities
+            .values()
+            .flatten()
+            .filter(|activity| {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                now - activity.last_seen < 3600 // Last hour
+            })
+            .count();
+
+        let total_events = audit_logger.events.len();
+
+        SecurityHealthStatus {
+            status: if active_blocks > 10 || recent_suspicious > 20 {
+                "CRITICAL"
+            } else if active_blocks > 5 || recent_suspicious > 10 {
+                "WARNING"
+            } else {
+                "HEALTHY"
+            }
+            .to_string(),
+            active_blocks,
+            recent_suspicious_activities: recent_suspicious,
+            total_security_events: total_events,
+            last_check: chrono::Utc::now().timestamp() as u64,
+        }
+    }
+
+    /// Get security configuration
+    pub async fn get_security_config(&self) -> SecurityConfig {
+        self.config.clone()
+    }
+
+    /// Update security configuration
+    pub async fn update_security_config(&mut self, new_config: SecurityConfig) {
+        self.config = new_config;
+        // Reinitialize components with new config if needed
+    }
+
+    /// Force unblock IP (admin function)
+    pub async fn force_unblock_ip(&self, ip_address: &str) -> SecurityResult<()> {
+        let mut intrusion_detector = self.intrusion_detector.write().await;
+        intrusion_detector.blocked_ips.remove(ip_address);
+
+        self.log_security_event(
+            std::net::IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)), // Admin action
+            None,
+            "admin_unblock",
+            format!("Administrator force-unblocked IP: {}", ip_address),
+        )
+        .await;
+
+        Ok(())
+    }
+
+    /// Get recent security events
+    pub async fn get_recent_security_events(&self, limit: usize) -> Vec<String> {
+        let audit_logger = self.audit_logger.read().await;
+        audit_logger
+            .events
+            .iter()
+            .rev()
+            .take(limit)
+            .cloned()
+            .collect()
+    }
+}
+
+/// Security health status
+#[derive(Debug, Clone)]
+pub struct SecurityHealthStatus {
+    pub status: String,
+    pub active_blocks: usize,
+    pub recent_suspicious_activities: usize,
+    pub total_security_events: usize,
+    pub last_check: u64,
 }
 
 impl IntrusionDetector {
