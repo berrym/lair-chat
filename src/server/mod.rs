@@ -13,14 +13,23 @@ pub mod app;
 pub mod auth;
 pub mod chat;
 pub mod config;
+pub mod error;
+pub mod logging;
+pub mod monitoring;
 pub mod network;
+pub mod security;
 pub mod storage;
+pub mod validation;
 
 // Re-export commonly used types and functions
 pub use api::{create_api_router, start_api_server, ApiState};
 pub use app::{ChatServer, ServerStats};
 pub use config::{load_config, load_config_from_file, ConfigBuilder, ConfigError, ServerConfig};
+pub use error::{get_error_handler, init_error_handler, ErrorHandler, TcpError, TcpResult};
 pub use storage::{StorageError, StorageManager, StorageResult};
+pub use validation::{
+    get_validation_system, init_validation_system, ValidatedInput, ValidationSystem,
+};
 
 /// Server module result type
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
