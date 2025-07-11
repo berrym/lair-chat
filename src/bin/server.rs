@@ -25,9 +25,9 @@ use lair_chat::server::{
     auth::{Role, UserStatus},
     config::ServerConfig,
     storage::{
-        current_timestamp, generate_id, DatabaseConfig, Message, MessageMetadata, MessageType,
-        Pagination, Room, RoomPrivacy, RoomRole, RoomSettings, RoomType, StorageManager, User,
-        UserProfile, UserRole, UserSettings,
+        current_timestamp, generate_id, DatabaseConfig, Message, MessageMetadata, MessageReaction,
+        MessageType, Pagination, Room, RoomPrivacy, RoomRole, RoomSettings, RoomType,
+        StorageManager, User, UserProfile, UserRole, UserSettings,
     },
 };
 
@@ -103,6 +103,69 @@ impl SharedState {
             .rooms()
             .list_user_memberships(user_id, Pagination::default())
             .await
+    }
+
+    // Phase 4: Additional room database helpers
+    async fn get_room_members(
+        &self,
+        room_id: &str,
+    ) -> Result<Vec<String>, lair_chat::server::storage::StorageError> {
+        let memberships = self
+            .storage
+            .rooms()
+            .list_room_members(room_id, Pagination::default())
+            .await?;
+
+        let mut usernames = Vec::new();
+        for membership in memberships {
+            if let Some(user) = self
+                .storage
+                .users()
+                .get_user_by_id(&membership.user_id)
+                .await?
+            {
+                usernames.push(user.username);
+            }
+        }
+        Ok(usernames)
+    }
+
+    async fn list_all_rooms(&self) -> Result<Vec<Room>, lair_chat::server::storage::StorageError> {
+        self.storage
+            .rooms()
+            .list_rooms(Pagination::default(), None)
+            .await
+    }
+
+    async fn user_can_join_room(
+        &self,
+        user_id: &str,
+        room_id: &str,
+    ) -> Result<bool, lair_chat::server::storage::StorageError> {
+        // Check if room exists
+        if self
+            .storage
+            .rooms()
+            .get_room_by_id(room_id)
+            .await?
+            .is_none()
+        {
+            return Ok(false);
+        }
+
+        // Check if user is already a member
+        if self
+            .storage
+            .rooms()
+            .is_room_member(room_id, user_id)
+            .await?
+        {
+            return Ok(true); // Already a member
+        }
+
+        // TODO: Add permission checks based on room privacy settings
+        // For now, allow joining any existing room
+        Ok(true)
     }
 
     async fn create_room_in_db(
@@ -219,6 +282,41 @@ impl SharedState {
         self.storage.messages().store_message(message).await
     }
 
+    async fn get_room_list_from_db(
+        &self,
+    ) -> Result<Vec<String>, lair_chat::server::storage::StorageError> {
+        let rooms = self
+            .storage
+            .rooms()
+            .list_rooms(Pagination::default(), None)
+            .await?;
+        let room_names: Vec<String> = rooms.into_iter().map(|room| room.name).collect();
+        Ok(room_names)
+    }
+
+    async fn get_room_members_from_db(
+        &self,
+        room_id: &str,
+    ) -> Result<Vec<String>, lair_chat::server::storage::StorageError> {
+        let memberships = self
+            .storage
+            .rooms()
+            .list_room_members(room_id, Pagination::default())
+            .await?;
+        let mut usernames = Vec::new();
+        for membership in memberships {
+            if let Some(user) = self
+                .storage
+                .users()
+                .get_user_by_id(&membership.user_id)
+                .await?
+            {
+                usernames.push(user.username);
+            }
+        }
+        Ok(usernames)
+    }
+
     fn get_connected_users(&self) -> Vec<String> {
         self.connected_users.keys().cloned().collect()
     }
@@ -298,6 +396,289 @@ impl SharedState {
             tracing::info!("User {} disconnected from {}", username, addr);
             self.broadcast_user_list().await;
         }
+    }
+
+    // Phase 5: Enhanced Message Storage Helper Functions
+
+    /// Edit an existing message
+    async fn edit_message_in_db(
+        &self,
+        message_id: &str,
+        new_content: &str,
+        editor_user_id: &str,
+    ) -> Result<Message, lair_chat::server::storage::StorageError> {
+        // Get the original message to verify permissions
+        if let Some(mut message) = self
+            .storage
+            .messages()
+            .get_message_by_id(message_id)
+            .await?
+        {
+            // Check if user can edit this message (only author can edit)
+            if message.user_id != editor_user_id {
+                return Err(lair_chat::server::storage::StorageError::ValidationError {
+                    field: "user_id".to_string(),
+                    message: "Permission denied: only message author can edit".to_string(),
+                });
+            }
+
+            // Update message content and timestamp
+            message.content = new_content.to_string();
+            message.edited_at = Some(current_timestamp());
+
+            // Save updated message
+            self.storage.messages().update_message(message).await
+        } else {
+            Err(lair_chat::server::storage::StorageError::NotFound {
+                entity: "Message".to_string(),
+                id: message_id.to_string(),
+            })
+        }
+    }
+
+    /// Delete a message (soft delete)
+    async fn delete_message_in_db(
+        &self,
+        message_id: &str,
+        deleter_user_id: &str,
+    ) -> Result<(), lair_chat::server::storage::StorageError> {
+        // Get the original message to verify permissions
+        if let Some(message) = self
+            .storage
+            .messages()
+            .get_message_by_id(message_id)
+            .await?
+        {
+            // Check if user can delete this message (author or room moderator)
+            if message.user_id != deleter_user_id {
+                // TODO: Add moderator permission check
+                return Err(lair_chat::server::storage::StorageError::ValidationError {
+                    field: "user_id".to_string(),
+                    message: "Permission denied: only message author can delete".to_string(),
+                });
+            }
+
+            // Soft delete the message
+            self.storage
+                .messages()
+                .delete_message(message_id, current_timestamp())
+                .await
+        } else {
+            Err(lair_chat::server::storage::StorageError::NotFound {
+                entity: "Message".to_string(),
+                id: message_id.to_string(),
+            })
+        }
+    }
+
+    /// Add a reaction to a message
+    async fn add_reaction_to_message(
+        &self,
+        message_id: &str,
+        user_id: &str,
+        reaction: &str,
+    ) -> Result<(), lair_chat::server::storage::StorageError> {
+        let message_reaction = MessageReaction {
+            user_id: user_id.to_string(),
+            reaction: reaction.to_string(),
+            timestamp: current_timestamp(),
+        };
+
+        self.storage
+            .messages()
+            .add_reaction(message_id, message_reaction)
+            .await
+    }
+
+    /// Remove a reaction from a message
+    async fn remove_reaction_from_message(
+        &self,
+        message_id: &str,
+        user_id: &str,
+        reaction: &str,
+    ) -> Result<(), lair_chat::server::storage::StorageError> {
+        self.storage
+            .messages()
+            .remove_reaction(message_id, user_id, reaction)
+            .await
+    }
+
+    /// Get message history for a room with pagination
+    async fn get_room_message_history(
+        &self,
+        room_id: &str,
+        limit: u64,
+        before_message_id: Option<&str>,
+    ) -> Result<Vec<Message>, lair_chat::server::storage::StorageError> {
+        if let Some(before_id) = before_message_id {
+            self.storage
+                .messages()
+                .get_messages_before(room_id, before_id, limit)
+                .await
+        } else {
+            let pagination = Pagination { limit, offset: 0 };
+            self.storage
+                .messages()
+                .get_room_messages(room_id, pagination, None)
+                .await
+        }
+    }
+
+    /// Search messages in a room
+    async fn search_messages_in_room(
+        &self,
+        room_id: &str,
+        query: &str,
+        limit: u64,
+    ) -> Result<Vec<Message>, lair_chat::server::storage::StorageError> {
+        let search_query = lair_chat::server::storage::SearchQuery {
+            query: query.to_string(),
+            room_id: Some(room_id.to_string()),
+            user_id: None,
+            message_type: None,
+            date_from: None,
+            date_to: None,
+            limit: Some(limit),
+            offset: Some(0),
+        };
+
+        let search_result = self
+            .storage
+            .messages()
+            .search_messages(search_query)
+            .await?;
+        Ok(search_result.messages)
+    }
+
+    /// Store a direct message in the database
+    async fn store_dm_in_db(
+        &self,
+        sender_user_id: &str,
+        recipient_username: &str,
+        content: &str,
+    ) -> Result<Message, lair_chat::server::storage::StorageError> {
+        // Get recipient user ID from username
+        let recipient_user = self.get_user_by_username(recipient_username).await?;
+        let recipient_user_id = match recipient_user {
+            Some(user) => user.id,
+            None => {
+                return Err(lair_chat::server::storage::StorageError::NotFound {
+                    entity: "User".to_string(),
+                    id: recipient_username.to_string(),
+                })
+            }
+        };
+
+        // Create a DM room identifier (consistent ordering for same participants)
+        let dm_room_id = if sender_user_id < recipient_user_id.as_str() {
+            format!("dm_{}_{}", sender_user_id, recipient_user_id)
+        } else {
+            format!("dm_{}_{}", recipient_user_id, sender_user_id)
+        };
+
+        let message = Message {
+            id: generate_id(),
+            room_id: dm_room_id,
+            user_id: sender_user_id.to_string(),
+            content: content.to_string(),
+            message_type: MessageType::Text,
+            timestamp: current_timestamp(),
+            edited_at: None,
+            parent_message_id: None,
+            metadata: MessageMetadata::default(),
+            is_deleted: false,
+            deleted_at: None,
+        };
+
+        self.storage.messages().store_message(message).await
+    }
+
+    /// Get DM history between two users
+    async fn get_dm_history(
+        &self,
+        user1_id: &str,
+        user2_id: &str,
+        limit: u64,
+    ) -> Result<Vec<Message>, lair_chat::server::storage::StorageError> {
+        // Create consistent DM room identifier
+        let dm_room_id = if user1_id < user2_id {
+            format!("dm_{}_{}", user1_id, user2_id)
+        } else {
+            format!("dm_{}_{}", user2_id, user1_id)
+        };
+
+        let pagination = Pagination { limit, offset: 0 };
+        self.storage
+            .messages()
+            .get_room_messages(&dm_room_id, pagination, None)
+            .await
+    }
+
+    /// Mark messages as read for a user
+    async fn mark_messages_read(
+        &self,
+        user_id: &str,
+        room_id: &str,
+        up_to_message_id: &str,
+    ) -> Result<(), lair_chat::server::storage::StorageError> {
+        let timestamp = current_timestamp();
+        self.storage
+            .messages()
+            .mark_messages_read(user_id, room_id, up_to_message_id, timestamp)
+            .await
+    }
+
+    /// Get unread message count for a user in a room
+    async fn get_unread_message_count(
+        &self,
+        user_id: &str,
+        room_id: &str,
+        since_timestamp: u64,
+    ) -> Result<u64, lair_chat::server::storage::StorageError> {
+        let unread_messages = self
+            .storage
+            .messages()
+            .get_unread_messages(user_id, room_id, since_timestamp)
+            .await?;
+        Ok(unread_messages.len() as u64)
+    }
+
+    /// Create a threaded reply to a message
+    async fn create_threaded_reply(
+        &self,
+        parent_message_id: &str,
+        room_id: &str,
+        user_id: &str,
+        content: &str,
+    ) -> Result<Message, lair_chat::server::storage::StorageError> {
+        let message = Message {
+            id: generate_id(),
+            room_id: room_id.to_string(),
+            user_id: user_id.to_string(),
+            content: content.to_string(),
+            message_type: MessageType::Text,
+            timestamp: current_timestamp(),
+            edited_at: None,
+            parent_message_id: Some(parent_message_id.to_string()),
+            metadata: MessageMetadata::default(),
+            is_deleted: false,
+            deleted_at: None,
+        };
+
+        self.storage.messages().store_message(message).await
+    }
+
+    /// Get message thread (replies to a specific message)
+    async fn get_message_thread(
+        &self,
+        parent_message_id: &str,
+        limit: u64,
+    ) -> Result<Vec<Message>, lair_chat::server::storage::StorageError> {
+        let pagination = Pagination { limit, offset: 0 };
+        self.storage
+            .messages()
+            .get_message_thread(parent_message_id, pagination)
+            .await
     }
 }
 
@@ -655,7 +1036,7 @@ async fn process(
                 let state_guard = state.lock().await;
 
                 // Convert to the format expected by auth service
-                let legacy_auth_request = lair_chat::server::auth::AuthRequest {
+                let _legacy_auth_request = lair_chat::server::auth::AuthRequest {
                     username: username.clone(),
                     password: password.clone(),
                     fingerprint: match &auth_request {
@@ -819,41 +1200,54 @@ async fn process(
                                 let _ = sender.send(error_msg.to_string());
                             }
                         } else {
-                            // TODO: Phase 4 - Check if room exists in database
-                            // For now, assume room doesn't exist and create it
-
-                            // TODO: Phase 4 - Create room in database
-                            tracing::info!(
-                                "Creating room '{}' - TODO: implement database version",
-                                room_name
-                            );
-
-                            // Move user to the new room (updates in-memory connection state)
-                            if let Some(user) = state_guard
-                                .connected_users
-                                .get_mut(&authenticated_user.username)
+                            // Phase 4: Create room in database
+                            match state_guard
+                                .create_room_in_db(&authenticated_user.id.to_string(), room_name)
+                                .await
                             {
-                                user.current_room_id = Some(room_name.to_string());
-                                tracing::info!(
-                                    "User {} created and joined room '{}'",
-                                    authenticated_user.username,
-                                    room_name
-                                );
+                                Ok(created_room) => {
+                                    // Move user to the new room (updates in-memory connection state)
+                                    if let Some(user) = state_guard
+                                        .connected_users
+                                        .get_mut(&authenticated_user.username)
+                                    {
+                                        user.current_room_id = Some(created_room.id.clone());
+                                        tracing::info!(
+                                            "User {} created and joined room '{}' (ID: {})",
+                                            authenticated_user.username,
+                                            room_name,
+                                            created_room.id
+                                        );
 
-                                // Send success responses
-                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
-                                    let _ = sender.send(format!("ROOM_CREATED:{}", room_name));
-                                    let _ = sender.send(format!("CURRENT_ROOM:{}", room_name));
+                                        // Send success responses
+                                        if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                            let _ =
+                                                sender.send(format!("ROOM_CREATED:{}", room_name));
+                                            let _ =
+                                                sender.send(format!("CURRENT_ROOM:{}", room_name));
+                                        }
+
+                                        // Broadcast room status update
+                                        state_guard
+                                            .broadcast_room_status(&authenticated_user.username)
+                                            .await;
+                                    } else {
+                                        let error_msg = "ROOM_ERROR:Failed to join created room";
+                                        if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                            let _ = sender.send(error_msg.to_string());
+                                        }
+                                    }
                                 }
-
-                                // Broadcast room status update
-                                state_guard
-                                    .broadcast_room_status(&authenticated_user.username)
-                                    .await;
-                            } else {
-                                let error_msg = "ROOM_ERROR:Failed to join created room";
-                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
-                                    let _ = sender.send(error_msg.to_string());
+                                Err(e) => {
+                                    let error_msg = if e.to_string().contains("already exists") {
+                                        format!("ROOM_ERROR:Room '{}' already exists", room_name)
+                                    } else {
+                                        format!("ROOM_ERROR:Failed to create room: {}", e)
+                                    };
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(error_msg);
+                                    }
+                                    tracing::error!("Failed to create room '{}': {}", room_name, e);
                                 }
                             }
                         }
@@ -863,32 +1257,82 @@ async fn process(
 
                         let mut state_guard = state.lock().await;
 
-                        // TODO: Phase 4 - Check if room exists in database
-                        // For now, assume room exists
-                        if let Some(user) = state_guard
-                            .connected_users
-                            .get_mut(&authenticated_user.username)
-                        {
-                            user.current_room_id = Some(room_name.to_string());
-                            tracing::info!(
-                                "User {} joined room '{}'",
-                                authenticated_user.username,
-                                room_name
-                            );
+                        // Phase 4: Check if room exists in database
+                        match state_guard.get_room_by_name(room_name).await {
+                            Ok(Some(room)) => {
+                                // Room exists, add user to room in database
+                                match state_guard
+                                    .join_room_in_db(&authenticated_user.id.to_string(), &room.id)
+                                    .await
+                                {
+                                    Ok(()) => {
+                                        // Update in-memory connection state
+                                        if let Some(user) = state_guard
+                                            .connected_users
+                                            .get_mut(&authenticated_user.username)
+                                        {
+                                            user.current_room_id = Some(room.id.clone());
+                                            tracing::info!(
+                                                "User {} joined room '{}' (ID: {})",
+                                                authenticated_user.username,
+                                                room_name,
+                                                room.id
+                                            );
 
-                            if let Some((_key, sender)) = state_guard.peers.get(&addr) {
-                                let _ = sender.send(format!("ROOM_JOINED:{}", room_name));
-                                let _ = sender.send(format!("CURRENT_ROOM:{}", room_name));
+                                            if let Some((_key, sender)) =
+                                                state_guard.peers.get(&addr)
+                                            {
+                                                let _ = sender
+                                                    .send(format!("ROOM_JOINED:{}", room_name));
+                                                let _ = sender
+                                                    .send(format!("CURRENT_ROOM:{}", room_name));
+                                            }
+
+                                            state_guard
+                                                .broadcast_room_status(&authenticated_user.username)
+                                                .await;
+                                        } else {
+                                            let error_msg =
+                                                "ROOM_ERROR:Failed to update connection state";
+                                            if let Some((_key, sender)) =
+                                                state_guard.peers.get(&addr)
+                                            {
+                                                let _ = sender.send(error_msg.to_string());
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        let error_msg =
+                                            format!("ROOM_ERROR:Failed to join room: {}", e);
+                                        if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                            let _ = sender.send(error_msg);
+                                        }
+                                        tracing::error!(
+                                            "Failed to join room '{}': {}",
+                                            room_name,
+                                            e
+                                        );
+                                    }
+                                }
                             }
-
-                            state_guard
-                                .broadcast_room_status(&authenticated_user.username)
-                                .await;
-                        } else {
-                            let error_msg =
-                                format!("ROOM_ERROR:Failed to join room '{}'", room_name);
-                            if let Some((_key, sender)) = state_guard.peers.get(&addr) {
-                                let _ = sender.send(error_msg);
+                            Ok(None) => {
+                                let error_msg =
+                                    format!("ROOM_ERROR:Room '{}' does not exist", room_name);
+                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                    let _ = sender.send(error_msg);
+                                }
+                            }
+                            Err(e) => {
+                                let error_msg =
+                                    format!("ROOM_ERROR:Failed to check room existence: {}", e);
+                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                    let _ = sender.send(error_msg);
+                                }
+                                tracing::error!(
+                                    "Database error checking room '{}': {}",
+                                    room_name,
+                                    e
+                                );
                             }
                         }
                     } else if decrypted_message == "LEAVE_ROOM" {
@@ -906,40 +1350,73 @@ async fn process(
                         };
 
                         if current_room != "Lobby" {
-                            // TODO: Phase 4 - Move user to lobby in database
-                            if let Some(user) = state_guard
-                                .connected_users
-                                .get_mut(&authenticated_user.username)
+                            // Phase 4: Remove user from room in database
+                            match state_guard
+                                .leave_room_in_db(&authenticated_user.id.to_string(), &current_room)
+                                .await
                             {
-                                user.current_room_id = None; // No specific room (effectively lobby)
-                                tracing::info!(
-                                    "User {} left room '{}' and returned to Lobby",
-                                    authenticated_user.username,
-                                    current_room
-                                );
+                                Ok(()) => {
+                                    // Update in-memory connection state
+                                    if let Some(user) = state_guard
+                                        .connected_users
+                                        .get_mut(&authenticated_user.username)
+                                    {
+                                        user.current_room_id = None; // No specific room (effectively lobby)
+                                        tracing::info!(
+                                            "User {} left room '{}' and returned to Lobby",
+                                            authenticated_user.username,
+                                            current_room
+                                        );
 
-                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
-                                    let _ = sender.send(format!("ROOM_LEFT:{}", current_room));
-                                    let _ = sender.send("CURRENT_ROOM:Lobby".to_string());
+                                        if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                            let _ =
+                                                sender.send(format!("ROOM_LEFT:{}", current_room));
+                                            let _ = sender.send("CURRENT_ROOM:Lobby".to_string());
+                                        }
+
+                                        state_guard
+                                            .broadcast_room_status(&authenticated_user.username)
+                                            .await;
+                                    } else {
+                                        let error_msg =
+                                            "ROOM_ERROR:Failed to update connection state";
+                                        if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                            let _ = sender.send(error_msg.to_string());
+                                        }
+                                    }
                                 }
-
-                                state_guard
-                                    .broadcast_room_status(&authenticated_user.username)
-                                    .await;
-                            } else {
-                                let error_msg = "ROOM_ERROR:Failed to return to Lobby";
-                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
-                                    let _ = sender.send(error_msg.to_string());
+                                Err(e) => {
+                                    let error_msg =
+                                        format!("ROOM_ERROR:Failed to leave room: {}", e);
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(error_msg);
+                                    }
+                                    tracing::error!(
+                                        "Failed to leave room '{}': {}",
+                                        current_room,
+                                        e
+                                    );
                                 }
                             }
                         }
                     } else if decrypted_message == "LIST_ROOMS" {
                         let state_guard = state.lock().await;
-                        // TODO: Phase 4 - Get room list from database
-                        let room_names: Vec<String> = Vec::new();
-
-                        if let Some((_key, sender)) = state_guard.peers.get(&addr) {
-                            let _ = sender.send(format!("ROOM_LIST:{}", room_names.join(",")));
+                        // Phase 4: Get room list from database
+                        match state_guard.get_room_list_from_db().await {
+                            Ok(room_names) => {
+                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                    let _ =
+                                        sender.send(format!("ROOM_LIST:{}", room_names.join(",")));
+                                }
+                            }
+                            Err(e) => {
+                                let error_msg =
+                                    format!("ROOM_ERROR:Failed to get room list: {}", e);
+                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                    let _ = sender.send(error_msg);
+                                }
+                                tracing::error!("Failed to get room list from database: {}", e);
+                            }
                         }
                     } else if decrypted_message.starts_with("DM:") {
                         let parts: Vec<&str> = decrypted_message[3..].splitn(2, ':').collect();
@@ -954,33 +1431,51 @@ async fn process(
                                 dm_content
                             );
 
-                            let mut state_guard = state.lock().await;
-
                             // Send to recipient as PRIVATE_MESSAGE
-                            let private_message = format!(
-                                "PRIVATE_MESSAGE:{}:{}",
-                                authenticated_user.username, dm_content
-                            );
-                            let sent = state_guard
-                                .send_to_user(target_username, &private_message)
-                                .await;
+                            // Phase 5: Store DM in database
+                            let mut state_guard = state.lock().await;
+                            match state_guard
+                                .store_dm_in_db(
+                                    &authenticated_user.id.to_string(),
+                                    target_username,
+                                    dm_content,
+                                )
+                                .await
+                            {
+                                Ok(_) => {
+                                    let private_message = format!(
+                                        "PRIVATE_MESSAGE:{}:{}",
+                                        authenticated_user.username, dm_content
+                                    );
+                                    let sent = state_guard
+                                        .send_to_user(target_username, &private_message)
+                                        .await;
 
-                            // Send confirmation back to sender
-                            if sent {
-                                let confirmation = format!(
-                                    "SYSTEM_MESSAGE:DM sent to {}: {}",
-                                    target_username, dm_content
-                                );
-                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
-                                    let _ = sender.send(confirmation);
+                                    // Send confirmation back to sender
+                                    if sent {
+                                        let confirmation = format!(
+                                            "SYSTEM_MESSAGE:DM sent to {}: {}",
+                                            target_username, dm_content
+                                        );
+                                        if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                            let _ = sender.send(confirmation);
+                                        }
+                                    } else {
+                                        let error_msg = format!(
+                                            "SYSTEM_MESSAGE:ERROR: User {} is not online or not found",
+                                            target_username
+                                        );
+                                        if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                            let _ = sender.send(error_msg);
+                                        }
+                                    }
                                 }
-                            } else {
-                                let error_msg = format!(
-                                    "SYSTEM_MESSAGE:ERROR: User {} is not online or not found",
-                                    target_username
-                                );
-                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
-                                    let _ = sender.send(error_msg);
+                                Err(e) => {
+                                    let error_msg =
+                                        format!("SYSTEM_MESSAGE:ERROR: Failed to store DM: {}", e);
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(error_msg);
+                                    }
                                 }
                             }
                         }
@@ -1115,7 +1610,7 @@ async fn process(
                             .unwrap()
                             .trim();
 
-                        let mut state_guard = state.lock().await;
+                        let state_guard = state.lock().await;
 
                         // Determine the actual room name
                         // TODO: Phase 6 - Get invitation from database
@@ -1170,6 +1665,14 @@ async fn process(
                         let help_msg = "SYSTEM_MESSAGE:Available commands:\n\
                             • CREATE_ROOM:<name> - Create a new room\n\
                             • JOIN_ROOM:<name> - Join an existing room\n\
+                            • EDIT_MESSAGE:<id>:<new_content> - Edit your message\n\
+                            • DELETE_MESSAGE:<id> - Delete your message\n\
+                            • REACT_MESSAGE:<id>:<emoji> - Add reaction to message\n\
+                            • UNREACT_MESSAGE:<id>:<emoji> - Remove reaction\n\
+                            • SEARCH_MESSAGES:<query> - Search messages in current room\n\
+                            • GET_HISTORY:<limit> - Get message history\n\
+                            • REPLY_MESSAGE:<id>:<content> - Reply to a message\n\
+                            • MARK_READ:<id> - Mark messages as read\n\
                             • LIST_INVITATIONS - Show pending invitations\n\
                             • ACCEPT_INVITATION:<room> - Accept invitation\n\
                             • DECLINE_INVITATION:<room> - Decline invitation";
@@ -1184,6 +1687,351 @@ async fn process(
 
                         if let Some((_key, sender)) = state_guard.peers.get(&addr) {
                             let _ = sender.send(user_list_msg);
+                        }
+                    } else if decrypted_message.starts_with("EDIT_MESSAGE:") {
+                        // Phase 5: Message editing
+                        let parts: Vec<&str> = decrypted_message[13..].splitn(2, ':').collect();
+                        if parts.len() == 2 {
+                            let message_id = parts[0];
+                            let new_content = parts[1];
+
+                            let mut state_guard = state.lock().await;
+                            match state_guard
+                                .edit_message_in_db(
+                                    message_id,
+                                    new_content,
+                                    &authenticated_user.id.to_string(),
+                                )
+                                .await
+                            {
+                                Ok(edited_message) => {
+                                    let success_msg =
+                                        format!("MESSAGE_EDITED:{}:{}", message_id, new_content);
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(success_msg);
+                                    }
+
+                                    // Broadcast edit to room members
+                                    let room_id = &edited_message.room_id;
+                                    if let Ok(room_members) =
+                                        state_guard.get_room_members_from_db(room_id).await
+                                    {
+                                        let edit_notification = format!(
+                                            "MESSAGE_EDITED:{}:{}:{}",
+                                            authenticated_user.username, message_id, new_content
+                                        );
+                                        for username in &room_members {
+                                            if username != &authenticated_user.username {
+                                                let _ = state_guard
+                                                    .send_to_user(username, &edit_notification)
+                                                    .await;
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    let error_msg =
+                                        format!("MESSAGE_ERROR:Failed to edit message: {}", e);
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(error_msg);
+                                    }
+                                }
+                            }
+                        }
+                    } else if decrypted_message.starts_with("DELETE_MESSAGE:") {
+                        // Phase 5: Message deletion
+                        let message_id = decrypted_message
+                            .strip_prefix("DELETE_MESSAGE:")
+                            .unwrap()
+                            .trim();
+
+                        let state_guard = state.lock().await;
+                        match state_guard
+                            .delete_message_in_db(message_id, &authenticated_user.id.to_string())
+                            .await
+                        {
+                            Ok(_) => {
+                                let success_msg = format!("MESSAGE_DELETED:{}", message_id);
+                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                    let _ = sender.send(success_msg);
+                                }
+
+                                // TODO: Broadcast deletion to room members
+                                tracing::info!(
+                                    "Message {} deleted by user {}",
+                                    message_id,
+                                    authenticated_user.username
+                                );
+                            }
+                            Err(e) => {
+                                let error_msg =
+                                    format!("MESSAGE_ERROR:Failed to delete message: {}", e);
+                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                    let _ = sender.send(error_msg);
+                                }
+                            }
+                        }
+                    } else if decrypted_message.starts_with("REACT_MESSAGE:") {
+                        // Phase 5: Message reactions
+                        let parts: Vec<&str> = decrypted_message[14..].splitn(2, ':').collect();
+                        if parts.len() == 2 {
+                            let message_id = parts[0];
+                            let reaction = parts[1];
+
+                            let state_guard = state.lock().await;
+                            match state_guard
+                                .add_reaction_to_message(
+                                    message_id,
+                                    &authenticated_user.id.to_string(),
+                                    reaction,
+                                )
+                                .await
+                            {
+                                Ok(_) => {
+                                    let success_msg =
+                                        format!("REACTION_ADDED:{}:{}", message_id, reaction);
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(success_msg);
+                                    }
+                                }
+                                Err(e) => {
+                                    let error_msg =
+                                        format!("MESSAGE_ERROR:Failed to add reaction: {}", e);
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(error_msg);
+                                    }
+                                }
+                            }
+                        }
+                    } else if decrypted_message.starts_with("UNREACT_MESSAGE:") {
+                        // Phase 5: Remove message reactions
+                        let parts: Vec<&str> = decrypted_message[16..].splitn(2, ':').collect();
+                        if parts.len() == 2 {
+                            let message_id = parts[0];
+                            let reaction = parts[1];
+
+                            let state_guard = state.lock().await;
+                            match state_guard
+                                .remove_reaction_from_message(
+                                    message_id,
+                                    &authenticated_user.id.to_string(),
+                                    reaction,
+                                )
+                                .await
+                            {
+                                Ok(_) => {
+                                    let success_msg =
+                                        format!("REACTION_REMOVED:{}:{}", message_id, reaction);
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(success_msg);
+                                    }
+                                }
+                                Err(e) => {
+                                    let error_msg =
+                                        format!("MESSAGE_ERROR:Failed to remove reaction: {}", e);
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(error_msg);
+                                    }
+                                }
+                            }
+                        }
+                    } else if decrypted_message.starts_with("SEARCH_MESSAGES:") {
+                        // Phase 5: Message search
+                        let search_query = decrypted_message
+                            .strip_prefix("SEARCH_MESSAGES:")
+                            .unwrap()
+                            .trim();
+
+                        let current_room = {
+                            let state_guard = state.lock().await;
+                            if let Some(user) = state_guard
+                                .connected_users
+                                .get(&authenticated_user.username)
+                            {
+                                user.current_room_id
+                                    .clone()
+                                    .unwrap_or_else(|| "Lobby".to_string())
+                            } else {
+                                "Lobby".to_string()
+                            }
+                        };
+
+                        let state_guard = state.lock().await;
+                        match state_guard
+                            .search_messages_in_room(&current_room, search_query, 20)
+                            .await
+                        {
+                            Ok(messages) => {
+                                let results: Vec<String> = messages
+                                    .iter()
+                                    .map(|m| format!("{}:{}:{}", m.id, m.user_id, m.content))
+                                    .collect();
+                                let search_results =
+                                    format!("SEARCH_RESULTS:{}", results.join("|"));
+                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                    let _ = sender.send(search_results);
+                                }
+                            }
+                            Err(e) => {
+                                let error_msg = format!("MESSAGE_ERROR:Search failed: {}", e);
+                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                    let _ = sender.send(error_msg);
+                                }
+                            }
+                        }
+                    } else if decrypted_message.starts_with("GET_HISTORY:") {
+                        // Phase 5: Message history
+                        let limit_str = decrypted_message
+                            .strip_prefix("GET_HISTORY:")
+                            .unwrap()
+                            .trim();
+                        let limit = limit_str.parse::<u64>().unwrap_or(20);
+
+                        let current_room = {
+                            let state_guard = state.lock().await;
+                            if let Some(user) = state_guard
+                                .connected_users
+                                .get(&authenticated_user.username)
+                            {
+                                user.current_room_id
+                                    .clone()
+                                    .unwrap_or_else(|| "Lobby".to_string())
+                            } else {
+                                "Lobby".to_string()
+                            }
+                        };
+
+                        let state_guard = state.lock().await;
+                        match state_guard
+                            .get_room_message_history(&current_room, limit, None)
+                            .await
+                        {
+                            Ok(messages) => {
+                                for message in messages {
+                                    let history_msg =
+                                        format!("HISTORY:{}:{}", message.user_id, message.content);
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(history_msg);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                let error_msg =
+                                    format!("MESSAGE_ERROR:Failed to get history: {}", e);
+                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                    let _ = sender.send(error_msg);
+                                }
+                            }
+                        }
+                    } else if decrypted_message.starts_with("REPLY_MESSAGE:") {
+                        // Phase 5: Threaded replies
+                        let parts: Vec<&str> = decrypted_message[14..].splitn(2, ':').collect();
+                        if parts.len() == 2 {
+                            let parent_message_id = parts[0];
+                            let reply_content = parts[1];
+
+                            let current_room = {
+                                let state_guard = state.lock().await;
+                                if let Some(user) = state_guard
+                                    .connected_users
+                                    .get(&authenticated_user.username)
+                                {
+                                    user.current_room_id
+                                        .clone()
+                                        .unwrap_or_else(|| "Lobby".to_string())
+                                } else {
+                                    "Lobby".to_string()
+                                }
+                            };
+
+                            let mut state_guard = state.lock().await;
+                            match state_guard
+                                .create_threaded_reply(
+                                    parent_message_id,
+                                    &current_room,
+                                    &authenticated_user.id.to_string(),
+                                    reply_content,
+                                )
+                                .await
+                            {
+                                Ok(reply_message) => {
+                                    let success_msg = format!(
+                                        "REPLY_CREATED:{}:{}",
+                                        parent_message_id, reply_message.id
+                                    );
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(success_msg);
+                                    }
+
+                                    // Broadcast reply to room members
+                                    let formatted_reply = format!(
+                                        "REPLY:{}:{}:{}",
+                                        authenticated_user.username,
+                                        parent_message_id,
+                                        reply_content
+                                    );
+                                    if let Ok(room_members) =
+                                        state_guard.get_room_members_from_db(&current_room).await
+                                    {
+                                        for username in &room_members {
+                                            if username != &authenticated_user.username {
+                                                let _ = state_guard
+                                                    .send_to_user(username, &formatted_reply)
+                                                    .await;
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    let error_msg =
+                                        format!("MESSAGE_ERROR:Failed to create reply: {}", e);
+                                    if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                        let _ = sender.send(error_msg);
+                                    }
+                                }
+                            }
+                        }
+                    } else if decrypted_message.starts_with("MARK_READ:") {
+                        // Phase 5: Read receipts
+                        let message_id =
+                            decrypted_message.strip_prefix("MARK_READ:").unwrap().trim();
+
+                        let current_room = {
+                            let state_guard = state.lock().await;
+                            if let Some(user) = state_guard
+                                .connected_users
+                                .get(&authenticated_user.username)
+                            {
+                                user.current_room_id
+                                    .clone()
+                                    .unwrap_or_else(|| "Lobby".to_string())
+                            } else {
+                                "Lobby".to_string()
+                            }
+                        };
+
+                        let state_guard = state.lock().await;
+                        match state_guard
+                            .mark_messages_read(
+                                &authenticated_user.id.to_string(),
+                                &current_room,
+                                message_id,
+                            )
+                            .await
+                        {
+                            Ok(_) => {
+                                let success_msg = format!("MESSAGES_READ:{}", message_id);
+                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                    let _ = sender.send(success_msg);
+                                }
+                            }
+                            Err(e) => {
+                                let error_msg =
+                                    format!("MESSAGE_ERROR:Failed to mark as read: {}", e);
+                                if let Some((_key, sender)) = state_guard.peers.get(&addr) {
+                                    let _ = sender.send(error_msg);
+                                }
+                            }
                         }
                     } else {
                         // Regular chat message - broadcast to users in same room
@@ -1206,13 +2054,56 @@ async fn process(
 
                         // Broadcast to users in the same room only
                         let mut state_guard = state.lock().await;
-                        // TODO: Phase 4 - Get room users from database
-                        let room_users: Vec<String> = Vec::new();
 
-                        for username in &room_users {
-                            if username != &authenticated_user.username {
-                                let _ =
-                                    state_guard.send_to_user(username, &formatted_message).await;
+                        // Phase 4: Get room users from database and store message
+                        if current_room != "Lobby" {
+                            // Store message in database for non-lobby rooms
+                            match state_guard
+                                .store_message_in_db(
+                                    &current_room,
+                                    &authenticated_user.id.to_string(),
+                                    &decrypted_message,
+                                )
+                                .await
+                            {
+                                Ok(_) => {
+                                    tracing::info!(
+                                        "Message stored in database for room '{}'",
+                                        current_room
+                                    );
+                                }
+                                Err(e) => {
+                                    tracing::error!("Failed to store message in database: {}", e);
+                                }
+                            }
+
+                            // Get room members from database
+                            match state_guard.get_room_members_from_db(&current_room).await {
+                                Ok(room_users) => {
+                                    for username in &room_users {
+                                        if username != &authenticated_user.username {
+                                            let _ = state_guard
+                                                .send_to_user(username, &formatted_message)
+                                                .await;
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Failed to get room members from database: {}",
+                                        e
+                                    );
+                                }
+                            }
+                        } else {
+                            // For lobby, broadcast to all connected users
+                            let connected_users = state_guard.get_connected_users();
+                            for username in &connected_users {
+                                if username != &authenticated_user.username {
+                                    let _ = state_guard
+                                        .send_to_user(username, &formatted_message)
+                                        .await;
+                                }
                             }
                         }
                     }
