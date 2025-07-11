@@ -21,6 +21,11 @@ pub fn create_admin_routes() -> Router<ApiState> {
         .route("/stats", get(admin::get_server_statistics))
         // System health monitoring
         .route("/health", get(admin::get_system_health))
+        // Performance monitoring
+        .route("/performance/metrics", get(admin::get_performance_metrics))
+        .route("/performance/report", get(admin::get_performance_report))
+        .route("/performance/alerts", get(admin::get_performance_alerts))
+        .route("/performance/alerts", post(admin::clear_performance_alerts))
         // User management
         .route("/users", get(admin::get_admin_users))
         .route("/users/:user_id/status", put(admin::update_user_status))

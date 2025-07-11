@@ -26,6 +26,7 @@ pub use api::{create_api_router, start_api_server, ApiState};
 pub use app::{ChatServer, ServerStats};
 pub use config::{load_config, load_config_from_file, ConfigBuilder, ConfigError, ServerConfig};
 pub use error::{get_error_handler, init_error_handler, ErrorHandler, TcpError, TcpResult};
+pub use monitoring::{get_performance_monitor, init_performance_monitor, PerformanceMonitor};
 pub use storage::{StorageError, StorageManager, StorageResult};
 pub use validation::{
     get_validation_system, init_validation_system, ValidatedInput, ValidationSystem,

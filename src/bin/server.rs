@@ -903,7 +903,7 @@ async fn start_tcp_server(
     let listener = TcpListener::bind(addr).await?;
     tracing::info!("TCP Chat server listening on: {}", addr);
 
-    // Start stats update task
+    // Start stats update task with performance monitoring integration
     let stats_state = Arc::clone(&state);
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
@@ -911,6 +911,30 @@ async fn start_tcp_server(
             interval.tick().await;
             if let Ok(shared_state) = stats_state.try_lock() {
                 let stats = shared_state.get_stats().await;
+
+                // Update performance monitoring system metrics
+                let performance_monitor = get_performance_monitor().await;
+                let _ = performance_monitor
+                    .update_system_metrics(
+                        stats.connected_peers as u32,
+                        stats.active_rooms as u32,
+                        stats.authenticated_users as u32,
+                    )
+                    .await;
+
+                // Check performance thresholds and raise alerts
+                let alerts = performance_monitor.check_thresholds().await;
+                if !alerts.is_empty() {
+                    tracing::warn!("Performance alerts: {} active alerts", alerts.len());
+                    for alert in &alerts {
+                        tracing::warn!(
+                            "Performance alert: {:?} - {} ({})",
+                            alert.alert_type,
+                            alert.message,
+                            alert.level
+                        );
+                    }
+                }
 
                 // Create room user counts map
                 // TODO: Phase 2 - Get room user counts from database
@@ -1512,7 +1536,7 @@ async fn process(
                                 Err(e) => {
                                     // Record error
                                     let _ = performance_monitor
-                                        .record_error("create_room", e.to_string())
+                                        .record_operation_error("create_room", e.to_string())
                                         .await;
 
                                     let _ = security_middleware
@@ -1616,7 +1640,7 @@ async fn process(
                                     Err(e) => {
                                         // Record error
                                         let _ = performance_monitor
-                                            .record_error("join_room", e.to_string())
+                                            .record_operation_error("join_room", e.to_string())
                                             .await;
 
                                         let _ = security_middleware
@@ -1741,7 +1765,7 @@ async fn process(
                                 Err(e) => {
                                     // Record error
                                     let _ = performance_monitor
-                                        .record_error("leave_room", e.to_string())
+                                        .record_operation_error("leave_room", e.to_string())
                                         .await;
 
                                     let _ = security_middleware
@@ -1797,7 +1821,7 @@ async fn process(
                             Err(e) => {
                                 // Record error
                                 let _ = performance_monitor
-                                    .record_error("list_rooms", e.to_string())
+                                    .record_operation_error("list_rooms", e.to_string())
                                     .await;
 
                                 let error_msg =
@@ -1809,6 +1833,7 @@ async fn process(
                             }
                         }
                     } else if decrypted_message.starts_with("DM:") {
+                        let dm_start = std::time::Instant::now();
                         let parts: Vec<&str> = decrypted_message[3..].splitn(2, ':').collect();
                         if parts.len() == 2 {
                             let target_username = parts[0];
@@ -1860,6 +1885,20 @@ async fn process(
                                         if let Some((_key, sender)) = state_guard.peers.get(&addr) {
                                             let _ = sender.send(confirmation);
                                         }
+
+                                        // Record successful operation
+                                        let _ = performance_monitor
+                                            .record_operation("direct_message", dm_start.elapsed())
+                                            .await;
+
+                                        let _ = security_middleware
+                                            .log_security_event(
+                                                addr.ip(),
+                                                Some(authenticated_user.username.clone()),
+                                                "dm_sent",
+                                                format!("DM sent to {}", target_username),
+                                            )
+                                            .await;
                                     } else {
                                         let error_msg = format!(
                                             "SYSTEM_MESSAGE:ERROR: User {} is not online or not found",
@@ -1868,6 +1907,14 @@ async fn process(
                                         if let Some((_key, sender)) = state_guard.peers.get(&addr) {
                                             let _ = sender.send(error_msg);
                                         }
+
+                                        // Record error
+                                        let _ = performance_monitor
+                                            .record_operation_error(
+                                                "direct_message",
+                                                format!("User {} not online", target_username),
+                                            )
+                                            .await;
                                     }
                                 }
                                 Err(e) => {
@@ -1876,6 +1923,11 @@ async fn process(
                                     if let Some((_key, sender)) = state_guard.peers.get(&addr) {
                                         let _ = sender.send(error_msg);
                                     }
+
+                                    // Record error
+                                    let _ = performance_monitor
+                                        .record_operation_error("direct_message", e.to_string())
+                                        .await;
                                 }
                             }
                         }
@@ -2117,7 +2169,10 @@ async fn process(
                             } else {
                                 // Record error
                                 let _ = performance_monitor
-                                    .record_error("send_invitation", "User not online".to_string())
+                                    .record_operation_error(
+                                        "send_invitation",
+                                        "User not online".to_string(),
+                                    )
                                     .await;
 
                                 let _ = security_middleware
@@ -2142,6 +2197,7 @@ async fn process(
                             }
                         }
                     } else if decrypted_message.starts_with("ACCEPT_INVITATION:") {
+                        let accept_start = std::time::Instant::now();
                         let room_param = decrypted_message
                             .strip_prefix("ACCEPT_INVITATION:")
                             .unwrap()
@@ -2365,6 +2421,20 @@ async fn process(
                             if let Some((_key, sender)) = state_guard.peers.get(&addr) {
                                 let _ = sender.send(confirmation_msg);
                             }
+
+                            // Record successful operation
+                            let _ = performance_monitor
+                                .record_operation("accept_invitation", accept_start.elapsed())
+                                .await;
+
+                            let _ = security_middleware
+                                .log_security_event(
+                                    addr.ip(),
+                                    Some(authenticated_user.username.clone()),
+                                    "invitation_accepted",
+                                    format!("User accepted invitation to room '{}'", room_name),
+                                )
+                                .await;
                         } else {
                             let error_msg = format!(
                                 "SYSTEM_MESSAGE:ERROR: Failed to join room '{}'",
@@ -2373,8 +2443,17 @@ async fn process(
                             if let Some((_key, sender)) = state_guard.peers.get(&addr) {
                                 let _ = sender.send(error_msg);
                             }
+
+                            // Record error
+                            let _ = performance_monitor
+                                .record_operation_error(
+                                    "accept_invitation",
+                                    "Failed to join room after accepting invitation".to_string(),
+                                )
+                                .await;
                         }
                     } else if decrypted_message.starts_with("DECLINE_INVITATION:") {
+                        let decline_start = std::time::Instant::now();
                         let room_param = decrypted_message
                             .strip_prefix("DECLINE_INVITATION:")
                             .unwrap()
@@ -2537,7 +2616,22 @@ async fn process(
                         if let Some((_key, sender)) = state_guard.peers.get(&addr) {
                             let _ = sender.send(confirmation);
                         }
+
+                        // Record successful operation
+                        let _ = performance_monitor
+                            .record_operation("decline_invitation", decline_start.elapsed())
+                            .await;
+
+                        let _ = security_middleware
+                            .log_security_event(
+                                addr.ip(),
+                                Some(authenticated_user.username.clone()),
+                                "invitation_declined",
+                                format!("User declined invitation to room '{}'", room.name),
+                            )
+                            .await;
                     } else if decrypted_message == "LIST_INVITATIONS" {
+                        let list_invitations_start = std::time::Instant::now();
                         // Log security event for invitation list request
                         let _ = security_middleware
                             .log_security_event(
@@ -2566,6 +2660,14 @@ async fn process(
                                     if let Some((_key, sender)) = state_guard.peers.get(&addr) {
                                         let _ = sender.send(msg.to_string());
                                     }
+
+                                    // Record successful operation (empty list)
+                                    let _ = performance_monitor
+                                        .record_operation(
+                                            "list_invitations",
+                                            list_invitations_start.elapsed(),
+                                        )
+                                        .await;
                                 } else {
                                     // Build invitation list with details
                                     let mut invitation_list = Vec::new();
@@ -2635,6 +2737,14 @@ async fn process(
                                     if let Some((_key, sender)) = state_guard.peers.get(&addr) {
                                         let _ = sender.send(msg);
                                     }
+
+                                    // Record successful operation (with invitations)
+                                    let _ = performance_monitor
+                                        .record_operation(
+                                            "list_invitations",
+                                            list_invitations_start.elapsed(),
+                                        )
+                                        .await;
                                 }
                             }
                             Err(e) => {
@@ -2645,6 +2755,11 @@ async fn process(
                                 if let Some((_key, sender)) = state_guard.peers.get(&addr) {
                                     let _ = sender.send(error_msg);
                                 }
+
+                                // Record error
+                                let _ = performance_monitor
+                                    .record_operation_error("list_invitations", e.to_string())
+                                    .await;
                             }
                         }
                     } else if decrypted_message == "ACCEPT_ALL_INVITATIONS" {
@@ -2819,6 +2934,7 @@ async fn process(
                             let _ = sender.send(help_msg.to_string());
                         }
                     } else if decrypted_message == "REQUEST_USER_LIST" {
+                        let user_list_start = std::time::Instant::now();
                         let state_guard = state.lock().await;
                         let user_list = state_guard.get_connected_users();
                         let user_list_msg = format!("USER_LIST:{}", user_list.join(","));
@@ -2826,6 +2942,11 @@ async fn process(
                         if let Some((_key, sender)) = state_guard.peers.get(&addr) {
                             let _ = sender.send(user_list_msg);
                         }
+
+                        // Record successful operation
+                        let _ = performance_monitor
+                            .record_operation("request_user_list", user_list_start.elapsed())
+                            .await;
                     } else if decrypted_message.starts_with("EDIT_MESSAGE:") {
                         // Phase 5: Message editing
                         let parts: Vec<&str> = decrypted_message[13..].splitn(2, ':').collect();
@@ -3241,7 +3362,7 @@ async fn process(
                                 Err(e) => {
                                     // Record error
                                     let _ = performance_monitor
-                                        .record_error("send_message", e.to_string())
+                                        .record_operation_error("send_message", e.to_string())
                                         .await;
 
                                     let _ = security_middleware

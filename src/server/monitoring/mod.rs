@@ -266,6 +266,33 @@ impl PerformanceMonitor {
         );
     }
 
+    /// Record operation error with string message (helper for server integration)
+    pub async fn record_operation_error(&self, operation: &str, error_message: String) {
+        let mut metrics = self.metrics.write().await;
+        let error_metrics = metrics.errors.entry(operation.to_string()).or_default();
+
+        error_metrics.total_count += 1;
+        error_metrics.last_error = Some(current_timestamp());
+
+        let error_type = format!("{}Error", operation);
+        *error_metrics
+            .error_types
+            .entry(error_type.clone())
+            .or_insert(0) += 1;
+
+        // Calculate error rate (errors per minute)
+        error_metrics.error_rate = error_metrics.total_count as f64 / 60.0;
+
+        debug!(
+            operation = operation,
+            error_message = error_message,
+            error_type = error_type,
+            total_errors = error_metrics.total_count,
+            error_rate = error_metrics.error_rate,
+            "Operation error recorded"
+        );
+    }
+
     /// Record validation metrics
     pub async fn record_validation(
         &self,

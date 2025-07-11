@@ -13,6 +13,8 @@ use sysinfo::System;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
+use crate::server::monitoring::get_performance_monitor;
+
 use crate::server::api::models::admin::{AdminAction, AuditLogEntry};
 use crate::server::api::models::common::ApiError;
 use crate::server::{
@@ -1009,6 +1011,190 @@ pub async fn get_audit_log_stats(
         user_context.username, api_stats.total_entries
     );
     Ok(responses::success(api_stats))
+}
+
+/// Get performance metrics
+///
+/// Returns comprehensive performance metrics including operation timings,
+/// error rates, system resource usage, and security metrics.
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/performance/metrics",
+    responses(
+        (status = 200, description = "Performance metrics retrieved", body = serde_json::Value),
+        (status = 401, description = "Authentication required", body = ApiError),
+        (status = 403, description = "Admin privileges required", body = ApiError),
+        (status = 500, description = "Internal server error", body = ApiError)
+    ),
+    tag = "admin",
+    security(
+        ("Bearer" = [])
+    )
+)]
+pub async fn get_performance_metrics(
+    Extension(user_context): Extension<UserContext>,
+) -> ApiResult<Json<SuccessResponse<serde_json::Value>>> {
+    debug!(
+        "Performance metrics request from admin: {}",
+        user_context.username
+    );
+
+    let performance_monitor = get_performance_monitor().await;
+    let metrics = performance_monitor.get_metrics().await;
+    let security_metrics = performance_monitor.get_security_metrics().await;
+
+    let response = serde_json::json!({
+        "operations": metrics.operations,
+        "errors": metrics.errors,
+        "system": {
+            "uptime": metrics.system.uptime.as_secs(),
+            "start_time": metrics.system.start_time.elapsed().as_secs(),
+            "cpu_usage": metrics.system.cpu_usage,
+            "memory_usage": metrics.system.memory_usage,
+            "active_connections": metrics.system.active_connections,
+            "active_rooms": metrics.system.active_rooms,
+            "active_users": metrics.system.active_users,
+        },
+        "connections": metrics.connections,
+        "security": {
+            "failed_logins": security_metrics.failed_logins,
+            "blocked_ips": security_metrics.blocked_ips,
+            "suspicious_activities": security_metrics.suspicious_activities,
+            "automated_blocks": security_metrics.automated_blocks,
+            "security_events": security_metrics.security_events,
+            "threat_levels": security_metrics.threat_levels,
+            "last_security_event": security_metrics.last_security_event,
+        }
+    });
+
+    info!(
+        "Performance metrics retrieved by admin: {} ({} operations tracked)",
+        user_context.username,
+        metrics.operations.len()
+    );
+    Ok(responses::success(response))
+}
+
+/// Get performance report
+///
+/// Returns a detailed performance report with analysis and recommendations.
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/performance/report",
+    responses(
+        (status = 200, description = "Performance report generated", body = String),
+        (status = 401, description = "Authentication required", body = ApiError),
+        (status = 403, description = "Admin privileges required", body = ApiError),
+        (status = 500, description = "Internal server error", body = ApiError)
+    ),
+    tag = "admin",
+    security(
+        ("Bearer" = [])
+    )
+)]
+pub async fn get_performance_report(
+    Extension(user_context): Extension<UserContext>,
+) -> ApiResult<Json<SuccessResponse<String>>> {
+    debug!(
+        "Performance report request from admin: {}",
+        user_context.username
+    );
+
+    let performance_monitor = get_performance_monitor().await;
+    let report = performance_monitor.get_performance_report().await;
+
+    info!(
+        "Performance report generated for admin: {}",
+        user_context.username
+    );
+    Ok(responses::success(report))
+}
+
+/// Get performance alerts
+///
+/// Returns active performance alerts and warnings.
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/performance/alerts",
+    responses(
+        (status = 200, description = "Performance alerts retrieved", body = Vec<serde_json::Value>),
+        (status = 401, description = "Authentication required", body = ApiError),
+        (status = 403, description = "Admin privileges required", body = ApiError),
+        (status = 500, description = "Internal server error", body = ApiError)
+    ),
+    tag = "admin",
+    security(
+        ("Bearer" = [])
+    )
+)]
+pub async fn get_performance_alerts(
+    Extension(user_context): Extension<UserContext>,
+) -> ApiResult<Json<SuccessResponse<Vec<serde_json::Value>>>> {
+    debug!(
+        "Performance alerts request from admin: {}",
+        user_context.username
+    );
+
+    let performance_monitor = get_performance_monitor().await;
+    let alerts = performance_monitor.get_active_alerts().await;
+
+    let alert_data: Vec<serde_json::Value> = alerts
+        .into_iter()
+        .map(|alert| {
+            serde_json::json!({
+                "type": format!("{:?}", alert.alert_type),
+                "level": format!("{:?}", alert.level),
+                "message": alert.message,
+                "timestamp": alert.timestamp,
+                "active": alert.active,
+            })
+        })
+        .collect();
+
+    info!(
+        "Performance alerts retrieved by admin: {} ({} active alerts)",
+        user_context.username,
+        alert_data.len()
+    );
+    Ok(responses::success(alert_data))
+}
+
+/// Clear performance alerts
+///
+/// Clears all active performance alerts.
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/performance/alerts",
+    responses(
+        (status = 200, description = "Performance alerts cleared", body = EmptyResponse),
+        (status = 401, description = "Authentication required", body = ApiError),
+        (status = 403, description = "Admin privileges required", body = ApiError),
+        (status = 500, description = "Internal server error", body = ApiError)
+    ),
+    tag = "admin",
+    security(
+        ("Bearer" = [])
+    )
+)]
+pub async fn clear_performance_alerts(
+    Extension(user_context): Extension<UserContext>,
+) -> ApiResult<Json<SuccessResponse<EmptyResponse>>> {
+    debug!(
+        "Clear performance alerts request from admin: {}",
+        user_context.username
+    );
+
+    let performance_monitor = get_performance_monitor().await;
+    performance_monitor.clear_alerts().await;
+
+    info!(
+        "Performance alerts cleared by admin: {}",
+        user_context.username
+    );
+    Ok(responses::success(EmptyResponse {
+        message: "Performance alerts cleared successfully".to_string(),
+        timestamp: chrono::Utc::now(),
+    }))
 }
 
 #[cfg(test)]
