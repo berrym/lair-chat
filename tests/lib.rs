@@ -4,6 +4,7 @@ pub mod performance;
 pub mod security;
 pub mod stress;
 pub mod unit;
+pub mod user_acceptance;
 
 #[cfg(test)]
 mod tests {
