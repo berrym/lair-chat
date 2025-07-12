@@ -3,6 +3,7 @@
 //! This module provides comprehensive performance monitoring with metrics collection,
 //! alerting, and performance optimization patterns.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -38,26 +39,26 @@ pub struct MetricsStorage {
 }
 
 /// Operation performance metrics
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct OperationMetrics {
     /// Total number of operations
     pub total_count: u64,
-    /// Total duration of all operations
-    pub total_duration: Duration,
-    /// Average duration
-    pub average_duration: Duration,
-    /// Minimum duration
-    pub min_duration: Duration,
-    /// Maximum duration
-    pub max_duration: Duration,
-    /// Recent operation times (for moving average)
-    pub recent_durations: Vec<Duration>,
+    /// Total duration of all operations in microseconds
+    pub total_duration: u64,
+    /// Average duration in microseconds
+    pub average_duration: u64,
+    /// Minimum duration in microseconds
+    pub min_duration: u64,
+    /// Maximum duration in microseconds
+    pub max_duration: u64,
+    /// Recent operation times in microseconds (for moving average)
+    pub recent_durations: Vec<u64>,
     /// Last operation timestamp
-    pub last_operation: Option<i64>,
+    pub last_operation: Option<u64>,
 }
 
 /// Error metrics
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ErrorMetrics {
     /// Total error count
     pub total_count: u64,
@@ -66,16 +67,16 @@ pub struct ErrorMetrics {
     /// Error rate (errors per minute)
     pub error_rate: f64,
     /// Last error timestamp
-    pub last_error: Option<i64>,
+    pub last_error: Option<u64>,
 }
 
 /// System performance metrics
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemMetrics {
-    /// Server uptime
-    pub uptime: Duration,
-    /// Start time
-    pub start_time: Instant,
+    /// Server uptime in seconds
+    pub uptime: u64,
+    /// Start time as timestamp
+    pub start_time: u64,
     /// CPU usage percentage
     pub cpu_usage: f64,
     /// Memory usage in bytes
@@ -89,7 +90,7 @@ pub struct SystemMetrics {
 }
 
 /// Connection metrics
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ConnectionMetrics {
     /// Total connections established
     pub total_connections: u64,
@@ -104,7 +105,7 @@ pub struct ConnectionMetrics {
 }
 
 /// Security-related metrics
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SecurityMetrics {
     pub failed_logins: u64,
     pub blocked_ips: u64,
@@ -116,7 +117,7 @@ pub struct SecurityMetrics {
 }
 
 /// Alerting system
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AlertingSystem {
     /// Active alerts
     pub active_alerts: Vec<Alert>,
@@ -127,7 +128,7 @@ pub struct AlertingSystem {
 }
 
 /// Performance alert
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Alert {
     /// Alert type
     pub alert_type: AlertType,
@@ -136,13 +137,13 @@ pub struct Alert {
     /// Alert message
     pub message: String,
     /// Timestamp when alert was raised
-    pub timestamp: i64,
+    pub timestamp: u64,
     /// Whether alert is still active
     pub active: bool,
 }
 
 /// Alert types
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AlertType {
     HighLatency,
     HighErrorRate,
@@ -156,7 +157,7 @@ pub enum AlertType {
 }
 
 /// Alert levels
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AlertLevel {
     Info,
     Warning,
@@ -165,31 +166,31 @@ pub enum AlertLevel {
 }
 
 /// Alert configuration
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AlertConfig {
-    /// Maximum response time before alert
-    pub max_response_time: Duration,
+    /// Maximum response time before alert in microseconds
+    pub max_response_time: u64,
     /// Maximum error rate before alert
     pub max_error_rate: f64,
     /// Maximum memory usage before alert
     pub max_memory_usage: u64,
-    /// Maximum connection count before alert
+    /// Maximum connections before alert
     pub max_connections: u32,
 }
 
 /// Performance thresholds
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PerformanceThresholds {
-    /// Response time thresholds
-    pub response_times: HashMap<String, Duration>,
+    /// Response time thresholds in microseconds
+    pub response_times: HashMap<String, u64>,
     /// Error rate thresholds
     pub error_rates: HashMap<String, f64>,
-    /// System resource thresholds
+    /// System thresholds
     pub system_thresholds: SystemThresholds,
 }
 
 /// System resource thresholds
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemThresholds {
     /// CPU usage threshold
     pub cpu_threshold: f64,
@@ -215,30 +216,32 @@ impl PerformanceMonitor {
         let mut metrics = self.metrics.write().await;
         let op_metrics = metrics.operations.entry(operation.to_string()).or_default();
 
+        let duration_us = duration.as_micros() as u64;
+
         op_metrics.total_count += 1;
-        op_metrics.total_duration += duration;
-        op_metrics.average_duration = op_metrics.total_duration / op_metrics.total_count as u32;
+        op_metrics.total_duration += duration_us;
+        op_metrics.average_duration = op_metrics.total_duration / op_metrics.total_count;
         op_metrics.last_operation = Some(current_timestamp());
 
         // Update min/max durations
-        if op_metrics.min_duration == Duration::ZERO || duration < op_metrics.min_duration {
-            op_metrics.min_duration = duration;
+        if op_metrics.min_duration == 0 || duration_us < op_metrics.min_duration {
+            op_metrics.min_duration = duration_us;
         }
-        if duration > op_metrics.max_duration {
-            op_metrics.max_duration = duration;
+        if duration_us > op_metrics.max_duration {
+            op_metrics.max_duration = duration_us;
         }
 
         // Maintain recent durations for moving average (keep last 100)
-        op_metrics.recent_durations.push(duration);
+        op_metrics.recent_durations.push(duration_us);
         if op_metrics.recent_durations.len() > 100 {
             op_metrics.recent_durations.remove(0);
         }
 
         debug!(
             operation = operation,
-            duration_ms = duration.as_millis(),
+            duration_ms = duration_us / 1000,
             total_count = op_metrics.total_count,
-            average_ms = op_metrics.average_duration.as_millis(),
+            average_ms = op_metrics.average_duration / 1000,
             "Operation performance recorded"
         );
     }
@@ -313,7 +316,7 @@ impl PerformanceMonitor {
     }
 
     /// Record security event
-    pub async fn record_security_event(&self, event_type: &str, description: &str) {
+    pub async fn record_security_event(&self, event_type: &str, _description: &str) {
         let mut security_metrics = self.security_metrics.write().await;
 
         // Update security event counters
@@ -393,7 +396,7 @@ impl PerformanceMonitor {
         let mut metrics = self.metrics.write().await;
         let system_metrics = &mut metrics.system;
 
-        system_metrics.uptime = system_metrics.start_time.elapsed();
+        system_metrics.uptime = current_timestamp() - system_metrics.start_time;
         system_metrics.active_connections = connections;
         system_metrics.active_rooms = rooms;
         system_metrics.active_users = users;
@@ -420,8 +423,8 @@ impl PerformanceMonitor {
                         message: format!(
                             "High latency detected for operation {}: {}ms (threshold: {}ms)",
                             operation,
-                            op_metrics.average_duration.as_millis(),
-                            threshold.as_millis()
+                            op_metrics.average_duration / 1000,
+                            threshold / 1000
                         ),
                         timestamp: current_timestamp(),
                         active: true,
@@ -508,7 +511,7 @@ impl PerformanceMonitor {
         let mut thresholds = self.thresholds.write().await;
         thresholds
             .response_times
-            .insert(operation.to_string(), threshold);
+            .insert(operation.to_string(), threshold.as_micros() as u64);
     }
 
     /// Get performance report
@@ -564,9 +567,9 @@ impl PerformanceMonitor {
                 "  {}: {} calls, avg {}ms, min {}ms, max {}ms\n",
                 operation,
                 op_metrics.total_count,
-                op_metrics.average_duration.as_millis(),
-                op_metrics.min_duration.as_millis(),
-                op_metrics.max_duration.as_millis()
+                op_metrics.average_duration / 1000,
+                op_metrics.min_duration / 1000,
+                op_metrics.max_duration / 1000
             ));
         }
         report.push_str("\n");
@@ -604,12 +607,12 @@ impl Default for PerformanceMonitor {
 impl Default for PerformanceThresholds {
     fn default() -> Self {
         let mut response_times = HashMap::new();
-        response_times.insert("LOGIN".to_string(), Duration::from_millis(100));
-        response_times.insert("REGISTER".to_string(), Duration::from_millis(200));
-        response_times.insert("MESSAGE".to_string(), Duration::from_millis(50));
-        response_times.insert("CREATE_ROOM".to_string(), Duration::from_millis(150));
-        response_times.insert("JOIN_ROOM".to_string(), Duration::from_millis(100));
-        response_times.insert("INVITE_USER".to_string(), Duration::from_millis(100));
+        response_times.insert("LOGIN".to_string(), 100_000); // 100ms in microseconds
+        response_times.insert("REGISTER".to_string(), 200_000); // 200ms in microseconds
+        response_times.insert("MESSAGE".to_string(), 50_000); // 50ms in microseconds
+        response_times.insert("CREATE_ROOM".to_string(), 150_000); // 150ms in microseconds
+        response_times.insert("JOIN_ROOM".to_string(), 100_000); // 100ms in microseconds
+        response_times.insert("INVITE_USER".to_string(), 100_000); // 100ms in microseconds
 
         Self {
             response_times,
@@ -626,8 +629,8 @@ impl Default for PerformanceThresholds {
 impl Default for AlertConfig {
     fn default() -> Self {
         Self {
-            max_response_time: Duration::from_millis(500),
-            max_error_rate: 5.0,
+            max_response_time: 1_000_000, // 1000ms in microseconds
+            max_error_rate: 0.05,
             max_memory_usage: 1024 * 1024 * 1024, // 1GB
             max_connections: 1000,
         }
@@ -638,9 +641,20 @@ impl SystemMetrics {
     /// Create new system metrics with current timestamp
     pub fn new() -> Self {
         Self {
-            start_time: Instant::now(),
-            ..Default::default()
+            uptime: 0,
+            start_time: current_timestamp(),
+            cpu_usage: 0.0,
+            memory_usage: 0,
+            active_connections: 0,
+            active_rooms: 0,
+            active_users: 0,
         }
+    }
+}
+
+impl Default for SystemMetrics {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -703,7 +717,7 @@ mod tests {
         assert_eq!(metrics.operations["test_operation"].total_count, 1);
         assert_eq!(
             metrics.operations["test_operation"].average_duration,
-            duration
+            duration.as_micros() as u64
         );
     }
 

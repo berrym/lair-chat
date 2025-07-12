@@ -122,48 +122,76 @@ run_load_tests() {
 
     cd "${PROJECT_ROOT}"
 
-    # Start server in background for load testing
-    log INFO "Starting test server..."
+    # Build server if needed
+    log INFO "Building lair-chat server..."
     cargo build --release --bin lair-chat-server
 
-    # Start server with test configuration
+    # Start server in background for load testing
+    log INFO "Starting test server..."
     LAIR_CHAT_CONFIG="${PROJECT_ROOT}/config/test.toml" \
-    ./target/release/lair-chat-server &
+    ./target/release/lair-chat-server > "${TEST_RESULTS_DIR}/server_${TIMESTAMP}.log" 2>&1 &
     local server_pid=$!
 
-    # Wait for server to start
-    sleep 5
+    # Wait for server to start and verify
+    local server_ready=false
+    for i in {1..30}; do
+        if timeout 2 bash -c "</dev/tcp/127.0.0.1/3335" 2>/dev/null; then
+            server_ready=true
+            break
+        fi
+        sleep 1
+    done
 
-    # Verify server is running
-    if ! kill -0 $server_pid 2>/dev/null; then
-        log ERROR "Test server failed to start"
+    if [ "$server_ready" = false ]; then
+        log ERROR "Test server failed to start or become ready"
+        kill $server_pid 2>/dev/null || true
         return 1
     fi
 
+    log SUCCESS "Test server is ready"
+
+    # Start performance monitoring
+    log INFO "Starting performance monitoring..."
+    "${SCRIPT_DIR}/monitor_performance.sh" --start --duration "${LOAD_DURATION}" \
+        --alert-cpu 80 --alert-memory 85 || log WARN "Could not start monitoring"
+
+    # Run comprehensive load tests
     log INFO "Running load tests with ${CONCURRENT_USERS} concurrent users for ${LOAD_DURATION}s..."
 
-    # Run load test
     if [ -f "${SCRIPT_DIR}/load_test.sh" ]; then
         "${SCRIPT_DIR}/load_test.sh" \
             --users "${CONCURRENT_USERS}" \
             --duration "${LOAD_DURATION}" \
+            --messages-per-user 10 \
+            --message-rate 10 \
+            --connection-rate 50 \
             --output "${TEST_RESULTS_DIR}/load_test_${TIMESTAMP}.json" \
             2>&1 | tee -a "${TEST_LOG}"
+        local load_test_result=$?
     else
-        log WARN "Load test script not found, creating basic load test..."
-        # Basic load test using existing tools
-        for i in $(seq 1 10); do
-            timeout 30 cargo test --test stress_test --release &
-        done
-        wait
+        log ERROR "Load test script not found at ${SCRIPT_DIR}/load_test.sh"
+        load_test_result=1
     fi
+
+    # Run Rust load tests
+    log INFO "Running Rust load test suite..."
+    cargo test --test '*' --release -- load 2>&1 | tee -a "${TEST_LOG}"
+
+    # Stop performance monitoring
+    "${SCRIPT_DIR}/monitor_performance.sh" --stop || log WARN "Could not stop monitoring"
 
     # Stop test server
     log INFO "Stopping test server..."
     kill $server_pid 2>/dev/null || true
     wait $server_pid 2>/dev/null || true
 
-    log SUCCESS "Load tests completed"
+    if [ $load_test_result -eq 0 ]; then
+        log SUCCESS "Load tests completed successfully"
+        return 0
+    else
+        log ERROR "Load tests failed"
+        return 1
+    fi
 }
 
 # Function to run stress tests
@@ -172,15 +200,72 @@ run_stress_tests() {
 
     cd "${PROJECT_ROOT}"
 
-    # Memory leak detection
+    # Build server if needed
+    log INFO "Building lair-chat server..."
+    cargo build --release --bin lair-chat-server
+
+    # Start server in background for stress testing
+    log INFO "Starting test server for stress testing..."
+    LAIR_CHAT_CONFIG="${PROJECT_ROOT}/config/test.toml" \
+    ./target/release/lair-chat-server > "${TEST_RESULTS_DIR}/stress_server_${TIMESTAMP}.log" 2>&1 &
+    local server_pid=$!
+
+    # Wait for server to start and verify
+    local server_ready=false
+    for i in {1..30}; do
+        if timeout 2 bash -c "</dev/tcp/127.0.0.1/3335" 2>/dev/null; then
+            server_ready=true
+            break
+        fi
+        sleep 1
+    done
+
+    if [ "$server_ready" = false ]; then
+        log ERROR "Test server failed to start for stress testing"
+        kill $server_pid 2>/dev/null || true
+        return 1
+    fi
+
+    log SUCCESS "Test server ready for stress testing"
+
+    # Start intensive performance monitoring for stress tests
+    log INFO "Starting intensive performance monitoring..."
+    "${SCRIPT_DIR}/monitor_performance.sh" --start --duration "${STRESS_DURATION}" \
+        --interval 1 --alert-cpu 90 --alert-memory 95 --alert-connections 500 \
+        || log WARN "Could not start stress monitoring"
+
+    # Run comprehensive stress tests
+    log INFO "Running stress tests with up to 500 users for ${STRESS_DURATION}s..."
+
+    if [ -f "${SCRIPT_DIR}/stress_test.sh" ]; then
+        "${SCRIPT_DIR}/stress_test.sh" \
+            --max-users 500 \
+            --duration "${STRESS_DURATION}" \
+            --memory-stress 1024 \
+            --connection-burst 100 \
+            --increment 50 \
+            --output "${TEST_RESULTS_DIR}/stress_test_${TIMESTAMP}.json" \
+            2>&1 | tee -a "${TEST_LOG}"
+        local stress_test_result=$?
+    else
+        log ERROR "Stress test script not found at ${SCRIPT_DIR}/stress_test.sh"
+        stress_test_result=1
+    fi
+
+    # Run Rust stress tests
+    log INFO "Running Rust stress test suite..."
+    cargo test --test '*' --release -- stress 2>&1 | tee -a "${TEST_LOG}"
+
+    # Memory leak detection with valgrind if available
     log INFO "Running memory leak detection..."
     if command -v valgrind >/dev/null 2>&1; then
-        valgrind --tool=memcheck --leak-check=full --show-leak-kinds=all \
+        log INFO "Starting valgrind memory analysis..."
+        timeout 60 valgrind --tool=memcheck --leak-check=full --show-leak-kinds=all \
             --track-origins=yes --log-file="${TEST_RESULTS_DIR}/valgrind_${TIMESTAMP}.log" \
-            ./target/release/lair-chat-server --test-mode &
+            ./target/release/lair-chat-server --config config/test.toml &
         local valgrind_pid=$!
 
-        sleep 30  # Let it run for 30 seconds
+        sleep 30  # Let it run for 30 seconds under load
         kill $valgrind_pid 2>/dev/null || true
         wait $valgrind_pid 2>/dev/null || true
 
@@ -189,11 +274,21 @@ run_stress_tests() {
         log WARN "Valgrind not available, skipping memory leak detection"
     fi
 
-    # Resource exhaustion tests
-    log INFO "Running resource exhaustion tests..."
-    cargo test --test stress --release -- --test-threads=1 2>&1 | tee -a "${TEST_LOG}"
+    # Stop performance monitoring
+    "${SCRIPT_DIR}/monitor_performance.sh" --stop || log WARN "Could not stop stress monitoring"
 
-    log SUCCESS "Stress tests completed"
+    # Stop test server
+    log INFO "Stopping stress test server..."
+    kill $server_pid 2>/dev/null || true
+    wait $server_pid 2>/dev/null || true
+
+    if [ $stress_test_result -eq 0 ]; then
+        log SUCCESS "Stress tests completed successfully"
+        return 0
+    else
+        log ERROR "Stress tests failed"
+        return 1
+    fi
 }
 
 # Function to run security tests
@@ -248,16 +343,24 @@ This report summarizes the comprehensive testing results for the lair-chat appli
 - **Benchmarks:** Available in test results directory
 
 ### Load Tests
-- **Status:** $(grep -q "Load tests completed" "${TEST_LOG}" && echo "PASSED" || echo "FAILED")
+- **Status:** $(grep -q "Load tests completed successfully" "${TEST_LOG}" && echo "PASSED" || echo "FAILED")
 - **Concurrent Users:** ${CONCURRENT_USERS}
 - **Duration:** ${LOAD_DURATION} seconds
+- **Results:** $([ -f "${TEST_RESULTS_DIR}/load_test_${TIMESTAMP}.json" ] && echo "Available" || echo "Not generated")
 
 ### Stress Tests
-- **Status:** $(grep -q "Stress tests completed" "${TEST_LOG}" && echo "PASSED" || echo "FAILED")
+- **Status:** $(grep -q "Stress tests completed successfully" "${TEST_LOG}" && echo "PASSED" || echo "FAILED")
+- **Max Users Tested:** Up to 500 concurrent users
+- **Duration:** ${STRESS_DURATION} seconds
 - **Memory Analysis:** $([ -f "${TEST_RESULTS_DIR}/valgrind_${TIMESTAMP}.log" ] && echo "Available" || echo "Not performed")
+- **Results:** $([ -f "${TEST_RESULTS_DIR}/stress_test_${TIMESTAMP}.json" ] && echo "Available" || echo "Not generated")
 
 ### Security Tests
 - **Status:** $(grep -q "Security tests completed" "${TEST_LOG}" && echo "PASSED" || echo "FAILED")
+
+### Performance Monitoring
+- **Load Test Monitoring:** $(find "${TEST_RESULTS_DIR}" -name "monitoring_report_*.md" -newer "${TEST_LOG}" | wc -l) reports generated
+- **System Alerts:** $(find "${TEST_RESULTS_DIR}" -name "alerts_*.log" -newer "${TEST_LOG}" | wc -l) alert logs created
 
 ## Detailed Results
 
@@ -278,7 +381,11 @@ fi)
 - Test log: \`test_run_${TIMESTAMP}.log\`
 - Coverage report: \`coverage/tarpaulin-report.html\`
 - Performance data: \`baseline_performance.json\`
+$([ -f "${TEST_RESULTS_DIR}/load_test_${TIMESTAMP}.json" ] && echo "- Load test results: \`load_test_${TIMESTAMP}.json\`")
+$([ -f "${TEST_RESULTS_DIR}/stress_test_${TIMESTAMP}.json" ] && echo "- Stress test results: \`stress_test_${TIMESTAMP}.json\`")
 $([ -f "${TEST_RESULTS_DIR}/valgrind_${TIMESTAMP}.log" ] && echo "- Memory analysis: \`valgrind_${TIMESTAMP}.log\`")
+$(find "${TEST_RESULTS_DIR}" -name "monitoring_report_*.md" -newer "${TEST_LOG}" | head -1 | sed 's/.*\//- Performance monitoring: /' || echo "")
+$(find "${TEST_RESULTS_DIR}" -name "metrics_*.csv" -newer "${TEST_LOG}" | head -1 | sed 's/.*\//- System metrics: /' || echo "")
 
 EOF
 
@@ -397,7 +504,9 @@ main() {
             if [ "$quick_mode" = false ]; then
                 run_performance_tests || ((failed_tests++))
                 run_load_tests || ((failed_tests++))
-                run_stress_tests || ((failed_tests++))
+                if [ "$quick_mode" = false ]; then
+                    run_stress_tests || ((failed_tests++))
+                fi
             fi
             run_security_tests || ((failed_tests++))
             ;;
@@ -414,6 +523,10 @@ main() {
             run_load_tests || ((failed_tests++))
             ;;
         "stress")
+            run_stress_tests || ((failed_tests++))
+            ;;
+        "load,stress")
+            run_load_tests || ((failed_tests++))
             run_stress_tests || ((failed_tests++))
             ;;
         "security")

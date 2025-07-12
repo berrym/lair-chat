@@ -845,7 +845,7 @@ pub struct Invitation {
 }
 
 /// Status of an invitation
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum InvitationStatus {
     /// Invitation is pending response
     Pending,

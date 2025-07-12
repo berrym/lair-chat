@@ -73,6 +73,21 @@ pub mod server {
     pub mod storage {
         pub use crate::server_storage::*;
     }
+    pub mod monitoring {
+        pub use crate::server_monitoring::*;
+    }
+    pub mod error {
+        pub use crate::server_error::*;
+    }
+    pub mod logging {
+        pub use crate::server_logging::*;
+    }
+    pub mod security {
+        pub use crate::server_security::*;
+    }
+    pub mod validation {
+        pub use crate::server_validation::*;
+    }
 }
 
 #[path = "server/api/mod.rs"]
@@ -95,6 +110,21 @@ pub mod server_config;
 
 #[path = "server/storage/mod.rs"]
 pub mod server_storage;
+
+#[path = "server/monitoring/mod.rs"]
+pub mod server_monitoring;
+
+#[path = "server/error/mod.rs"]
+pub mod server_error;
+
+#[path = "server/logging/mod.rs"]
+pub mod server_logging;
+
+#[path = "server/security/mod.rs"]
+pub mod server_security;
+
+#[path = "server/validation/mod.rs"]
+pub mod server_validation;
 
 // Re-export common modules for backward compatibility
 pub use common::crypto as aes_gcm_encryption;

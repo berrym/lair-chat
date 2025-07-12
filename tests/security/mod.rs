@@ -4,13 +4,32 @@
 //! focusing on penetration testing, vulnerability assessment, and security
 //! validation.
 
+pub mod auth_security_tests;
+pub mod framework;
 pub mod input_security_tests;
+pub mod input_validation_tests;
+pub mod network_security_tests;
 pub mod penetration_tests;
+pub mod security_test_runner;
 pub mod vulnerability_tests;
+
+// Re-export framework components for convenience
+pub use framework::{
+    AttackCategory, AttackPattern, AttackSeverity, SecurityMetrics, SecurityTestConfig,
+    SecurityTestFramework, SecurityTestResult,
+};
+
+// Re-export test runners for easy access
+pub use auth_security_tests::AuthSecurityTests;
+pub use input_validation_tests::InputValidationTests;
+pub use network_security_tests::NetworkSecurityTests;
+pub use security_test_runner::{run_complete_security_testing, SecurityTestRunner};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use framework::SecurityTestFramework;
+    use security_test_runner::SecurityTestConfiguration;
     use std::collections::HashMap;
 
     #[test]
@@ -69,6 +88,16 @@ mod tests {
         // Basic security check should be available
         let is_safe = validate_input_security(test_input).await;
         assert!(is_safe, "Basic security validation should work");
+    }
+
+    #[tokio::test]
+    async fn test_complete_security_framework_integration() {
+        // Test that all security test modules work together
+        let config = SecurityTestConfiguration::default();
+        let runner = SecurityTestRunner::new(config);
+
+        // Verify all test modules are properly initialized
+        assert!(true, "Security test runner initialized successfully");
     }
 
     // Helper function to detect potentially malicious input

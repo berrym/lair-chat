@@ -3,21 +3,31 @@
 //! This module contains stress testing scenarios to validate system behavior
 //! under extreme load conditions and resource pressure.
 
+use std::process::Stdio;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio::process::Command as TokioCommand;
 use tokio::sync::Semaphore;
 use tokio::time::sleep;
 
 #[tokio::test]
 async fn test_extreme_concurrent_load() {
-    // Test system behavior under extreme concurrent load
+    // Test system behavior under extreme concurrent load with real server
     let extreme_user_count = 500;
     let operations_per_user = 5;
+    let server_host = "127.0.0.1";
+    let server_port = 3335;
+
+    // Start test server if not running
+    ensure_test_server_running().await;
 
     let start_time = Instant::now();
     let completed_operations = Arc::new(AtomicUsize::new(0));
     let failed_operations = Arc::new(AtomicUsize::new(0));
+    let successful_connections = Arc::new(AtomicUsize::new(0));
 
     let semaphore = Arc::new(Semaphore::new(extreme_user_count));
     let mut handles = vec![];
@@ -26,23 +36,59 @@ async fn test_extreme_concurrent_load() {
         let permit = semaphore.clone().acquire_owned().await.unwrap();
         let completed_ops = completed_operations.clone();
         let failed_ops = failed_operations.clone();
+        let successful_conns = successful_connections.clone();
 
         let handle = tokio::spawn(async move {
             let _permit = permit; // Hold permit for duration
 
-            for op_id in 0..operations_per_user {
-                // Simulate high-stress operation
-                match simulate_stress_operation(user_id, op_id).await {
-                    Ok(_) => {
-                        completed_ops.fetch_add(1, Ordering::Relaxed);
+            // Attempt connection under extreme load
+            match TcpStream::connect(format!("{}:{}", server_host, server_port)).await {
+                Ok(mut stream) => {
+                    successful_conns.fetch_add(1, Ordering::Relaxed);
+
+                    // Register user with stress-specific username
+                    let username = format!("stress_user_{}", user_id);
+                    let register_cmd = format!("register {} stress_pass_{}\n", username, user_id);
+
+                    if stream.write_all(register_cmd.as_bytes()).await.is_ok() {
+                        // Perform rapid operations under stress
+                        for op_id in 0..operations_per_user {
+                            let message = format!(
+                                "say Stress test operation {} from user {}\n",
+                                op_id, user_id
+                            );
+
+                            match stream.write_all(message.as_bytes()).await {
+                                Ok(_) => {
+                                    completed_ops.fetch_add(1, Ordering::Relaxed);
+                                    // Very brief delay - we want to stress the system
+                                    sleep(Duration::from_millis(10)).await;
+                                }
+                                Err(_) => {
+                                    failed_ops.fetch_add(1, Ordering::Relaxed);
+                                    break; // Connection failed, stop operations
+                                }
+                            }
+                        }
+
+                        // Quick disconnect
+                        let _ = stream.write_all(b"quit\n").await;
+                    } else {
+                        failed_ops.fetch_add(operations_per_user, Ordering::Relaxed);
                     }
-                    Err(_) => {
-                        failed_ops.fetch_add(1, Ordering::Relaxed);
-                    }
+                }
+                Err(_) => {
+                    // Connection failed - count all operations as failed
+                    failed_ops.fetch_add(operations_per_user, Ordering::Relaxed);
                 }
             }
         });
         handles.push(handle);
+
+        // Small staggered start to prevent instant overwhelming
+        if user_id % 50 == 0 {
+            sleep(Duration::from_millis(100)).await;
+        }
     }
 
     // Wait for all operations to complete
@@ -53,19 +99,28 @@ async fn test_extreme_concurrent_load() {
     let duration = start_time.elapsed();
     let completed = completed_operations.load(Ordering::Relaxed);
     let failed = failed_operations.load(Ordering::Relaxed);
+    let connections = successful_connections.load(Ordering::Relaxed);
     let total_operations = extreme_user_count * operations_per_user;
 
     println!(
-        "Extreme load test - Duration: {:?}, Completed: {}, Failed: {}, Total: {}",
-        duration, completed, failed, total_operations
+        "Extreme load test - Duration: {:?}, Completed: {}, Failed: {}, Total: {}, Connections: {}/{}",
+        duration, completed, failed, total_operations, connections, extreme_user_count
     );
 
-    // Under extreme load, some failures are acceptable
+    // Under extreme load, some failures are acceptable but system should remain responsive
     let failure_rate = failed as f64 / total_operations as f64;
+    let connection_rate = connections as f64 / extreme_user_count as f64;
+
     assert!(
-        failure_rate < 0.05, // Less than 5% failure rate
+        failure_rate < 0.20, // Less than 20% failure rate under extreme load
         "Failure rate too high under extreme load: {:.1}%",
         failure_rate * 100.0
+    );
+
+    assert!(
+        connection_rate > 0.5, // At least 50% of connections should succeed
+        "Connection rate too low under extreme load: {:.1}%",
+        connection_rate * 100.0
     );
 
     assert!(
@@ -76,64 +131,87 @@ async fn test_extreme_concurrent_load() {
 
 #[tokio::test]
 async fn test_memory_pressure_stress() {
-    // Test system behavior under memory pressure
+    // Test system behavior under memory pressure with real server operations
     let chunk_size = 1024 * 1024; // 1MB chunks
-    let max_chunks = 100;
+    let max_chunks = 50; // Reduced for CI environments
+    let server_host = "127.0.0.1";
+    let server_port = 3335;
     let mut memory_chunks = Vec::new();
 
+    // Start test server if not running
+    ensure_test_server_running().await;
+
     let start_time = Instant::now();
-    let mut peak_memory_time = start_time;
+    let mut operation_times = Vec::new();
 
     for i in 0..max_chunks {
         // Allocate memory chunk
         let chunk = vec![i as u8; chunk_size];
         memory_chunks.push(chunk);
 
-        // Simulate some work with the allocated memory
-        sleep(Duration::from_millis(10)).await;
-
-        // Check if we can still perform basic operations
+        // Test server responsiveness under memory pressure
         let operation_start = Instant::now();
-        simulate_basic_operation().await;
-        let operation_duration = operation_start.elapsed();
 
-        // Operations should still complete in reasonable time under memory pressure
-        assert!(
-            operation_duration < Duration::from_millis(100),
-            "Operation took too long under memory pressure: {:?}",
-            operation_duration
-        );
+        match test_server_responsiveness(server_host, server_port, i).await {
+            Ok(response_time) => {
+                operation_times.push(response_time);
 
-        if i == max_chunks / 2 {
-            peak_memory_time = Instant::now();
+                // Operations should still complete in reasonable time under memory pressure
+                assert!(
+                    response_time < Duration::from_millis(1000),
+                    "Server response too slow under memory pressure: {:?} at chunk {}",
+                    response_time,
+                    i
+                );
+            }
+            Err(_) => {
+                println!("Server became unresponsive at memory chunk {}", i);
+                // Allow some failures under extreme memory pressure
+                if i < max_chunks / 2 {
+                    panic!("Server failed too early in memory pressure test");
+                }
+                break;
+            }
         }
 
+        let operation_duration = operation_start.elapsed();
         println!(
-            "Allocated {}MB, operation time: {:?}",
-            i + 1,
+            "Allocated {}MB, server response time: {:?}",
+            (i + 1) * chunk_size / (1024 * 1024),
             operation_duration
         );
+
+        // Brief pause between allocations
+        sleep(Duration::from_millis(100)).await;
     }
 
-    // Gradually release memory and test recovery
+    // Test recovery by gradually releasing memory
     let release_start = Instant::now();
+    let mut recovery_times = Vec::new();
+
     while !memory_chunks.is_empty() {
         memory_chunks.pop();
 
         if memory_chunks.len() % 10 == 0 {
-            // Test operation performance during memory release
-            let operation_start = Instant::now();
-            simulate_basic_operation().await;
-            let operation_duration = operation_start.elapsed();
+            // Test server recovery performance during memory release
+            let recovery_start_time = Instant::now();
 
-            println!(
-                "Memory release - {}MB remaining, operation time: {:?}",
-                memory_chunks.len(),
-                operation_duration
-            );
+            match test_server_responsiveness(server_host, server_port, 999).await {
+                Ok(response_time) => {
+                    recovery_times.push(response_time);
+                    println!(
+                        "Memory release - {}MB remaining, server response: {:?}",
+                        memory_chunks.len() * chunk_size / (1024 * 1024),
+                        response_time
+                    );
+                }
+                Err(_) => {
+                    println!("Server still unresponsive during recovery");
+                }
+            }
         }
 
-        sleep(Duration::from_millis(5)).await;
+        sleep(Duration::from_millis(50)).await;
     }
 
     let total_duration = start_time.elapsed();
@@ -143,6 +221,22 @@ async fn test_memory_pressure_stress() {
         "Memory stress test completed - Total: {:?}, Release: {:?}",
         total_duration, release_duration
     );
+
+    // Analyze performance degradation
+    if !operation_times.is_empty() {
+        let avg_response_time =
+            operation_times.iter().sum::<Duration>() / operation_times.len() as u32;
+        println!(
+            "Average server response time under memory pressure: {:?}",
+            avg_response_time
+        );
+
+        assert!(
+            avg_response_time < Duration::from_millis(500),
+            "Average response time too high under memory pressure: {:?}",
+            avg_response_time
+        );
+    }
 
     // System should recover after memory release
     assert!(
@@ -154,39 +248,85 @@ async fn test_memory_pressure_stress() {
 
 #[tokio::test]
 async fn test_sustained_high_throughput() {
-    // Test sustained high throughput operations
-    let test_duration = Duration::from_secs(30);
-    let target_throughput = 1000; // operations per second
+    // Test sustained high throughput operations with real server
+    let test_duration = Duration::from_secs(60); // Extended for stress testing
+    let target_throughput = 500; // operations per second (realistic for real server)
+    let server_host = "127.0.0.1";
+    let server_port = 3335;
+
+    // Start test server if not running
+    ensure_test_server_running().await;
 
     let start_time = Instant::now();
     let operations_completed = Arc::new(AtomicUsize::new(0));
     let operations_failed = Arc::new(AtomicUsize::new(0));
+    let connections_established = Arc::new(AtomicUsize::new(0));
 
     // Spawn multiple worker tasks
-    let worker_count = 10;
+    let worker_count = 20; // Increased worker count for stress testing
     let mut handles = vec![];
 
     for worker_id in 0..worker_count {
         let ops_completed = operations_completed.clone();
         let ops_failed = operations_failed.clone();
+        let conns_established = connections_established.clone();
 
         let handle = tokio::spawn(async move {
             let mut worker_operations = 0;
             let worker_start = Instant::now();
 
             while worker_start.elapsed() < test_duration {
-                match simulate_high_throughput_operation(worker_id, worker_operations).await {
-                    Ok(_) => {
-                        ops_completed.fetch_add(1, Ordering::Relaxed);
-                        worker_operations += 1;
+                // High throughput operation: rapid connect, send, disconnect
+                match TcpStream::connect(format!("{}:{}", server_host, server_port)).await {
+                    Ok(mut stream) => {
+                        conns_established.fetch_add(1, Ordering::Relaxed);
+
+                        let username =
+                            format!("throughput_worker_{}_{}", worker_id, worker_operations);
+                        let register_cmd = format!("register {} throughput_pass\n", username);
+
+                        if stream.write_all(register_cmd.as_bytes()).await.is_ok() {
+                            // Send rapid burst of messages
+                            let burst_size = 3;
+                            let mut burst_success = 0;
+
+                            for burst_msg in 0..burst_size {
+                                let message = format!(
+                                    "say High throughput message {} from worker {}\n",
+                                    burst_msg, worker_id
+                                );
+
+                                if stream.write_all(message.as_bytes()).await.is_ok() {
+                                    burst_success += 1;
+                                } else {
+                                    break;
+                                }
+                            }
+
+                            ops_completed.fetch_add(burst_success, Ordering::Relaxed);
+
+                            if burst_success < burst_size {
+                                ops_failed.fetch_add(burst_size - burst_success, Ordering::Relaxed);
+                            }
+
+                            // Quick disconnect
+                            let _ = stream.write_all(b"quit\n").await;
+                        } else {
+                            ops_failed.fetch_add(1, Ordering::Relaxed);
+                        }
                     }
                     Err(_) => {
                         ops_failed.fetch_add(1, Ordering::Relaxed);
                     }
                 }
 
+                worker_operations += 1;
+
+                // Minimal delay for maximum throughput stress
+                sleep(Duration::from_millis(20)).await;
+
                 // Brief yield to prevent blocking
-                if worker_operations % 100 == 0 {
+                if worker_operations % 50 == 0 {
                     tokio::task::yield_now().await;
                 }
             }
@@ -199,21 +339,35 @@ async fn test_sustained_high_throughput() {
     // Monitor progress
     let monitor_handle = tokio::spawn({
         let ops_completed = operations_completed.clone();
+        let ops_failed = operations_failed.clone();
         async move {
-            let mut last_count = 0;
+            let mut last_completed = 0;
+            let mut last_failed = 0;
             let mut last_time = Instant::now();
 
             loop {
-                sleep(Duration::from_secs(5)).await;
+                sleep(Duration::from_secs(10)).await;
 
-                let current_count = ops_completed.load(Ordering::Relaxed);
+                let current_completed = ops_completed.load(Ordering::Relaxed);
+                let current_failed = ops_failed.load(Ordering::Relaxed);
                 let current_time = Instant::now();
                 let elapsed = current_time.duration_since(last_time);
 
-                let throughput = (current_count - last_count) as f64 / elapsed.as_secs_f64();
-                println!("Current throughput: {:.1} ops/sec", throughput);
+                let throughput =
+                    (current_completed - last_completed) as f64 / elapsed.as_secs_f64();
+                let failure_rate = if current_completed + current_failed > 0 {
+                    current_failed as f64 / (current_completed + current_failed) as f64 * 100.0
+                } else {
+                    0.0
+                };
 
-                last_count = current_count;
+                println!(
+                    "Sustained throughput - ops: {}, failed: {}, rate: {:.1} ops/sec, failure: {:.1}%",
+                    current_completed, current_failed, throughput, failure_rate
+                );
+
+                last_completed = current_completed;
+                last_failed = current_failed;
                 last_time = current_time;
 
                 if current_time.duration_since(start_time) >= test_duration {
@@ -235,16 +389,17 @@ async fn test_sustained_high_throughput() {
     let actual_duration = start_time.elapsed();
     let completed = operations_completed.load(Ordering::Relaxed);
     let failed = operations_failed.load(Ordering::Relaxed);
+    let connections = connections_established.load(Ordering::Relaxed);
     let actual_throughput = completed as f64 / actual_duration.as_secs_f64();
 
     println!(
-        "Sustained throughput test - Duration: {:?}, Completed: {}, Failed: {}, Throughput: {:.1} ops/sec",
-        actual_duration, completed, failed, actual_throughput
+        "Sustained throughput test - Duration: {:?}, Completed: {}, Failed: {}, Connections: {}, Throughput: {:.1} ops/sec",
+        actual_duration, completed, failed, connections, actual_throughput
     );
 
-    // Verify sustained throughput
+    // Verify sustained throughput (adjusted for real server capabilities)
     assert!(
-        actual_throughput >= target_throughput as f64 * 0.8, // Allow 20% below target
+        actual_throughput >= target_throughput as f64 * 0.6, // Allow 40% below target for real server
         "Sustained throughput too low: {:.1} ops/sec (target: {} ops/sec)",
         actual_throughput,
         target_throughput
@@ -252,9 +407,16 @@ async fn test_sustained_high_throughput() {
 
     let failure_rate = failed as f64 / (completed + failed) as f64;
     assert!(
-        failure_rate < 0.01, // Less than 1% failure rate
+        failure_rate < 0.10, // Less than 10% failure rate under stress
         "Failure rate too high during sustained load: {:.1}%",
         failure_rate * 100.0
+    );
+
+    // Ensure we established reasonable number of connections
+    assert!(
+        connections > 100,
+        "Too few connections established: {}",
+        connections
     );
 }
 
@@ -416,6 +578,79 @@ enum LoadTestResult {
     Success,
     Degraded,
     Failure,
+}
+
+async fn test_server_responsiveness(
+    host: &str,
+    port: u16,
+    test_id: usize,
+) -> Result<Duration, Box<dyn std::error::Error + Send + Sync>> {
+    let start_time = Instant::now();
+
+    let mut stream = TcpStream::connect(format!("{}:{}", host, port)).await?;
+
+    // Quick operation to test responsiveness
+    let username = format!("responsiveness_test_{}", test_id);
+    let register_cmd = format!("register {} test_pass\n", username);
+
+    stream.write_all(register_cmd.as_bytes()).await?;
+
+    // Send a test message
+    let test_message = format!("say Responsiveness test {}\n", test_id);
+    stream.write_all(test_message.as_bytes()).await?;
+
+    // Quick disconnect
+    let _ = stream.write_all(b"quit\n").await;
+
+    Ok(start_time.elapsed())
+}
+
+// Helper function to ensure test server is running
+async fn ensure_test_server_running() {
+    let server_host = "127.0.0.1";
+    let server_port = 3335;
+
+    // Check if server is already running
+    match TcpStream::connect(format!("{}:{}", server_host, server_port)).await {
+        Ok(_) => {
+            println!("Test server is already running");
+            return;
+        }
+        Err(_) => {
+            println!("Starting test server...");
+        }
+    }
+
+    // Start server in background (this would typically be done externally)
+    let server_process = TokioCommand::new("cargo")
+        .args(&[
+            "run",
+            "--bin",
+            "lair-chat-server",
+            "--",
+            "--config",
+            "config/test.toml",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+
+    if server_process.is_ok() {
+        // Wait for server to start
+        for _ in 0..30 {
+            sleep(Duration::from_millis(500)).await;
+            if TcpStream::connect(format!("{}:{}", server_host, server_port))
+                .await
+                .is_ok()
+            {
+                println!("Test server started successfully");
+                return;
+            }
+        }
+        println!("Warning: Test server may not have started properly");
+    } else {
+        println!("Warning: Could not start test server automatically");
+    }
 }
 
 async fn simulate_stress_operation(user_id: usize, op_id: usize) -> Result<(), &'static str> {

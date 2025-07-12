@@ -25,7 +25,7 @@ pub struct ErrorHandler {
     /// Error statistics
     stats: Arc<RwLock<ErrorStats>>,
     /// Recovery policies
-    recovery_policies: HashMap<String, RecoveryPolicy>,
+    recovery_policies: HashMap<String, RetryPolicy>,
     /// Circuit breakers for error-prone operations
     circuit_breakers: Arc<RwLock<HashMap<String, CircuitBreaker>>>,
     retry_executor: RetryExecutor,
@@ -40,7 +40,7 @@ pub struct ErrorStats {
     pub recovery_attempts: u64,
     pub successful_recoveries: u64,
     pub failed_recoveries: u64,
-    pub last_error_time: Option<i64>,
+    pub last_error_time: Option<u64>,
 }
 
 /// Circuit breaker for preventing cascading failures
@@ -74,7 +74,7 @@ pub struct ErrorResponse {
     pub error_code: String,
     pub message: String,
     pub details: Option<String>,
-    pub timestamp: i64,
+    pub timestamp: u64,
     pub request_id: Option<String>,
 }
 

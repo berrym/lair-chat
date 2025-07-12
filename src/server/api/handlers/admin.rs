@@ -1039,7 +1039,7 @@ pub async fn get_performance_metrics(
         user_context.username
     );
 
-    let performance_monitor = get_performance_monitor().await;
+    let performance_monitor = get_performance_monitor();
     let metrics = performance_monitor.get_metrics().await;
     let security_metrics = performance_monitor.get_security_metrics().await;
 
@@ -1047,8 +1047,8 @@ pub async fn get_performance_metrics(
         "operations": metrics.operations,
         "errors": metrics.errors,
         "system": {
-            "uptime": metrics.system.uptime.as_secs(),
-            "start_time": metrics.system.start_time.elapsed().as_secs(),
+            "uptime": metrics.system.uptime,
+            "start_time": metrics.system.start_time,
             "cpu_usage": metrics.system.cpu_usage,
             "memory_usage": metrics.system.memory_usage,
             "active_connections": metrics.system.active_connections,
@@ -1100,7 +1100,7 @@ pub async fn get_performance_report(
         user_context.username
     );
 
-    let performance_monitor = get_performance_monitor().await;
+    let performance_monitor = get_performance_monitor();
     let report = performance_monitor.get_performance_report().await;
 
     info!(
@@ -1135,7 +1135,7 @@ pub async fn get_performance_alerts(
         user_context.username
     );
 
-    let performance_monitor = get_performance_monitor().await;
+    let performance_monitor = get_performance_monitor();
     let alerts = performance_monitor.get_active_alerts().await;
 
     let alert_data: Vec<serde_json::Value> = alerts
@@ -1184,7 +1184,7 @@ pub async fn clear_performance_alerts(
         user_context.username
     );
 
-    let performance_monitor = get_performance_monitor().await;
+    let performance_monitor = get_performance_monitor();
     performance_monitor.clear_alerts().await;
 
     info!(

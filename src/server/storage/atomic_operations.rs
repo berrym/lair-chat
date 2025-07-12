@@ -6,7 +6,7 @@
 
 use super::{current_timestamp, generate_id, models::*, transactions::*, StorageError};
 use async_trait::async_trait;
-use sqlx::Row;
+use sqlx::{Row, Sqlite};
 
 /// Atomic operations implementation
 pub struct AtomicOperations {
@@ -178,7 +178,9 @@ impl TransactionOperations for AtomicOperations {
         .bind(match membership.role {
             RoomRole::Owner => "owner",
             RoomRole::Admin => "admin",
+            RoomRole::Moderator => "moderator",
             RoomRole::Member => "member",
+            RoomRole::Guest => "guest",
         })
         .bind(membership.joined_at as i64)
         .bind("pending")
@@ -355,14 +357,31 @@ impl TransactionOperations for AtomicOperations {
             match operation {
                 RoomOperation::CreateRoom(room) => {
                     sqlx::query(
-                        "INSERT INTO rooms (id, name, description, is_public, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?)"
+                        "INSERT INTO rooms (id, name, display_name, description, topic, room_type, privacy, settings, created_by, created_at, updated_at, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                     )
                     .bind(&room.id)
                     .bind(&room.name)
+                    .bind(&room.display_name)
                     .bind(&room.description)
-                    .bind(room.is_public)
-                    .bind(room.created_at as i64)
+                    .bind(&room.topic)
+                    .bind(match room.room_type {
+                        RoomType::Channel => "channel",
+                        RoomType::Group => "group",
+                        RoomType::DirectMessage => "direct_message",
+                        RoomType::System => "system",
+                        RoomType::Temporary => "temporary",
+                    })
+                    .bind(match room.privacy {
+                        RoomPrivacy::Public => "public",
+                        RoomPrivacy::Private => "private",
+                        RoomPrivacy::Protected => "protected",
+                        RoomPrivacy::System => "system",
+                    })
+                    .bind(serde_json::to_string(&room.settings).unwrap_or_default())
                     .bind(&room.created_by)
+                    .bind(room.created_at as i64)
+                    .bind(room.updated_at as i64)
+                    .bind(room.is_active)
                     .execute(&mut **transaction.inner_mut())
                     .await
                     .map_err(|e| TransactionError::StorageError(StorageError::QueryError {
@@ -374,11 +393,28 @@ impl TransactionOperations for AtomicOperations {
 
                 RoomOperation::UpdateRoom(room) => {
                     sqlx::query(
-                        "UPDATE rooms SET name = ?, description = ?, is_public = ? WHERE id = ?",
+                        "UPDATE rooms SET name = ?, display_name = ?, description = ?, topic = ?, room_type = ?, privacy = ?, settings = ?, updated_at = ?, is_active = ? WHERE id = ?",
                     )
                     .bind(&room.name)
+                    .bind(&room.display_name)
                     .bind(&room.description)
-                    .bind(room.is_public)
+                    .bind(&room.topic)
+                    .bind(match room.room_type {
+                        RoomType::Channel => "channel",
+                        RoomType::Group => "group",
+                        RoomType::DirectMessage => "direct_message",
+                        RoomType::System => "system",
+                        RoomType::Temporary => "temporary",
+                    })
+                    .bind(match room.privacy {
+                        RoomPrivacy::Public => "public",
+                        RoomPrivacy::Private => "private",
+                        RoomPrivacy::Protected => "protected",
+                        RoomPrivacy::System => "system",
+                    })
+                    .bind(serde_json::to_string(&room.settings).unwrap_or_default())
+                    .bind(room.updated_at as i64)
+                    .bind(room.is_active)
                     .bind(&room.id)
                     .execute(&mut **transaction.inner_mut())
                     .await
@@ -449,7 +485,9 @@ impl TransactionOperations for AtomicOperations {
                     .bind(match membership.role {
                         RoomRole::Owner => "owner",
                         RoomRole::Admin => "admin",
+                        RoomRole::Moderator => "moderator",
                         RoomRole::Member => "member",
+                        RoomRole::Guest => "guest",
                     })
                     .bind(membership.joined_at as i64)
                     .bind("active")
@@ -484,7 +522,9 @@ impl TransactionOperations for AtomicOperations {
                     .bind(match new_role {
                         RoomRole::Owner => "owner",
                         RoomRole::Admin => "admin",
+                        RoomRole::Moderator => "moderator",
                         RoomRole::Member => "member",
+                        RoomRole::Guest => "guest",
                     })
                     .bind(&room_id)
                     .bind(&user_id)
@@ -516,6 +556,9 @@ impl TransactionOperations for AtomicOperations {
                         user_id: membership_row.get("user_id"),
                         role: new_role,
                         joined_at: membership_row.get::<i64, _>("joined_at") as u64,
+                        last_activity: Some(current_timestamp()),
+                        is_active: true,
+                        settings: RoomMemberSettings::default(),
                     };
 
                     results.push(RoomOperationResult::MemberRoleUpdated(membership));
@@ -775,15 +818,33 @@ impl TransactionOperations for AtomicOperations {
         }
 
         // Create the room
+        // Insert the room
         sqlx::query(
-            "INSERT INTO rooms (id, name, description, is_public, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?)"
+            "INSERT INTO rooms (id, name, display_name, description, topic, room_type, privacy, settings, created_by, created_at, updated_at, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&room.id)
         .bind(&room.name)
+        .bind(&room.display_name)
         .bind(&room.description)
-        .bind(room.is_public)
-        .bind(room.created_at as i64)
+        .bind(&room.topic)
+        .bind(match room.room_type {
+            RoomType::Channel => "channel",
+            RoomType::Group => "group",
+            RoomType::DirectMessage => "direct_message",
+            RoomType::System => "system",
+            RoomType::Temporary => "temporary",
+        })
+        .bind(match room.privacy {
+            RoomPrivacy::Public => "public",
+            RoomPrivacy::Private => "private",
+            RoomPrivacy::Protected => "protected",
+            RoomPrivacy::System => "system",
+        })
+        .bind(serde_json::to_string(&room.settings).unwrap_or_default())
         .bind(&room.created_by)
+        .bind(room.created_at as i64)
+        .bind(room.updated_at as i64)
+        .bind(room.is_active)
         .execute(&mut **transaction.inner_mut())
         .await
         .map_err(|e| TransactionError::StorageError(StorageError::QueryError {
@@ -844,10 +905,16 @@ mod tests {
             "CREATE TABLE IF NOT EXISTS rooms (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
+                display_name TEXT NOT NULL,
                 description TEXT,
-                is_public BOOLEAN NOT NULL DEFAULT 0,
+                topic TEXT,
+                room_type TEXT NOT NULL DEFAULT 'channel',
+                privacy TEXT NOT NULL DEFAULT 'public',
+                settings TEXT NOT NULL DEFAULT '{}',
+                created_by TEXT NOT NULL,
                 created_at INTEGER NOT NULL,
-                created_by TEXT NOT NULL
+                updated_at INTEGER NOT NULL,
+                is_active BOOLEAN NOT NULL DEFAULT 1
             )",
         )
         .execute(&pool)
@@ -930,11 +997,17 @@ mod tests {
     async fn create_test_user(pool: &sqlx::Pool<Sqlite>) -> User {
         let user = User {
             id: generate_id(),
-            username: "testuser".to_string(),
-            password_hash: "hash123".to_string(),
+            username: "test_user".to_string(),
             email: Some("test@example.com".to_string()),
+            password_hash: "hashed_password".to_string(),
+            salt: "salt".to_string(),
             created_at: current_timestamp(),
+            updated_at: current_timestamp(),
+            last_seen: Some(current_timestamp()),
             is_active: true,
+            role: UserRole::User,
+            profile: UserProfile::default(),
+            settings: UserSettings::default(),
         };
 
         sqlx::query(
@@ -957,21 +1030,33 @@ mod tests {
         let room = Room {
             id: generate_id(),
             name: "Test Room".to_string(),
+            display_name: "Test Room".to_string(),
             description: Some("A test room".to_string()),
-            is_public: true,
-            created_at: current_timestamp(),
+            topic: None,
+            room_type: RoomType::Channel,
+            privacy: RoomPrivacy::Public,
+            settings: RoomSettings::default(),
             created_by: creator_id.to_string(),
+            created_at: current_timestamp(),
+            updated_at: current_timestamp(),
+            is_active: true,
         };
 
         sqlx::query(
-            "INSERT INTO rooms (id, name, description, is_public, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?)"
+            "INSERT INTO rooms (id, name, display_name, description, topic, room_type, privacy, settings, created_by, created_at, updated_at, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&room.id)
         .bind(&room.name)
+        .bind(&room.display_name)
         .bind(&room.description)
-        .bind(room.is_public)
-        .bind(room.created_at as i64)
+        .bind(&room.topic)
+        .bind("channel")
+        .bind("public")
+        .bind("{}")
         .bind(&room.created_by)
+        .bind(room.created_at as i64)
+        .bind(room.updated_at as i64)
+        .bind(room.is_active)
         .execute(pool)
         .await
         .unwrap();
@@ -999,6 +1084,9 @@ mod tests {
             user_id: inviter.id.clone(),
             role: RoomRole::Admin,
             joined_at: current_timestamp(),
+            last_activity: Some(current_timestamp()),
+            is_active: true,
+            settings: RoomMemberSettings::default(),
         };
 
         sqlx::query(
@@ -1010,7 +1098,7 @@ mod tests {
         .bind("admin")
         .bind(inviter_membership.joined_at as i64)
         .bind("active")
-        .execute(&pool)
+        .execute(pool)
         .await
         .unwrap();
 
@@ -1038,8 +1126,11 @@ mod tests {
             id: generate_id(),
             room_id: room.id.clone(),
             user_id: invitee.id.clone(),
-            role: RoomRole::Member,
+            role: RoomRole::Owner,
             joined_at: current_timestamp(),
+            last_activity: Some(current_timestamp()),
+            is_active: true,
+            settings: RoomMemberSettings::default(),
         };
 
         let mut transaction = manager.begin_transaction().await.unwrap();
@@ -1072,20 +1163,30 @@ mod tests {
 
         let user = User {
             id: generate_id(),
-            username: "newuser".to_string(),
-            password_hash: "hash123".to_string(),
-            email: Some("newuser@example.com".to_string()),
+            username: "test_user_2".to_string(),
+            email: Some("test2@example.com".to_string()),
+            password_hash: "hashed_password".to_string(),
+            salt: "salt".to_string(),
             created_at: current_timestamp(),
+            updated_at: current_timestamp(),
+            last_seen: Some(current_timestamp()),
             is_active: true,
+            role: UserRole::User,
+            profile: UserProfile::default(),
+            settings: UserSettings::default(),
         };
 
         let session = Session {
             id: generate_id(),
             user_id: user.id.clone(),
-            token: "token123".to_string(),
+            token: "test_token".to_string(),
             created_at: current_timestamp(),
             expires_at: current_timestamp() + 3600,
+            last_activity: current_timestamp(),
+            ip_address: Some("127.0.0.1".to_string()),
+            user_agent: Some("test_agent".to_string()),
             is_active: true,
+            metadata: SessionMetadata::default(),
         };
 
         let mut transaction = manager.begin_transaction().await.unwrap();
@@ -1099,7 +1200,7 @@ mod tests {
         // Verify user was created
         let stored_user = sqlx::query("SELECT * FROM users WHERE id = ?")
             .bind(&user.id)
-            .fetch_one(&pool)
+            .fetch_one(pool)
             .await
             .unwrap();
 
@@ -1108,7 +1209,7 @@ mod tests {
         // Verify session was created
         let stored_session = sqlx::query("SELECT * FROM sessions WHERE id = ?")
             .bind(&session.id)
-            .fetch_one(&pool)
+            .fetch_one(pool)
             .await
             .unwrap();
 
@@ -1127,10 +1228,16 @@ mod tests {
         let room = Room {
             id: generate_id(),
             name: "New Room".to_string(),
+            display_name: "New Room".to_string(),
             description: Some("A new room".to_string()),
-            is_public: false,
-            created_at: current_timestamp(),
+            topic: None,
+            room_type: RoomType::Channel,
+            privacy: RoomPrivacy::Private,
+            settings: RoomSettings::default(),
             created_by: creator.id.clone(),
+            created_at: current_timestamp(),
+            updated_at: current_timestamp(),
+            is_active: true,
         };
 
         let membership = RoomMembership {
@@ -1139,6 +1246,9 @@ mod tests {
             user_id: creator.id.clone(),
             role: RoomRole::Member, // Will be changed to Owner
             joined_at: current_timestamp(),
+            last_activity: Some(current_timestamp()),
+            is_active: true,
+            settings: RoomMemberSettings::default(),
         };
 
         let mut transaction = manager.begin_transaction().await.unwrap();
@@ -1155,7 +1265,7 @@ mod tests {
         // Verify room was created
         let stored_room = sqlx::query("SELECT * FROM rooms WHERE id = ?")
             .bind(&room.id)
-            .fetch_one(&pool)
+            .fetch_one(pool)
             .await
             .unwrap();
 
@@ -1166,7 +1276,7 @@ mod tests {
             sqlx::query("SELECT * FROM room_memberships WHERE room_id = ? AND user_id = ?")
                 .bind(&room.id)
                 .bind(&creator.id)
-                .fetch_one(&pool)
+                .fetch_one(pool)
                 .await
                 .unwrap();
 
