@@ -960,7 +960,7 @@ mod tests {
                 is_active BOOLEAN NOT NULL DEFAULT 1
             )",
         )
-        .execute(&pool)
+        .execute(&**pool)
         .await
         .unwrap();
 
@@ -974,7 +974,7 @@ mod tests {
                 message_type TEXT NOT NULL DEFAULT 'text'
             )",
         )
-        .execute(&pool)
+        .execute(&**pool)
         .await
         .unwrap();
 
@@ -987,7 +987,7 @@ mod tests {
                 created_at INTEGER NOT NULL
             )",
         )
-        .execute(&pool)
+        .execute(&**pool)
         .await
         .unwrap();
 
@@ -1019,7 +1019,7 @@ mod tests {
         .bind(&user.email)
         .bind(user.created_at as i64)
         .bind(user.is_active)
-        .execute(pool)
+        .execute(&**pool)
         .await
         .unwrap();
 
@@ -1057,7 +1057,7 @@ mod tests {
         .bind(room.created_at as i64)
         .bind(room.updated_at as i64)
         .bind(room.is_active)
-        .execute(pool)
+        .execute(&**pool)
         .await
         .unwrap();
 
@@ -1066,7 +1066,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_invitation_with_membership() {
-        let pool = Arc::new(create_test_pool().await);
+        let pool: Arc<sqlx::Pool<Sqlite>> = Arc::new(create_test_pool().await);
         let manager = DatabaseTransactionManager::with_defaults(pool.clone());
         let operations = AtomicOperations::new();
 
@@ -1098,7 +1098,7 @@ mod tests {
         .bind("admin")
         .bind(inviter_membership.joined_at as i64)
         .bind("active")
-        .execute(pool)
+        .execute(&**pool)
         .await
         .unwrap();
 
@@ -1148,7 +1148,7 @@ mod tests {
         // Verify invitation was created
         let stored_invitation = sqlx::query("SELECT * FROM invitations WHERE id = ?")
             .bind(&invitation.id)
-            .fetch_one(&pool)
+            .fetch_one(&**pool)
             .await
             .unwrap();
 
@@ -1157,7 +1157,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_user_registration_transaction() {
-        let pool = Arc::new(create_test_pool().await);
+        let pool: Arc<sqlx::Pool<Sqlite>> = Arc::new(create_test_pool().await);
         let manager = DatabaseTransactionManager::with_defaults(pool.clone());
         let operations = AtomicOperations::new();
 
@@ -1200,7 +1200,7 @@ mod tests {
         // Verify user was created
         let stored_user = sqlx::query("SELECT * FROM users WHERE id = ?")
             .bind(&user.id)
-            .fetch_one(pool)
+            .fetch_one(&**pool)
             .await
             .unwrap();
 
@@ -1209,7 +1209,7 @@ mod tests {
         // Verify session was created
         let stored_session = sqlx::query("SELECT * FROM sessions WHERE id = ?")
             .bind(&session.id)
-            .fetch_one(pool)
+            .fetch_one(&**pool)
             .await
             .unwrap();
 
@@ -1218,7 +1218,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_room_with_membership() {
-        let pool = Arc::new(create_test_pool().await);
+        let pool: Arc<sqlx::Pool<Sqlite>> = Arc::new(create_test_pool().await);
         let manager = DatabaseTransactionManager::with_defaults(pool.clone());
         let operations = AtomicOperations::new();
 
@@ -1265,7 +1265,7 @@ mod tests {
         // Verify room was created
         let stored_room = sqlx::query("SELECT * FROM rooms WHERE id = ?")
             .bind(&room.id)
-            .fetch_one(pool)
+            .fetch_one(&**pool)
             .await
             .unwrap();
 
@@ -1276,7 +1276,7 @@ mod tests {
             sqlx::query("SELECT * FROM room_memberships WHERE room_id = ? AND user_id = ?")
                 .bind(&room.id)
                 .bind(&creator.id)
-                .fetch_one(pool)
+                .fetch_one(&**pool)
                 .await
                 .unwrap();
 

@@ -4,8 +4,6 @@
 //! including parameter validation, format checking, and security validation.
 
 use std::collections::HashMap;
-use std::net::IpAddr;
-use std::str::FromStr;
 
 use crate::server::error::ValidationError;
 use crate::server::validation::{CommandValidator, ValidatedInput, ValidationResult};
@@ -730,6 +728,10 @@ impl CommandValidator for InviteUserValidator {
 }
 
 impl InviteUserValidator {
+    pub fn new() -> Self {
+        InviteUserValidator
+    }
+
     fn is_valid_room_id(room_id: &str) -> bool {
         !room_id.is_empty()
             && room_id.len() <= 100

@@ -430,24 +430,45 @@ impl TcpError {
     /// Convert from storage error
     pub fn from_storage_error(error: StorageError) -> Self {
         match error {
-            StorageError::ConnectionFailed(msg) => {
-                TcpError::DatabaseError(DatabaseError::ConnectionFailed(msg))
+            StorageError::ConnectionError { message } => {
+                TcpError::DatabaseError(DatabaseError::ConnectionFailed(message))
             }
-            StorageError::QueryFailed(msg) => {
-                TcpError::DatabaseError(DatabaseError::QueryFailed(msg))
+            StorageError::QueryError { message } => {
+                TcpError::DatabaseError(DatabaseError::QueryFailed(message))
             }
-            StorageError::SerializationError(msg) => {
-                TcpError::DatabaseError(DatabaseError::SerializationError(msg))
+            StorageError::SerializationError { message } => {
+                TcpError::DatabaseError(DatabaseError::SerializationError(message))
             }
-            StorageError::ValidationError(msg) => {
-                TcpError::ValidationError(ValidationError::InvalidValue(msg))
+            StorageError::ValidationError { field: _, message } => {
+                TcpError::ValidationError(ValidationError::InvalidValue(message))
             }
-            StorageError::NotFound(msg) => TcpError::ResourceNotFound(msg),
-            StorageError::Conflict(msg) => {
-                TcpError::ValidationError(ValidationError::ConflictingValues(msg))
+            StorageError::NotFound { entity, id } => {
+                TcpError::ResourceNotFound(format!("{} with id {}", entity, id))
             }
-            StorageError::Unauthorized(msg) => TcpError::AuthorizationDenied(msg),
-            StorageError::InternalError(msg) => TcpError::InternalError(msg),
+            StorageError::DuplicateError { entity: _, message } => {
+                TcpError::ValidationError(ValidationError::ConflictingValues(message))
+            }
+            StorageError::ConstraintError { message } => {
+                TcpError::ValidationError(ValidationError::ConflictingValues(message))
+            }
+            StorageError::TimeoutError => {
+                TcpError::InternalError("Database operation timed out".to_string())
+            }
+            StorageError::PoolExhausted => {
+                TcpError::InternalError("Database connection pool exhausted".to_string())
+            }
+            StorageError::TransactionError { message } => {
+                TcpError::DatabaseError(DatabaseError::QueryFailed(message))
+            }
+            StorageError::MigrationError { message } => {
+                TcpError::InternalError(format!("Migration failed: {}", message))
+            }
+            StorageError::DeserializationError { message } => {
+                TcpError::DatabaseError(DatabaseError::SerializationError(message))
+            }
+            StorageError::UnsupportedOperation { operation } => {
+                TcpError::InternalError(format!("Unsupported operation: {}", operation))
+            }
         }
     }
 

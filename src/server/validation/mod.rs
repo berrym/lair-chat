@@ -7,12 +7,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing;
 
 pub mod rules;
 pub use rules::*;
 
-use crate::server::error::{TcpError, ValidationError};
+use crate::server::error::ValidationError;
 use crate::server::storage::current_timestamp;
 
 /// Result type for validation operations

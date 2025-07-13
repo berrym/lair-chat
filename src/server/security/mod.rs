@@ -4,13 +4,12 @@
 //! and threat prevention for the TCP server.
 
 use std::collections::HashMap;
-use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::warn;
 
-use crate::server::error::{TcpError, ValidationError};
+use crate::server::error::TcpError;
 use crate::server::logging::{SecurityEvent, SecurityEventType, SecuritySeverity};
 use crate::server::storage::current_timestamp;
 use crate::server::validation::ValidatedInput;
@@ -352,7 +351,7 @@ impl SecurityMiddleware {
             user_id: input.user_id.clone(),
             ip_address: ip_address.map(|ip| ip.to_string()),
             description: format!("Security validation for command: {}", input.command),
-            timestamp: current_timestamp(),
+            timestamp: current_timestamp() as i64,
             severity: SecuritySeverity::Low,
             context: HashMap::new(),
         };
@@ -391,12 +390,27 @@ impl SecurityMiddleware {
         description: &str,
     ) -> SecurityResult<()> {
         let mut intrusion_detector = self.intrusion_detector.write().await;
+        let activity_type_enum = match activity_type {
+            "failed_login" => SuspiciousActivityType::RepeatedFailedLogins,
+            "invalid_input" => SuspiciousActivityType::InvalidInputPatterns,
+            "rate_limit" => SuspiciousActivityType::RateLimitExceeded,
+            "suspicious_command" => SuspiciousActivityType::SuspiciousCommands,
+            "malformed_request" => SuspiciousActivityType::MalformedRequests,
+            "injection" => SuspiciousActivityType::InjectionAttempts,
+            "brute_force" => SuspiciousActivityType::BruteForceAttack,
+            "account_enum" => SuspiciousActivityType::AccountEnumeration,
+            _ => SuspiciousActivityType::SuspiciousCommands, // default
+        };
         intrusion_detector
-            .record_suspicious_activity(&ip_address.to_string(), user_id.as_deref(), activity_type)
-            .await?;
+            .record_suspicious_activity(
+                &ip_address.to_string(),
+                user_id.as_deref(),
+                activity_type_enum,
+            )
+            .await;
 
         // Log security event
-        self.log_security_event(
+        self.log_security_event_with_details(
             ip_address,
             user_id.clone(),
             activity_type,
@@ -427,7 +441,7 @@ impl SecurityMiddleware {
                 .await;
 
             // Log the automated response
-            self.log_security_event(
+            self.log_security_event_with_details(
                 ip_address,
                 user_id,
                 "automated_block",
@@ -444,13 +458,13 @@ impl SecurityMiddleware {
     }
 
     /// Check if IP should be blocked
-    pub async fn should_block_user(&self, ip_address: std::net::IpAddr) -> bool {
+    pub async fn should_block_ip(&self, ip_address: std::net::IpAddr) -> bool {
         let intrusion_detector = self.intrusion_detector.read().await;
         intrusion_detector.is_ip_blocked(&ip_address.to_string())
     }
 
     /// Log security event with IP address
-    pub async fn log_security_event(
+    pub async fn log_security_event_with_details(
         &self,
         ip_address: std::net::IpAddr,
         user_id: Option<String>,
@@ -475,36 +489,29 @@ impl SecurityMiddleware {
         let intrusion_detector = self.intrusion_detector.read().await;
 
         // Check existing suspicious activities for this IP
-        if let Some(activities) = intrusion_detector.suspicious_activities.get(ip_address) {
-            let recent_activities = activities
-                .iter()
-                .filter(|activity| {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs();
-                    now - activity.last_seen < 300 // Last 5 minutes
-                })
-                .count();
+        let recent_activities = intrusion_detector
+            .suspicious_activities
+            .values()
+            .filter(|activity| {
+                activity.ip_address == ip_address && activity.last_seen.elapsed().as_secs() < 300
+                // Last 5 minutes
+            })
+            .count();
 
-            // Trigger blocking if:
-            // - More than 3 suspicious activities in 5 minutes
-            // - Any injection attempt
-            // - Severe threat patterns
-            match activity_type {
-                "suspicious_message_pattern" | "injection_attempt" | "brute_force_attack" => true,
-                _ => recent_activities > 3,
-            }
-        } else {
-            // First time offense - block only for severe threats
-            matches!(activity_type, "injection_attempt" | "brute_force_attack")
+        // Trigger blocking if:
+        // - More than 3 suspicious activities in 5 minutes
+        // - Any injection attempt
+        // - Severe threat patterns
+        match activity_type {
+            "suspicious_message_pattern" | "injection_attempt" | "brute_force_attack" => true,
+            _ => recent_activities > 3,
         }
     }
 
     /// Suspend user account
     pub async fn suspend_user(&self, user_id: &str, reason: &str, duration: std::time::Duration) {
         // Log suspension event
-        self.log_security_event(
+        self.log_security_event_with_details(
             std::net::IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)), // Placeholder IP
             Some(user_id.to_string()),
             "user_suspended",
@@ -603,7 +610,7 @@ impl SecurityMiddleware {
         let mut intrusion_detector = self.intrusion_detector.write().await;
         intrusion_detector.blocked_ips.remove(ip_address);
 
-        self.log_security_event(
+        self.log_security_event_with_details(
             std::net::IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)), // Admin action
             None,
             "admin_unblock",
@@ -617,12 +624,13 @@ impl SecurityMiddleware {
     /// Get recent security events
     pub async fn get_recent_security_events(&self, limit: usize) -> Vec<String> {
         let audit_logger = self.audit_logger.read().await;
+
         audit_logger
             .events
             .iter()
             .rev()
             .take(limit)
-            .cloned()
+            .map(|event| format!("{:?}", event))
             .collect()
     }
 }
@@ -735,7 +743,7 @@ impl IntrusionDetector {
             self.block_ip(
                 ip_address,
                 "Too many failed login attempts",
-                Duration::from_minutes(15),
+                Duration::from_secs(15 * 60),
             )
             .await;
         }
@@ -868,8 +876,8 @@ impl Default for SecurityConfig {
             enable_rate_limiting: true,
             enable_audit_logging: true,
             max_failed_logins: 5,
-            login_attempt_window: Duration::from_minutes(15),
-            ip_block_duration: Duration::from_minutes(30),
+            login_attempt_window: Duration::from_secs(15 * 60),
+            ip_block_duration: Duration::from_secs(30 * 60),
         }
     }
 }
@@ -878,9 +886,9 @@ impl Default for IntrusionConfig {
     fn default() -> Self {
         Self {
             suspicious_activity_threshold: 10,
-            activity_window: Duration::from_minutes(5),
+            activity_window: Duration::from_secs(5 * 60),
             auto_block_enabled: true,
-            block_duration: Duration::from_minutes(30),
+            block_duration: Duration::from_secs(30 * 60),
         }
     }
 }
