@@ -55,6 +55,7 @@ pub struct TcpClient {
     read_timeout: Duration,
 }
 
+#[allow(dead_code)]
 impl TcpClient {
     /// Create a new TCP client.
     pub fn new(server_addr: SocketAddr) -> Self {
@@ -332,6 +333,7 @@ impl Connection {
     }
 
     /// Receive the next message from the server.
+    #[allow(dead_code)]
     pub async fn recv(&mut self) -> Option<ServerMessage> {
         self.rx.recv().await
     }

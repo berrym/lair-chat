@@ -639,6 +639,7 @@ impl ClientMessage {
     }
 }
 
+#[allow(dead_code)]
 impl ServerMessage {
     /// Check if this is an error message.
     pub fn is_error(&self) -> bool {

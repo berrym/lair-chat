@@ -1,6 +1,5 @@
 //! Application state and logic.
 
-use std::collections::HashMap;
 use std::net::SocketAddr;
 
 use chrono::{DateTime, Utc};
@@ -28,8 +27,6 @@ pub struct App {
     pub current_room: Option<Room>,
     /// Messages for the current view.
     pub messages: Vec<ChatMessage>,
-    /// Input buffer.
-    pub input: String,
     /// Status message.
     pub status: Option<String>,
     /// Error message.
@@ -38,8 +35,6 @@ pub struct App {
     pub should_quit: bool,
     /// Online users.
     pub online_users: Vec<User>,
-    /// Pending requests awaiting response.
-    pending_requests: HashMap<String, PendingRequest>,
 }
 
 /// Screens in the application.
@@ -56,10 +51,16 @@ pub enum Screen {
 /// A chat message for display.
 #[derive(Debug, Clone)]
 pub struct ChatMessage {
+    /// Message ID (if from server).
+    #[allow(dead_code)]
     pub id: Option<uuid::Uuid>,
+    /// Message author.
     pub author: String,
+    /// Message content.
     pub content: String,
+    /// When the message was created.
     pub timestamp: DateTime<Utc>,
+    /// Whether this is a system message.
     pub is_system: bool,
 }
 
@@ -87,29 +88,11 @@ impl ChatMessage {
     }
 }
 
-/// Pending request information.
-struct PendingRequest {
-    kind: RequestKind,
-}
-
-/// Types of pending requests.
-#[derive(Debug, Clone)]
-enum RequestKind {
-    Login,
-    Register,
-    SendMessage,
-    ListRooms,
-    JoinRoom,
-    CreateRoom,
-}
-
 /// Actions that can be performed.
 #[derive(Debug, Clone)]
 pub enum Action {
     /// Quit the application.
     Quit,
-    /// Connect to server.
-    Connect,
     /// Login with credentials.
     Login { username: String, password: String },
     /// Register new account.
@@ -128,10 +111,6 @@ pub enum Action {
     CreateRoom(String),
     /// Go back to chat.
     BackToChat,
-    /// Clear error.
-    ClearError,
-    /// Process a server message.
-    ServerMessage(ServerMessage),
 }
 
 impl App {
@@ -146,12 +125,10 @@ impl App {
             rooms: Vec::new(),
             current_room: None,
             messages: Vec::new(),
-            input: String::new(),
             status: None,
             error: None,
             should_quit: false,
             online_users: Vec::new(),
-            pending_requests: HashMap::new(),
         }
     }
 
@@ -188,11 +165,6 @@ impl App {
                 self.should_quit = true;
                 self.disconnect().await;
             }
-            Action::Connect => {
-                if let Err(e) = self.connect().await {
-                    self.error = Some(format!("Connection failed: {}", e));
-                }
-            }
             Action::Login { username, password } => {
                 self.handle_login(username, password).await;
             }
@@ -219,12 +191,6 @@ impl App {
             Action::BackToChat => {
                 self.screen = Screen::Chat;
             }
-            Action::ClearError => {
-                self.error = None;
-            }
-            Action::ServerMessage(msg) => {
-                self.handle_server_message(msg).await;
-            }
         }
     }
 
@@ -236,23 +202,10 @@ impl App {
         };
 
         let msg = ClientMessage::login(&username, &password);
-        let request_id = match &msg {
-            ClientMessage::Login { request_id, .. } => request_id.clone(),
-            _ => None,
-        };
 
         if let Err(e) = conn.send(msg).await {
             self.error = Some(format!("Failed to send login: {}", e));
             return;
-        }
-
-        if let Some(id) = request_id {
-            self.pending_requests.insert(
-                id,
-                PendingRequest {
-                    kind: RequestKind::Login,
-                },
-            );
         }
 
         self.status = Some("Logging in...".to_string());
@@ -266,23 +219,10 @@ impl App {
         };
 
         let msg = ClientMessage::register(&username, &email, &password);
-        let request_id = match &msg {
-            ClientMessage::Register { request_id, .. } => request_id.clone(),
-            _ => None,
-        };
 
         if let Err(e) = conn.send(msg).await {
             self.error = Some(format!("Failed to send register: {}", e));
             return;
-        }
-
-        if let Some(id) = request_id {
-            self.pending_requests.insert(
-                id,
-                PendingRequest {
-                    kind: RequestKind::Register,
-                },
-            );
         }
 
         self.status = Some("Registering...".to_string());
@@ -564,7 +504,7 @@ impl App {
                 }
             }
 
-            ServerMessage::UserOnline { user_id, username } => {
+            ServerMessage::UserOnline { username, .. } => {
                 self.add_system_message(format!("{} is now online", username));
             }
 
