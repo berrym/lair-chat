@@ -18,7 +18,7 @@ use tokio::time::{timeout, Duration};
 use tracing::{debug, error, info, warn};
 
 use crate::core::engine::ChatEngine;
-use crate::domain::{Session, SessionId, User};
+use crate::domain::{Protocol, Session, SessionId, User};
 use crate::storage::Storage;
 
 use super::commands::CommandHandler;
@@ -286,9 +286,12 @@ impl<S: Storage + 'static> Connection<S> {
                 } = response
                 {
                     // Store session info for later use
-                    if let Ok(_session_id) = SessionId::parse(&session_info.id) {
+                    if let Ok(session_id) = SessionId::parse(&session_info.id) {
                         self.user = Some(user.clone());
-                        // We'd need to fetch the full session, but for now just transition state
+                        // Create a session object with the actual ID from the response
+                        let mut session = Session::new(user.id, Protocol::Tcp);
+                        session.id = session_id;
+                        self.session = Some(session);
                         self.state = ConnectionState::Authenticated;
                         info!("User {} authenticated from {}", user.username, self.addr);
 
@@ -317,8 +320,12 @@ impl<S: Storage + 'static> Connection<S> {
                     ..
                 } = response
                 {
-                    if let Ok(_session_id) = SessionId::parse(&session_info.id) {
+                    if let Ok(session_id) = SessionId::parse(&session_info.id) {
                         self.user = Some(user.clone());
+                        // Create a session object with the actual ID from the response
+                        let mut session = Session::new(user.id, Protocol::Tcp);
+                        session.id = session_id;
+                        self.session = Some(session);
                         self.state = ConnectionState::Authenticated;
                         info!("New user {} registered from {}", user.username, self.addr);
 
