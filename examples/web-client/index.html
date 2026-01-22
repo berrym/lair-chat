@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lair Chat - Web Client Example</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a1a;
+            color: #ffffff;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: #2d3748;
+            padding: 1rem;
+            border-bottom: 1px solid #4a5568;
+            display: flex;
+            justify-content: between;
+            align-items: center;
+        }
+
+        .header h1 {
+            color: #63b3ed;
+            font-size: 1.5rem;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #e53e3e;
+        }
+
+        .status-indicator.connected {
+            background: #38a169;
+        }
+
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 250px;
+            background: #2d3748;
+            border-right: 1px solid #4a5568;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .auth-section {
+            padding: 1rem;
+            border-bottom: 1px solid #4a5568;
+        }
+
+        .auth-section.hidden {
+            display: none;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .user-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: #63b3ed;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .rooms-section {
+            flex: 1;
+            padding: 1rem;
+            overflow-y: auto;
+        }
+
+        .room-list {
+            list-style: none;
+        }
+
+        .room-item {
+            padding: 0.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 0.25rem;
+            background: #4a5568;
+            transition: background 0.2s;
+        }
+
+        .room-item:hover {
+            background: #63b3ed;
+        }
+
+        .room-item.active {
+            background: #3182ce;
+        }
+
+        .chat-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .messages-container {
+            flex: 1;
+            padding: 1rem;
+            overflow-y: auto;
+            background: #1a202c;
+        }
+
+        .message {
+            margin-bottom: 1rem;
+            padding: 0.5rem;
+            border-radius: 8px;
+            background: #2d3748;
+        }
+
+        .message-header {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 0.25rem;
+            font-size: 0.875rem;
+            color: #a0aec0;
+        }
+
+        .message-author {
+            font-weight: bold;
+            color: #63b3ed;
+        }
+
+        .message-content {
+            color: #ffffff;
+        }
+
+        .input-area {
+            padding: 1rem;
+            background: #2d3748;
+            border-top: 1px solid #4a5568;
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .message-input {
+            flex: 1;
+            padding: 0.5rem;
+            border: 1px solid #4a5568;
+            border-radius: 4px;
+            background: #1a202c;
+            color: #ffffff;
+            outline: none;
+        }
+
+        .message-input:focus {
+            border-color: #63b3ed;
+        }
+
+        .send-button {
+            padding: 0.5rem 1rem;
+            background: #3182ce;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .send-button:hover:not(:disabled) {
+            background: #2c5282;
+        }
+
+        .send-button:disabled {
+            background: #4a5568;
+            cursor: not-allowed;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.25rem;
+            color: #a0aec0;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #4a5568;
+            border-radius: 4px;
+            background: #1a202c;
+            color: #ffffff;
+            outline: none;
+        }
+
+        .form-group input:focus {
+            border-color: #63b3ed;
+        }
+
+        .button {
+            width: 100%;
+            padding: 0.5rem;
+            background: #3182ce;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .button:hover {
+            background: #2c5282;
+        }
+
+        .button.secondary {
+            background: #4a5568;
+        }
+
+        .button.secondary:hover {
+            background: #2d3748;
+        }
+
+        .error {
+            color: #e53e3e;
+            font-size: 0.875rem;
+            margin-top: 0.25rem;
+        }
+
+        .success {
+            color: #38a169;
+            font-size: 0.875rem;
+            margin-top: 0.25rem;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .loading {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1></h1>🦎 Lair Chat</h1>
+        <div class="status">
+            <div class="status-indicator" id="connectionStatus"></div>
+            <span id="statusText">Disconnected</span>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <!-- Authentication Section -->
+            <div class="auth-section" id="authSection">
+                <h3>Login</h3>
+                <form id="loginForm">
+                    <div class="form-group">
+                        <label for="username">Username</label>
+                        <input type="text" id="username" name="username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" name="password" required>
+                    </div>
+                    <button type="submit" class="button">Login</button>
+                    <div id="authError" class="error hidden"></div>
+                </form>
+                <hr style="margin: 1rem 0; border-color: #4a5568;">
+                <button id="registerToggle" class="button secondary">Register New User</button>
+
+                <form id="registerForm" class="hidden">
+                    <div class="form-group">
+                        <label for="regUsername">Username</label>
+                        <input type="text" id="regUsername" name="username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="regEmail">Email</label>
+                        <input type="email" id="regEmail" name="email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="regPassword">Password</label>
+                        <input type="password" id="regPassword" name="password" required>
+                    </div>
+                    <button type="submit" class="button">Register</button>
+                    <button type="button" id="backToLogin" class="button secondary">Back to Login</button>
+                    <div id="regError" class="error hidden"></div>
+                    <div id="regSuccess" class="success hidden"></div>
+                </form>
+            </div>
+
+            <!-- User Info (shown when logged in) -->
+            <div class="auth-section hidden" id="userSection">
+                <div class="user-info">
+                    <div class="user-avatar" id="userAvatar"></div>
+                    <div>
+                        <div id="userName"></div>
+                        <button id="logoutButton" class="button secondary" style="margin-top: 0.5rem;">Logout</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Rooms Section -->
+            <div class="rooms-section">
+                <h3>Rooms</h3>
+                <ul class="room-list" id="roomList">
+                    <li class="room-item">No rooms available</li>
+                </ul>
+                <button id="createRoomButton" class="button hidden" style="margin-top: 1rem;">Create Room</button>
+            </div>
+        </div>
+
+        <!-- Main Chat Area -->
+        <div class="chat-area">
+            <div class="messages-container" id="messagesContainer">
+                <div style="text-align: center; color: #a0aec0; margin-top: 2rem;">
+                    Welcome to Lair Chat Web Client Example!<br>
+                    Please login to start chatting.
+                </div>
+            </div>
+            <div class="input-area">
+                <input type="text" id="messageInput" class="message-input" placeholder="Type your message..." disabled>
+                <button id="sendButton" class="send-button" disabled>Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const API_BASE = 'http://127.0.0.1:8082/api/v1';
+
+        // State
+        let currentUser = null;
+        let authToken = null;
+        let currentRoom = null;
+        let rooms = [];
+        let messages = [];
+        let messagePolling = null;
+
+        // DOM Elements
+        const authSection = document.getElementById('authSection');
+        const userSection = document.getElementById('userSection');
+        const loginForm = document.getElementById('loginForm');
+        const registerForm = document.getElementById('registerForm');
+        const registerToggle = document.getElementById('registerToggle');
+        const backToLogin = document.getElementById('backToLogin');
+        const logoutButton = document.getElementById('logoutButton');
+        const roomList = document.getElementById('roomList');
+        const createRoomButton = document.getElementById('createRoomButton');
+        const messagesContainer = document.getElementById('messagesContainer');
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const statusText = document.getElementById('statusText');
+
+        // Utility Functions
+        function showError(elementId, message) {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.classList.remove('hidden');
+        }
+
+        function hideError(elementId) {
+            const element = document.getElementById(elementId);
+            element.classList.add('hidden');
+        }
+
+        function showSuccess(elementId, message) {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.classList.remove('hidden');
+        }
+
+        function updateConnectionStatus(connected) {
+            if (connected) {
+                connectionStatus.classList.add('connected');
+                statusText.textContent = 'Connected';
+            } else {
+                connectionStatus.classList.remove('connected');
+                statusText.textContent = 'Disconnected';
+            }
+        }
+
+        function formatTimestamp(timestamp) {
+            const date = new Date(timestamp);
+            return date.toLocaleTimeString();
+        }
+
+        // API Functions
+        async function apiCall(method, endpoint, data = null) {
+            const url = `${API_BASE}${endpoint}`;
+            const options = {
+                method,
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            };
+
+            if (authToken) {
+                options.headers.Authorization = `Bearer ${authToken}`;
+            }
+
+            if (data) {
+                options.body = JSON.stringify(data);
+            }
+
+            try {
+                const response = await fetch(url, options);
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.error?.message || 'API request failed');
+                }
+
+                return result;
+            } catch (error) {
+                console.error('API call failed:', error);
+                throw error;
+            }
+        }
+
+        // Authentication Functions
+        async function login(username, password) {
+            try {
+                const result = await apiCall('POST', '/auth/login', {
+                    identifier: username,
+                    password: password
+                });
+
+                authToken = result.access_token;
+                currentUser = result.user;
+                localStorage.setItem('authToken', authToken);
+                localStorage.setItem('currentUser', JSON.stringify(currentUser));
+
+                showLoggedInState();
+                await loadRooms();
+                updateConnectionStatus(true);
+
+                return true;
+            } catch (error) {
+                showError('authError', error.message);
+                return false;
+            }
+        }
+
+        async function register(username, email, password) {
+            try {
+                await apiCall('POST', '/auth/register', {
+                    username,
+                    email,
+                    password
+                });
+
+                showSuccess('regSuccess', 'Registration successful! You can now login.');
+                return true;
+            } catch (error) {
+                showError('regError', error.message);
+                return false;
+            }
+        }
+
+        function logout() {
+            authToken = null;
+            currentUser = null;
+            currentRoom = null;
+            rooms = [];
+            messages = [];
+
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('currentUser');
+
+            if (messagePolling) {
+                clearInterval(messagePolling);
+                messagePolling = null;
+            }
+
+            showLoginState();
+            updateConnectionStatus(false);
+        }
+
+        // UI State Functions
+        function showLoginState() {
+            authSection.classList.remove('hidden');
+            userSection.classList.add('hidden');
+            createRoomButton.classList.add('hidden');
+            messageInput.disabled = true;
+            sendButton.disabled = true;
+
+            roomList.innerHTML = '<li class="room-item">Please login to see rooms</li>';
+            messagesContainer.innerHTML = `
+                <div style="text-align: center; color: #a0aec0; margin-top: 2rem;">
+                    Welcome to Lair Chat Web Client Example!<br>
+                    Please login to start chatting.
+                </div>
+            `;
+        }
+
+        function showLoggedInState() {
+            authSection.classList.add('hidden');
+            userSection.classList.remove('hidden');
+            createRoomButton.classList.remove('hidden');
+
+            const userAvatar = document.getElementById('userAvatar');
+            const userName = document.getElementById('userName');
+
+            userAvatar.textContent = currentUser.username.charAt(0).toUpperCase();
+            userName.textContent = currentUser.username;
+
+            messageInput.disabled = false;
+            sendButton.disabled = false;
+        }
+
+        // Room Functions
+        async function loadRooms() {
+            try {
+                const result = await apiCall('GET', '/rooms');
+                rooms = result.data || [];
+                displayRooms();
+            } catch (error) {
+                console.error('Failed to load rooms:', error);
+                roomList.innerHTML = '<li class="room-item">Failed to load rooms</li>';
+            }
+        }
+
+        function displayRooms() {
+            if (rooms.length === 0) {
+                roomList.innerHTML = '<li class="room-item">No rooms available</li>';
+                return;
+            }
+
+            roomList.innerHTML = rooms.map(room => `
+                <li class="room-item" data-room-id="${room.id}">
+                    ${room.name}
+                </li>
+            `).join('');
+
+            // Add click handlers
+            roomList.querySelectorAll('.room-item[data-room-id]').forEach(item => {
+                item.addEventListener('click', () => {
+                    const roomId = item.dataset.roomId;
+                    selectRoom(roomId);
+                });
+            });
+        }
+
+        function selectRoom(roomId) {
+            currentRoom = rooms.find(room => room.id === roomId);
+
+            // Update UI
+            roomList.querySelectorAll('.room-item').forEach(item => {
+                item.classList.remove('active');
+            });
+
+            const selectedItem = roomList.querySelector(`[data-room-id="${roomId}"]`);
+            if (selectedItem) {
+                selectedItem.classList.add('active');
+            }
+
+            // Load messages for this room
+            loadMessages(roomId);
+        }
+
+        async function createRoom() {
+            const roomName = prompt('Enter room name:');
+            if (!roomName) return;
+
+            const description = prompt('Enter room description (optional):') || '';
+
+            try {
+                await apiCall('POST', '/rooms', {
+                    name: roomName,
+                    description: description
+                });
+
+                await loadRooms();
+            } catch (error) {
+                alert('Failed to create room: ' + error.message);
+            }
+        }
+
+        // Message Functions
+        async function loadMessages(roomId) {
+            try {
+                const result = await apiCall('GET', `/messages?room_id=${roomId}`);
+                messages = result.data || [];
+                displayMessages();
+
+                // Start polling for new messages
+                if (messagePolling) {
+                    clearInterval(messagePolling);
+                }
+                messagePolling = setInterval(() => loadMessages(roomId), 2000);
+
+            } catch (error) {
+                console.error('Failed to load messages:', error);
+                messagesContainer.innerHTML = '<div style="color: #e53e3e;">Failed to load messages</div>';
+            }
+        }
+
+        function displayMessages() {
+            if (messages.length === 0) {
+                messagesContainer.innerHTML = `
+                    <div style="text-align: center; color: #a0aec0; margin-top: 2rem;">
+                        No messages in this room yet.<br>
+                        Be the first to say something!
+                    </div>
+                `;
+                return;
+            }
+
+            messagesContainer.innerHTML = messages.map(message => `
+                <div class="message">
+                    <div class="message-header">
+                        <span class="message-author">${message.author}</span>
+                        <span class="message-time">${formatTimestamp(message.timestamp)}</span>
+                    </div>
+                    <div class="message-content">${escapeHtml(message.content)}</div>
+                </div>
+            `).join('');
+
+            // Scroll to bottom
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        async function sendMessage() {
+            if (!currentRoom || !messageInput.value.trim()) return;
+
+            const content = messageInput.value.trim();
+            messageInput.value = '';
+
+            try {
+                await apiCall('POST', '/messages', {
+                    room_id: currentRoom.id,
+                    content: content
+                });
+
+                // Immediately reload messages
+                await loadMessages(currentRoom.id);
+            } catch (error) {
+                alert('Failed to send message: ' + error.message);
+                messageInput.value = content; // Restore the message
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Event Listeners
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideError('authError');
+
+            const formData = new FormData(e.target);
+            const username = formData.get('username');
+            const password = formData.get('password');
+
+            await login(username, password);
+        });
+
+        registerForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideError('regError');
+
+            const formData = new FormData(e.target);
+            const username = formData.get('username');
+            const email = formData.get('email');
+            const password = formData.get('password');
+
+            const success = await register(username, email, password);
+            if (success) {
+                // Switch back to login form
+                registerForm.classList.add('hidden');
+                loginForm.classList.remove('hidden');
+                registerToggle.classList.remove('hidden');
+            }
+        });
+
+        registerToggle.addEventListener('click', () => {
+            loginForm.classList.add('hidden');
+            registerForm.classList.remove('hidden');
+            registerToggle.classList.add('hidden');
+            hideError('authError');
+            hideError('regError');
+        });
+
+        backToLogin.addEventListener('click', () => {
+            registerForm.classList.add('hidden');
+            loginForm.classList.remove('hidden');
+            registerToggle.classList.remove('hidden');
+            hideError('regError');
+            hideError('regSuccess');
+        });
+
+        logoutButton.addEventListener('click', logout);
+
+        createRoomButton.addEventListener('click', createRoom);
+
+        sendButton.addEventListener('click', sendMessage);
+
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // Initialize
+        function init() {
+            // Check for saved auth token
+            const savedToken = localStorage.getItem('authToken');
+            const savedUser = localStorage.getItem('currentUser');
+
+            if (savedToken && savedUser) {
+                authToken = savedToken;
+                currentUser = JSON.parse(savedUser);
+
+                // Verify token is still valid
+                apiCall('GET', '/users/profile')
+                    .then(() => {
+                        showLoggedInState();
+                        loadRooms();
+                        updateConnectionStatus(true);
+                    })
+                    .catch(() => {
+                        // Token is invalid, clear it
+                        logout();
+                    });
+            } else {
+                showLoginState();
+            }
+
+            // Test API connectivity
+            apiCall('GET', '/health')
+                .then(() => {
+                    console.log('API connection successful');
+                })
+                .catch((error) => {
+                    console.error('API connection failed:', error);
+                    alert('Failed to connect to Lair Chat API. Please ensure the server is running on ' + API_BASE);
+                });
+        }
+
+        // Start the application
+        init();
+    </script>
+</body>
+</html>

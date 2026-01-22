@@ -1,0 +1,76 @@
+[package]
+name = "lair-chat-server"
+version = "0.7.0"
+edition = "2021"
+description = "Lair Chat Server - A secure, high-performance chat server"
+license = "MIT"
+authors = ["Michael Berry <trismegustis@gmail.com>"]
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.40", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["full"] }
+futures = "0.3"
+async-trait = "0.1"
+
+# Web framework
+axum = { version = "0.7", features = ["macros", "ws"] }
+axum-extra = { version = "0.9", features = ["typed-header"] }
+tower = { version = "0.4", features = ["full"] }
+tower-http = { version = "0.5", features = ["fs", "trace", "cors", "limit", "timeout"] }
+hyper = { version = "1.0", features = ["full"] }
+http = "1.0"
+
+# Database
+sqlx = { version = "0.7", features = [
+    "runtime-tokio-rustls",
+    "sqlite",
+    "postgres",
+    "mysql",
+    "chrono",
+    "uuid",
+    "json",
+] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# Cryptography
+aes-gcm = "0.10"
+argon2 = { version = "0.5", features = ["std"] }
+x25519-dalek = { version = "2.0", features = ["getrandom"] }
+sha2 = "0.9"
+base64 = "0.22"
+jsonwebtoken = "9.2"
+password-hash = "0.5"
+rand = "0.8"
+
+# Utilities
+uuid = { version = "1.6", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1.0"
+validator = { version = "0.18", features = ["derive"] }
+regex = "1.10"
+config = "0.15"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "serde"] }
+
+# API documentation
+utoipa = { version = "4.2", features = ["axum_extras", "chrono", "uuid"] }
+utoipa-swagger-ui = { version = "6.0", features = ["axum"] }
+
+# System
+sysinfo = "0.30"
+signal-hook = "0.3"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
+tempfile = "3.9"
+axum-test = "14.0"
+pretty_assertions = "1.4"
+fake = "2.9"

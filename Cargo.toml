@@ -1,133 +1,44 @@
-[package]
-name = "lair-chat"
-version = "0.6.3"
+[workspace]
+resolver = "2"
+members = [
+    "crates/lair-chat-server",
+    "crates/lair-chat-client",
+]
+
+[workspace.package]
+version = "0.7.0"
 edition = "2021"
-description = "A secure, terminal-based chat application built with Rust, featuring end-to-end encryption, direct messaging, and real-time communication."
 license = "MIT"
 authors = ["Michael Berry <trismegustis@gmail.com>"]
-build = "build.rs"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-[dependencies]
-aes-gcm = "0.10.3"
-argon2 = { version = "0.5.2", features = ["std"] }
-async-trait = "0.1.74"
-axum = { version = "0.7", features = ["macros", "multipart", "ws"] }
-axum-test = "14.0"
-base64 = "0.22.1"
-better-panic = "0.3.0"
-chrono = { version = "0.4", features = ["serde"] }
-clap = { version = "4.4.5", features = [
-    "derive",
-    "cargo",
-    "wrap_help",
-    "unicode",
-    "string",
-    "unstable-styles",
-] }
-color-eyre = "0.6.3"
-config = "0.15.6"
-crossterm = { version = "0.28.1", features = ["serde", "event-stream"] }
-derive_deref = "1.1.1"
-directories = "6.0.0"
-futures = "0.3.31"
-axum-extra = { version = "0.9", features = ["typed-header"] }
-home = "0.5.9"
-http = "1.0"
-human-panic = "2.0.2"
-hyper = { version = "1.0", features = ["full"] }
-json5 = "0.4.1"
-jsonwebtoken = "9.2"
-lazy_static = "1.5.0"
-libc = "0.2.161"
-md5 = "0.7.0"
-once_cell = "1.19.0"
-password-hash = "0.5"
-pretty_assertions = "1.4.1"
-rand = "0.8"
-regex = "1.10"
-ratatui = { version = "0.29.0", features = ["serde", "macros"] }
-serde = { version = "1.0.211", features = ["derive"] }
-serde_json = "1.0.132"
-sha2 = "0.9.9"
-sqlx = { version = "0.7", features = [
-    "runtime-tokio-rustls",
-    "sqlite",
-    "postgres",
-    "mysql",
-    "chrono",
-    "uuid",
-    "json",
-] }
-toml = "0.8.8"
-tower = { version = "0.4", features = ["full"] }
-tower-http = { version = "0.5", features = [
-    "fs",
-    "trace",
-    "cors",
-    "limit",
-    "timeout",
-] }
-signal-hook = "0.3.17"
-strip-ansi-escapes = "0.2.0"
-strum = { version = "0.26.3", features = ["derive"] }
-sysinfo = "0.30"
-thiserror = "1.0"
-tokio = { version = "1.40.0", features = ["full"] }
-tokio-stream = { version = "0.1.15", features = ["full"] }
-tokio-util = { version = "0.7.12", features = ["full"] }
-tracing = "0.1.40"
-tracing-error = "0.2.0"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter", "serde"] }
-tui-input = "0.11.1"
-utoipa = { version = "4.2", features = ["axum_extras", "chrono", "uuid"] }
-utoipa-swagger-ui = { version = "6.0", features = ["axum"] }
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.40", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["full"] }
+futures = "0.3"
+async-trait = "0.1"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# Utilities
 uuid = { version = "1.6", features = ["v4", "serde"] }
-validator = { version = "0.18", features = ["derive"] }
-x25519-dalek = { version = "2.0.1", features = ["getrandom"] }
-im = "15.1"
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1.0"
+tracing = "0.1"
 
-[build-dependencies]
-anyhow = "1.0.95"
-vergen-gix = { version = "1.0.6", features = ["build", "cargo"] }
-
-[dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
-fake = "2.9"
+# Testing
+pretty_assertions = "1.4"
 tempfile = "3.9"
 
-[[bin]]
-name = "lair-chat-client"
-path = "src/bin/client.rs"
-
-[[bin]]
-name = "lair-chat-server"
-path = "src/bin/server.rs"
-
-[[bin]]
-name = "lair-chat-server-new"
-path = "src/bin/server_new.rs"
-
-[[bin]]
-name = "create_admin_user"
-path = "scripts/create_admin_user.rs"
-
-[[bin]]
-name = "debug_jwt_auth"
-path = "scripts/debug_jwt_auth.rs"
-
-[[bin]]
-name = "test_password"
-path = "scripts/test_password.rs"
-
-[[bench]]
-name = "transport_benchmarks"
-harness = false
-
-[[bench]]
-name = "connection_benchmarks"
-harness = false
-
-[[bench]]
-name = "message_benchmarks"
-harness = false
+# NOTE: The legacy code has been archived to archive/legacy-src/
+# The original Cargo.toml configuration is preserved in archive/legacy-Cargo.toml
+#
+# This workspace represents the new architecture:
+# - lair-chat-server: The chat server (TCP + HTTP)
+# - lair-chat-client: The TUI client (Phase 5)
+#
+# See docs/architecture/OVERVIEW.md for the new architecture.
