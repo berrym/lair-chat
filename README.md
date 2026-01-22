@@ -2,6 +2,9 @@
 
 A secure, high-performance chat system built with Rust, featuring real-time messaging, a terminal-based client, and both TCP and REST API interfaces.
 
+[![CI](https://github.com/berrym/lair-chat/actions/workflows/ci.yml/badge.svg)](https://github.com/berrym/lair-chat/actions/workflows/ci.yml)
+[![Security Audit](https://github.com/berrym/lair-chat/actions/workflows/security.yml/badge.svg)](https://github.com/berrym/lair-chat/actions/workflows/security.yml)
+[![codecov](https://codecov.io/gh/berrym/lair-chat/graph/badge.svg)](https://codecov.io/gh/berrym/lair-chat)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
 

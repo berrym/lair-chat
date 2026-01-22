@@ -1,0 +1,25 @@
+# Codecov configuration
+# https://docs.codecov.io/docs/codecovyml-reference
+
+coverage:
+  status:
+    project:
+      default:
+        # Require coverage to not drop by more than 1%
+        threshold: 1%
+    patch:
+      default:
+        # Require new code to have at least 50% coverage
+        target: 50%
+
+# Ignore certain paths from coverage
+ignore:
+  - "tests/**/*"
+  - "examples/**/*"
+  - "**/main.rs"  # Binary entry points are hard to test
+
+# Comment configuration for PRs
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
+  require_changes: true
