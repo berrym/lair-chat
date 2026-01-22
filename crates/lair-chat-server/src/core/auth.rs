@@ -13,7 +13,9 @@ use argon2::{
     Argon2,
 };
 
-use crate::domain::{Email, Pagination, Protocol, Session, SessionId, User, UserId, Username};
+use crate::domain::{
+    Email, Pagination, Protocol, Role, Session, SessionId, User, UserId, Username,
+};
 use crate::storage::{SessionRepository, Storage, UserRepository};
 use crate::{Error, Result};
 
@@ -75,8 +77,8 @@ impl<S: Storage + 'static> AuthService<S> {
         // Hash password
         let password_hash = Self::hash_password(password)?;
 
-        // Create user
-        let user = User::new(username, email);
+        // Create user (new users are regular users by default)
+        let user = User::new(username, email, Role::User);
         UserRepository::create(&*self.storage, &user, &password_hash).await?;
 
         // Create session (auto-login)

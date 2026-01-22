@@ -92,6 +92,28 @@ impl InvitationStatus {
     pub fn is_actionable(&self) -> bool {
         matches!(self, InvitationStatus::Pending)
     }
+
+    /// Get the status as a string for database storage.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            InvitationStatus::Pending => "pending",
+            InvitationStatus::Accepted => "accepted",
+            InvitationStatus::Declined => "declined",
+            InvitationStatus::Cancelled => "cancelled",
+            InvitationStatus::Expired => "expired",
+        }
+    }
+
+    /// Parse a status from a database string.
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "accepted" => InvitationStatus::Accepted,
+            "declined" => InvitationStatus::Declined,
+            "cancelled" => InvitationStatus::Cancelled,
+            "expired" => InvitationStatus::Expired,
+            _ => InvitationStatus::Pending,
+        }
+    }
 }
 
 impl Display for InvitationStatus {
@@ -129,10 +151,14 @@ pub struct Invitation {
     pub invitee: UserId,
     /// Current status.
     pub status: InvitationStatus,
+    /// Optional message from the inviter.
+    pub message: Option<String>,
     /// When the invitation was created.
     pub created_at: DateTime<Utc>,
-    /// When the invitation expires (None = never).
-    pub expires_at: Option<DateTime<Utc>>,
+    /// When the invitation was responded to (accepted, declined, etc.).
+    pub responded_at: Option<DateTime<Utc>>,
+    /// When the invitation expires.
+    pub expires_at: DateTime<Utc>,
 }
 
 impl Invitation {
@@ -148,22 +174,23 @@ impl Invitation {
             inviter,
             invitee,
             status: InvitationStatus::Pending,
+            message: None,
             created_at: now,
-            expires_at: Some(now + Self::DEFAULT_EXPIRATION),
+            responded_at: None,
+            expires_at: now + Self::DEFAULT_EXPIRATION,
         }
     }
 
-    /// Create an invitation that never expires.
-    pub fn new_permanent(room_id: RoomId, inviter: UserId, invitee: UserId) -> Self {
-        Self {
-            id: InvitationId::new(),
-            room_id,
-            inviter,
-            invitee,
-            status: InvitationStatus::Pending,
-            created_at: Utc::now(),
-            expires_at: None,
-        }
+    /// Create an invitation with a message.
+    pub fn with_message(
+        room_id: RoomId,
+        inviter: UserId,
+        invitee: UserId,
+        message: impl Into<String>,
+    ) -> Self {
+        let mut invitation = Self::new(room_id, inviter, invitee);
+        invitation.message = Some(message.into());
+        invitation
     }
 
     /// Create an invitation with custom expiration duration.
@@ -180,14 +207,16 @@ impl Invitation {
             inviter,
             invitee,
             status: InvitationStatus::Pending,
+            message: None,
             created_at: now,
-            expires_at: Some(now + duration),
+            responded_at: None,
+            expires_at: now + duration,
         }
     }
 
     /// Check if the invitation has expired based on time.
     pub fn is_time_expired(&self) -> bool {
-        self.expires_at.map(|exp| Utc::now() > exp).unwrap_or(false)
+        Utc::now() > self.expires_at
     }
 
     /// Check if the invitation can still be accepted.
@@ -214,6 +243,7 @@ impl Invitation {
             return Err(InvitationError::NotPending(self.status));
         }
         self.status = InvitationStatus::Accepted;
+        self.responded_at = Some(Utc::now());
         Ok(())
     }
 
@@ -229,6 +259,7 @@ impl Invitation {
             return Err(InvitationError::NotPending(self.status));
         }
         self.status = InvitationStatus::Declined;
+        self.responded_at = Some(Utc::now());
         Ok(())
     }
 
@@ -240,6 +271,7 @@ impl Invitation {
             return Err(InvitationError::NotPending(self.status));
         }
         self.status = InvitationStatus::Cancelled;
+        self.responded_at = Some(Utc::now());
         Ok(())
     }
 
@@ -251,15 +283,13 @@ impl Invitation {
     }
 
     /// Get time remaining until expiration.
-    pub fn time_remaining(&self) -> Option<Duration> {
-        self.expires_at.map(|exp| {
-            let remaining = exp - Utc::now();
-            if remaining < Duration::zero() {
-                Duration::zero()
-            } else {
-                remaining
-            }
-        })
+    pub fn time_remaining(&self) -> Duration {
+        let remaining = self.expires_at - Utc::now();
+        if remaining < Duration::zero() {
+            Duration::zero()
+        } else {
+            remaining
+        }
     }
 }
 
@@ -333,20 +363,18 @@ mod tests {
         assert_eq!(invitation.inviter, inviter);
         assert_eq!(invitation.invitee, invitee);
         assert_eq!(invitation.status, InvitationStatus::Pending);
-        assert!(invitation.expires_at.is_some());
         assert!(invitation.is_pending());
         assert!(invitation.is_actionable());
     }
 
     #[test]
-    fn test_invitation_permanent() {
+    fn test_invitation_with_message() {
         let room_id = RoomId::new();
         let inviter = UserId::new();
         let invitee = UserId::new();
-        let invitation = Invitation::new_permanent(room_id, inviter, invitee);
+        let invitation = Invitation::with_message(room_id, inviter, invitee, "Join our room!");
 
-        assert!(invitation.expires_at.is_none());
-        assert!(!invitation.is_time_expired());
+        assert_eq!(invitation.message, Some("Join our room!".to_string()));
         assert!(invitation.is_pending());
     }
 
@@ -429,7 +457,7 @@ mod tests {
         let invitee = UserId::new();
         let invitation = Invitation::with_expiration(room_id, inviter, invitee, Duration::hours(1));
 
-        let remaining = invitation.time_remaining().unwrap();
+        let remaining = invitation.time_remaining();
         assert!(remaining > Duration::minutes(59));
         assert!(remaining <= Duration::hours(1));
     }

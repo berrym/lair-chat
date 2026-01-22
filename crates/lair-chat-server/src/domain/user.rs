@@ -115,6 +115,11 @@ impl Username {
         Ok(Self(s))
     }
 
+    /// Create a username without validation (use only for data from trusted sources).
+    pub fn new_unchecked(s: impl Into<String>) -> Self {
+        Self(s.into())
+    }
+
     /// Get the username as a string slice.
     pub fn as_str(&self) -> &str {
         &self.0
@@ -220,6 +225,11 @@ impl Email {
         Ok(Self(s.to_lowercase()))
     }
 
+    /// Create an email without validation (use only for data from trusted sources).
+    pub fn new_unchecked(s: impl Into<String>) -> Self {
+        Self(s.into())
+    }
+
     /// Get the email as a string slice.
     pub fn as_str(&self) -> &str {
         &self.0
@@ -301,6 +311,24 @@ impl Role {
     pub fn is_moderator(&self) -> bool {
         matches!(self, Role::Admin | Role::Moderator)
     }
+
+    /// Get the role as a string for database storage.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Role::User => "user",
+            Role::Moderator => "moderator",
+            Role::Admin => "admin",
+        }
+    }
+
+    /// Parse a role from a database string.
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "admin" => Role::Admin,
+            "moderator" => Role::Moderator,
+            _ => Role::User,
+        }
+    }
 }
 
 impl Display for Role {
@@ -336,27 +364,28 @@ pub struct User {
     pub created_at: DateTime<Utc>,
     /// Last profile update timestamp.
     pub updated_at: DateTime<Utc>,
+    /// Last time the user was seen online.
+    pub last_seen_at: Option<DateTime<Utc>>,
 }
 
 impl User {
     /// Create a new user with the given details.
-    pub fn new(username: Username, email: Email) -> Self {
+    pub fn new(username: Username, email: Email, role: Role) -> Self {
         let now = Utc::now();
         Self {
             id: UserId::new(),
             username,
             email,
-            role: Role::default(),
+            role,
             created_at: now,
             updated_at: now,
+            last_seen_at: None,
         }
     }
 
     /// Create a new admin user.
     pub fn new_admin(username: Username, email: Email) -> Self {
-        let mut user = Self::new(username, email);
-        user.role = Role::Admin;
-        user
+        Self::new(username, email, Role::Admin)
     }
 
     /// Check if user has the required permission level.
@@ -479,7 +508,7 @@ mod tests {
     fn test_user_creation() {
         let username = Username::new("alice").unwrap();
         let email = Email::new("alice@example.com").unwrap();
-        let user = User::new(username.clone(), email.clone());
+        let user = User::new(username.clone(), email.clone(), Role::User);
 
         assert_eq!(user.username, username);
         assert_eq!(user.email, email);

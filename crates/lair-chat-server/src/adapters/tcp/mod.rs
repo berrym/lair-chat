@@ -10,19 +10,35 @@
 //! - `protocol`: Wire format parsing/serialization
 //! - `commands`: Maps protocol messages to core commands
 //!
-//! ## Current Status
+//! ## Usage
 //!
-//! Placeholder for Phase 3 implementation.
+//! ```ignore
+//! use lair_chat_server::adapters::tcp::{TcpConfig, TcpServer};
+//!
+//! let config = TcpConfig { port: 8080 };
+//! let server = TcpServer::start(config, engine).await?;
+//!
+//! // ... run server ...
+//!
+//! server.shutdown().await;
+//! ```
 
-pub mod server;
+pub mod commands;
 pub mod connection;
 pub mod protocol;
-pub mod commands;
+pub mod server;
 
-/// TCP server configuration
+pub use server::TcpServer;
+
+/// TCP server configuration.
+#[derive(Debug, Clone)]
 pub struct TcpConfig {
-    /// Port to listen on
+    /// Port to listen on.
     pub port: u16,
 }
 
-// TCP server implementation will be added in Phase 3
+impl Default for TcpConfig {
+    fn default() -> Self {
+        Self { port: 8080 }
+    }
+}

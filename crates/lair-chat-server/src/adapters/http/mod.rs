@@ -10,19 +10,35 @@
 //! - `handlers`: Request handlers
 //! - `middleware`: Auth, rate limiting, etc.
 //!
-//! ## Current Status
+//! ## Usage
 //!
-//! Placeholder for Phase 3 implementation.
+//! ```ignore
+//! use lair_chat_server::adapters::http::{HttpConfig, HttpServer};
+//!
+//! let config = HttpConfig { port: 8082 };
+//! let server = HttpServer::start(config, engine).await?;
+//!
+//! // ... run server ...
+//!
+//! server.shutdown().await;
+//! ```
 
-pub mod server;
-pub mod routes;
 pub mod handlers;
 pub mod middleware;
+pub mod routes;
+pub mod server;
 
-/// HTTP server configuration
+pub use server::HttpServer;
+
+/// HTTP server configuration.
+#[derive(Debug, Clone)]
 pub struct HttpConfig {
-    /// Port to listen on
+    /// Port to listen on.
     pub port: u16,
 }
 
-// HTTP server implementation will be added in Phase 3
+impl Default for HttpConfig {
+    fn default() -> Self {
+        Self { port: 8082 }
+    }
+}

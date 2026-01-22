@@ -88,6 +88,24 @@ impl Protocol {
     pub fn is_stateful(&self) -> bool {
         matches!(self, Protocol::Tcp | Protocol::WebSocket)
     }
+
+    /// Get the protocol as a string for database storage.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Protocol::Tcp => "tcp",
+            Protocol::Http => "http",
+            Protocol::WebSocket => "websocket",
+        }
+    }
+
+    /// Parse a protocol from a database string.
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "tcp" => Protocol::Tcp,
+            "websocket" | "ws" => Protocol::WebSocket,
+            _ => Protocol::Http,
+        }
+    }
 }
 
 impl Display for Protocol {
@@ -113,12 +131,16 @@ pub struct Session {
     pub user_id: UserId,
     /// Which protocol created this session.
     pub protocol: Protocol,
+    /// Client IP address (if known).
+    pub ip_address: Option<String>,
+    /// Client user agent (if known).
+    pub user_agent: Option<String>,
     /// When the session was created.
     pub created_at: DateTime<Utc>,
     /// When the session expires.
     pub expires_at: DateTime<Utc>,
     /// Last activity timestamp.
-    pub last_active: DateTime<Utc>,
+    pub last_active_at: DateTime<Utc>,
 }
 
 impl Session {
@@ -135,9 +157,11 @@ impl Session {
             id: SessionId::new(),
             user_id,
             protocol,
+            ip_address: None,
+            user_agent: None,
             created_at: now,
             expires_at: now + Self::DEFAULT_DURATION,
-            last_active: now,
+            last_active_at: now,
         }
     }
 
@@ -148,9 +172,11 @@ impl Session {
             id: SessionId::new(),
             user_id,
             protocol,
+            ip_address: None,
+            user_agent: None,
             created_at: now,
             expires_at: now + Self::EXTENDED_DURATION,
-            last_active: now,
+            last_active_at: now,
         }
     }
 
@@ -161,9 +187,11 @@ impl Session {
             id: SessionId::new(),
             user_id,
             protocol,
+            ip_address: None,
+            user_agent: None,
             created_at: now,
             expires_at: now + duration,
-            last_active: now,
+            last_active_at: now,
         }
     }
 
@@ -179,7 +207,7 @@ impl Session {
 
     /// Update the last activity timestamp.
     pub fn touch(&mut self) {
-        self.last_active = Utc::now();
+        self.last_active_at = Utc::now();
     }
 
     /// Extend the session expiration.
@@ -190,7 +218,7 @@ impl Session {
     /// Extend the session to the default duration from now.
     pub fn refresh(&mut self) {
         let now = Utc::now();
-        self.last_active = now;
+        self.last_active_at = now;
         self.expires_at = now + Self::DEFAULT_DURATION;
     }
 
@@ -282,13 +310,13 @@ mod tests {
     fn test_session_touch() {
         let user_id = UserId::new();
         let mut session = Session::new(user_id, Protocol::Tcp);
-        let original_last_active = session.last_active;
+        let original_last_active = session.last_active_at;
 
         // Small delay to ensure time difference
         std::thread::sleep(std::time::Duration::from_millis(10));
         session.touch();
 
-        assert!(session.last_active > original_last_active);
+        assert!(session.last_active_at > original_last_active);
     }
 
     #[test]

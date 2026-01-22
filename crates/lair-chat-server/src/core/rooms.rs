@@ -56,17 +56,26 @@ impl<S: Storage + 'static> RoomService<S> {
             return Err(Error::RoomNameTaken);
         }
 
-        // Create room
-        let mut room = Room::new(room_name, owner_id);
-        room.description = description;
-        if let Some(s) = settings {
-            room.settings = s;
-        }
+        // Build settings (merge description into settings)
+        let room_settings = match settings {
+            Some(mut s) => {
+                if description.is_some() {
+                    s.description = description;
+                }
+                s
+            }
+            None => RoomSettings {
+                description,
+                ..Default::default()
+            },
+        };
 
+        // Create room
+        let room = Room::new(room_name, owner_id, room_settings);
         RoomRepository::create(&*self.storage, &room).await?;
 
         // Add owner as member
-        let membership = RoomMembership::new_owner(room.id, owner_id);
+        let membership = RoomMembership::as_owner(room.id, owner_id);
         MembershipRepository::add_member(&*self.storage, &membership).await?;
 
         Ok(room)
@@ -123,7 +132,7 @@ impl<S: Storage + 'static> RoomService<S> {
         }
 
         // Add member
-        let membership = RoomMembership::new(room_id, user_id);
+        let membership = RoomMembership::as_member(room_id, user_id);
         MembershipRepository::add_member(&*self.storage, &membership).await?;
 
         // Mark any pending invitation as accepted
@@ -226,14 +235,19 @@ impl<S: Storage + 'static> RoomService<S> {
             room.name = room_name;
         }
 
-        // Update description
+        // Update description (stored in settings)
         if let Some(desc) = description {
-            room.description = Some(desc);
+            room.settings.description = Some(desc);
         }
 
-        // Update settings
+        // Update other settings (preserving description if not overwritten above)
         if let Some(s) = settings {
+            // Preserve description if it was just set above
+            let current_desc = room.settings.description.clone();
             room.settings = s;
+            if current_desc.is_some() && room.settings.description.is_none() {
+                room.settings.description = current_desc;
+            }
         }
 
         RoomRepository::update(&*self.storage, &room).await?;

@@ -689,12 +689,14 @@ mod tests {
 
     #[test]
     fn test_user_joined_room_event() {
+        use crate::domain::{Role, RoomRole};
+
         let room_id = RoomId::new();
         let user_id = UserId::new();
         let username = Username::new("alice").unwrap();
         let email = Email::new("alice@example.com").unwrap();
-        let user = User::new(username, email);
-        let membership = RoomMembership::new(room_id, user_id);
+        let user = User::new(username, email, Role::User);
+        let membership = RoomMembership::new(room_id, user_id, RoomRole::Member);
 
         let event = UserJoinedRoomEvent::new(room_id, user, membership);
         assert_eq!(event.room_id, room_id);

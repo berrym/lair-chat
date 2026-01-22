@@ -97,6 +97,11 @@ impl RoomName {
         Ok(Self(s))
     }
 
+    /// Create a room name without validation (use only for data from trusted sources).
+    pub fn new_unchecked(s: impl Into<String>) -> Self {
+        Self(s.into())
+    }
+
     /// Get the room name as a string slice.
     pub fn as_str(&self) -> &str {
         &self.0
@@ -136,20 +141,20 @@ impl AsRef<str> for RoomName {
 /// Room configuration options.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoomSettings {
-    /// Whether the room is publicly visible and joinable.
-    pub public: bool,
+    /// Optional room description.
+    pub description: Option<String>,
+    /// Whether the room is private (invite-only).
+    pub is_private: bool,
     /// Maximum number of members (None = unlimited).
     pub max_members: Option<u32>,
-    /// Whether only moderators/admins can send messages.
-    pub moderated: bool,
 }
 
 impl Default for RoomSettings {
     fn default() -> Self {
         Self {
-            public: true,
+            description: None,
+            is_private: false,
             max_members: None,
-            moderated: false,
         }
     }
 }
@@ -158,15 +163,15 @@ impl RoomSettings {
     /// Create settings for a private room.
     pub fn private() -> Self {
         Self {
-            public: false,
+            is_private: true,
             ..Default::default()
         }
     }
 
-    /// Create settings for a moderated room.
-    pub fn moderated() -> Self {
+    /// Create settings with a description.
+    pub fn with_description(description: impl Into<String>) -> Self {
         Self {
-            moderated: true,
+            description: Some(description.into()),
             ..Default::default()
         }
     }
@@ -209,6 +214,24 @@ impl RoomRole {
     pub fn is_moderator(&self) -> bool {
         matches!(self, RoomRole::Owner | RoomRole::Moderator)
     }
+
+    /// Get the role as a string for database storage.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RoomRole::Member => "member",
+            RoomRole::Moderator => "moderator",
+            RoomRole::Owner => "owner",
+        }
+    }
+
+    /// Parse a role from a database string.
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "owner" => RoomRole::Owner,
+            "moderator" | "admin" => RoomRole::Moderator,
+            _ => RoomRole::Member,
+        }
+    }
 }
 
 impl Display for RoomRole {
@@ -233,45 +256,45 @@ pub struct RoomMembership {
     /// The member.
     pub user_id: UserId,
     /// Member's role within this room.
-    pub room_role: RoomRole,
+    pub role: RoomRole,
     /// When they joined.
     pub joined_at: DateTime<Utc>,
 }
 
 impl RoomMembership {
-    /// Create a new membership as a regular member.
-    pub fn new(room_id: RoomId, user_id: UserId) -> Self {
+    /// Create a new membership with a specific role.
+    pub fn new(room_id: RoomId, user_id: UserId, role: RoomRole) -> Self {
         Self {
             room_id,
             user_id,
-            room_role: RoomRole::Member,
+            role,
             joined_at: Utc::now(),
         }
     }
 
+    /// Create a new membership as a regular member.
+    pub fn as_member(room_id: RoomId, user_id: UserId) -> Self {
+        Self::new(room_id, user_id, RoomRole::Member)
+    }
+
     /// Create a new membership as owner.
-    pub fn new_owner(room_id: RoomId, user_id: UserId) -> Self {
-        Self {
-            room_id,
-            user_id,
-            room_role: RoomRole::Owner,
-            joined_at: Utc::now(),
-        }
+    pub fn as_owner(room_id: RoomId, user_id: UserId) -> Self {
+        Self::new(room_id, user_id, RoomRole::Owner)
     }
 
     /// Check if member has the required permission level.
     pub fn has_permission(&self, required: RoomRole) -> bool {
-        self.room_role.has_permission(required)
+        self.role.has_permission(required)
     }
 
     /// Check if member is owner.
     pub fn is_owner(&self) -> bool {
-        self.room_role.is_owner()
+        self.role.is_owner()
     }
 
     /// Check if member is at least moderator.
     pub fn is_moderator(&self) -> bool {
-        self.room_role.is_moderator()
+        self.role.is_moderator()
     }
 }
 
@@ -286,8 +309,6 @@ pub struct Room {
     pub id: RoomId,
     /// Room name.
     pub name: RoomName,
-    /// Optional description.
-    pub description: Option<String>,
     /// User who created/owns the room.
     pub owner: UserId,
     /// Room configuration.
@@ -298,33 +319,34 @@ pub struct Room {
 
 impl Room {
     /// Create a new room.
-    pub fn new(name: RoomName, owner: UserId) -> Self {
+    pub fn new(name: RoomName, owner: UserId, settings: RoomSettings) -> Self {
         Self {
             id: RoomId::new(),
             name,
-            description: None,
             owner,
-            settings: RoomSettings::default(),
+            settings,
             created_at: Utc::now(),
         }
     }
 
-    /// Create a new room with settings.
-    pub fn with_settings(name: RoomName, owner: UserId, settings: RoomSettings) -> Self {
-        Self {
-            settings,
-            ..Self::new(name, owner)
-        }
+    /// Create a new public room with default settings.
+    pub fn public(name: RoomName, owner: UserId) -> Self {
+        Self::new(name, owner, RoomSettings::default())
+    }
+
+    /// Create a new private room.
+    pub fn private(name: RoomName, owner: UserId) -> Self {
+        Self::new(name, owner, RoomSettings::private())
     }
 
     /// Check if the room is public.
     pub fn is_public(&self) -> bool {
-        self.settings.public
+        !self.settings.is_private
     }
 
-    /// Check if the room is moderated.
-    pub fn is_moderated(&self) -> bool {
-        self.settings.moderated
+    /// Check if the room is private.
+    pub fn is_private(&self) -> bool {
+        self.settings.is_private
     }
 
     /// Check if the room is full.
@@ -391,12 +413,12 @@ mod tests {
     fn test_room_creation() {
         let name = RoomName::new("Test Room").unwrap();
         let owner = UserId::new();
-        let room = Room::new(name.clone(), owner);
+        let room = Room::public(name.clone(), owner);
 
         assert_eq!(room.name, name);
         assert_eq!(room.owner, owner);
         assert!(room.is_public());
-        assert!(!room.is_moderated());
+        assert!(!room.is_private());
     }
 
     #[test]
@@ -407,7 +429,7 @@ mod tests {
             max_members: Some(10),
             ..Default::default()
         };
-        let room = Room::with_settings(name, owner, settings);
+        let room = Room::new(name, owner, settings);
 
         assert!(!room.is_full(5));
         assert!(!room.is_full(9));

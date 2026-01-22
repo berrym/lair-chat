@@ -100,6 +100,11 @@ impl MessageContent {
         Ok(Self(s))
     }
 
+    /// Create content without validation (use only for data from trusted sources).
+    pub fn new_unchecked(s: impl Into<String>) -> Self {
+        Self(s.into())
+    }
+
     /// Get the content as a string slice.
     pub fn as_str(&self) -> &str {
         &self.0
@@ -220,11 +225,9 @@ pub struct Message {
     /// Message content.
     pub content: MessageContent,
     /// Whether the message has been edited.
-    pub edited: bool,
+    pub is_edited: bool,
     /// When the message was sent.
     pub created_at: DateTime<Utc>,
-    /// When the message was last edited (if edited).
-    pub edited_at: Option<DateTime<Utc>>,
 }
 
 impl Message {
@@ -235,9 +238,8 @@ impl Message {
             author,
             target,
             content,
-            edited: false,
+            is_edited: false,
             created_at: Utc::now(),
-            edited_at: None,
         }
     }
 
@@ -274,8 +276,7 @@ impl Message {
     /// Edit the message content.
     pub fn edit(&mut self, new_content: MessageContent) {
         self.content = new_content;
-        self.edited = true;
-        self.edited_at = Some(Utc::now());
+        self.is_edited = true;
     }
 }
 
@@ -359,8 +360,7 @@ mod tests {
         assert!(message.is_room_message());
         assert_eq!(message.room_id(), Some(room_id));
         assert_eq!(message.content.as_str(), content.as_str());
-        assert!(!message.edited);
-        assert!(message.edited_at.is_none());
+        assert!(!message.is_edited);
     }
 
     #[test]
@@ -382,14 +382,12 @@ mod tests {
         let content = MessageContent::new("Original").unwrap();
         let mut message = Message::to_room(author, room_id, content);
 
-        assert!(!message.edited);
-        assert!(message.edited_at.is_none());
+        assert!(!message.is_edited);
 
         let new_content = MessageContent::new("Edited").unwrap();
         message.edit(new_content.clone());
 
-        assert!(message.edited);
-        assert!(message.edited_at.is_some());
+        assert!(message.is_edited);
         assert_eq!(message.content.as_str(), new_content.as_str());
     }
 
