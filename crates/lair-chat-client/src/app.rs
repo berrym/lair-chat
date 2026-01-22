@@ -1,13 +1,19 @@
 //! Application state and logic.
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 
 use chrono::{DateTime, Utc};
 use tracing::{debug, info};
+use uuid::Uuid;
 
 use crate::protocol::{
-    ClientMessage, Connection, MessageTarget, Room, ServerMessage, Session, TcpError, User,
+    ClientMessage, Connection, MessageTarget, Room, RoomListItem, ServerMessage, Session, TcpError,
+    User,
 };
+
+/// Type alias for user IDs.
+type UserId = Uuid;
 
 /// Application state.
 pub struct App {
@@ -21,8 +27,8 @@ pub struct App {
     pub user: Option<User>,
     /// Current session.
     pub session: Option<Session>,
-    /// Rooms the user is a member of.
-    pub rooms: Vec<Room>,
+    /// Rooms the user is a member of (with member counts).
+    pub rooms: Vec<RoomListItem>,
     /// Currently selected room.
     pub current_room: Option<Room>,
     /// Messages for the current view.
@@ -35,6 +41,8 @@ pub struct App {
     pub should_quit: bool,
     /// Online users.
     pub online_users: Vec<User>,
+    /// User cache for username lookups (UserId -> username).
+    pub user_cache: HashMap<UserId, String>,
 }
 
 /// Screens in the application.
@@ -111,6 +119,8 @@ pub enum Action {
     CreateRoom(String),
     /// Go back to chat.
     BackToChat,
+    /// Reconnect to server.
+    Reconnect,
 }
 
 impl App {
@@ -129,13 +139,48 @@ impl App {
             error: None,
             should_quit: false,
             online_users: Vec::new(),
+            user_cache: HashMap::new(),
         }
+    }
+
+    /// Look up a username by user ID, returning a display string.
+    fn get_username(&self, user_id: UserId) -> String {
+        // Check if it's the current user
+        if let Some(user) = &self.user {
+            if user.id == user_id {
+                return user.username.clone();
+            }
+        }
+
+        // Check the cache
+        if let Some(username) = self.user_cache.get(&user_id) {
+            return username.clone();
+        }
+
+        // Check online users list
+        if let Some(user) = self.online_users.iter().find(|u| u.id == user_id) {
+            return user.username.clone();
+        }
+
+        // Fall back to shortened UUID
+        let id_str = user_id.to_string();
+        if id_str.len() > 8 {
+            format!("{}...", &id_str[..8])
+        } else {
+            id_str
+        }
+    }
+
+    /// Add a user to the cache.
+    fn cache_user(&mut self, user: &User) {
+        self.user_cache.insert(user.id, user.username.clone());
     }
 
     /// Connect to the server.
     pub async fn connect(&mut self) -> Result<(), TcpError> {
         info!("Connecting to {}", self.server_addr);
         self.status = Some("Connecting...".to_string());
+        self.error = None;
 
         let connection = Connection::connect(self.server_addr).await?;
         self.connection = Some(connection);
@@ -143,6 +188,32 @@ impl App {
         self.add_system_message("Connected to server");
 
         Ok(())
+    }
+
+    /// Attempt to reconnect to the server.
+    pub async fn reconnect(&mut self) {
+        // Clear old connection state
+        self.connection = None;
+        self.status = Some("Reconnecting...".to_string());
+
+        // Attempt to reconnect
+        match Connection::connect(self.server_addr).await {
+            Ok(connection) => {
+                self.connection = Some(connection);
+                self.status = Some("Reconnected".to_string());
+                self.error = None;
+                self.add_system_message("Reconnected to server. Please log in again.");
+
+                // Reset to login screen since session is lost
+                self.user = None;
+                self.session = None;
+                self.screen = Screen::Login;
+            }
+            Err(e) => {
+                self.error = Some(format!("Reconnect failed: {}", e));
+                self.status = Some("Disconnected".to_string());
+            }
+        }
     }
 
     /// Disconnect from the server.
@@ -190,6 +261,9 @@ impl App {
             }
             Action::BackToChat => {
                 self.screen = Screen::Chat;
+            }
+            Action::Reconnect => {
+                self.reconnect().await;
             }
         }
     }
@@ -268,7 +342,7 @@ impl App {
         };
 
         let msg = ClientMessage::ListRooms {
-            request_id: Some(uuid::Uuid::new_v4().to_string()),
+            request_id: Some(Uuid::new_v4().to_string()),
             filter: None,
             limit: Some(50),
             offset: None,
@@ -276,6 +350,24 @@ impl App {
 
         if let Err(e) = conn.send(msg).await {
             self.error = Some(format!("Failed to request rooms: {}", e));
+        }
+    }
+
+    /// Request user list to populate cache.
+    async fn request_user_list(&mut self) {
+        let Some(conn) = &self.connection else {
+            return;
+        };
+
+        let msg = ClientMessage::ListUsers {
+            request_id: Some(Uuid::new_v4().to_string()),
+            filter: None,
+            limit: Some(100),
+            offset: None,
+        };
+
+        if let Err(e) = conn.send(msg).await {
+            debug!("Failed to request user list: {}", e);
         }
     }
 
@@ -348,6 +440,10 @@ impl App {
                 ..
             } => {
                 if success {
+                    // Cache the logged-in user
+                    if let Some(ref u) = user {
+                        self.cache_user(u);
+                    }
                     self.user = user;
                     self.session = session;
                     self.screen = Screen::Chat;
@@ -359,8 +455,9 @@ impl App {
                             .unwrap_or(&"?".to_string())
                     ));
                     self.add_system_message("Login successful! Welcome to Lair Chat.");
-                    // Request room list after login
+                    // Request room list and user list after login
                     self.request_room_list().await;
+                    self.request_user_list().await;
                 } else {
                     let err_msg = error
                         .map(|e| e.message)
@@ -378,6 +475,10 @@ impl App {
                 ..
             } => {
                 if success {
+                    // Cache the registered user
+                    if let Some(ref u) = user {
+                        self.cache_user(u);
+                    }
                     self.user = user;
                     self.session = session;
                     self.screen = Screen::Chat;
@@ -390,6 +491,7 @@ impl App {
                     ));
                     self.add_system_message("Registration successful! Welcome to Lair Chat.");
                     self.request_room_list().await;
+                    self.request_user_list().await;
                 } else {
                     let err_msg = error
                         .map(|e| e.message)
@@ -415,10 +517,10 @@ impl App {
                 ..
             } => {
                 if success {
-                    self.rooms = rooms.into_iter().map(|r| r.room).collect();
+                    self.rooms = rooms;
                     // Auto-join first room if none selected
                     if self.current_room.is_none() && !self.rooms.is_empty() {
-                        let first_room = self.rooms[0].clone();
+                        let first_room = self.rooms[0].room.clone();
                         self.handle_join_room(first_room.id).await;
                     }
                 } else {
@@ -461,7 +563,12 @@ impl App {
                 if success {
                     if let Some(room) = room {
                         self.add_system_message(format!("Created room: {}", room.name));
-                        self.rooms.push(room.clone());
+                        // Add as RoomListItem with member_count of 1 (just the creator)
+                        self.rooms.push(RoomListItem {
+                            room: room.clone(),
+                            member_count: 1,
+                            is_member: true,
+                        });
                         self.current_room = Some(room);
                         self.messages.clear();
                         self.screen = Screen::Chat;
@@ -485,12 +592,7 @@ impl App {
                     let history: Vec<ChatMessage> = messages
                         .into_iter()
                         .map(|msg| {
-                            let author = self
-                                .online_users
-                                .iter()
-                                .find(|u| u.id == msg.author)
-                                .map(|u| u.username.clone())
-                                .unwrap_or_else(|| msg.author.to_string());
+                            let author = self.get_username(msg.author);
 
                             ChatMessage {
                                 id: Some(msg.id),
@@ -519,13 +621,7 @@ impl App {
                 if let Some(current) = &self.current_room {
                     if let MessageTarget::Room { room_id } = &message.target {
                         if room_id == &current.id {
-                            // Find author name
-                            let author = self
-                                .online_users
-                                .iter()
-                                .find(|u| u.id == message.author)
-                                .map(|u| u.username.clone())
-                                .unwrap_or_else(|| message.author.to_string());
+                            let author = self.get_username(message.author);
 
                             self.messages.push(ChatMessage {
                                 id: Some(message.id),
@@ -540,6 +636,9 @@ impl App {
             }
 
             ServerMessage::UserJoinedRoom { room_id, user, .. } => {
+                // Always cache the user info
+                self.cache_user(&user);
+
                 if let Some(current) = &self.current_room {
                     if room_id == current.id {
                         self.add_system_message(format!("{} joined the room", user.username));
@@ -568,7 +667,9 @@ impl App {
                 }
             }
 
-            ServerMessage::UserOnline { username, .. } => {
+            ServerMessage::UserOnline { user_id, username } => {
+                // Cache this user
+                self.user_cache.insert(user_id, username.clone());
                 self.add_system_message(format!("{} is now online", username));
             }
 
@@ -583,6 +684,16 @@ impl App {
 
             ServerMessage::Error { code, message, .. } => {
                 self.error = Some(format!("{}: {}", code, message));
+            }
+
+            ServerMessage::ListUsersResponse { success, users, .. } => {
+                if success {
+                    // Populate user cache with all returned users
+                    for user in users {
+                        self.cache_user(&user);
+                    }
+                    debug!("Cached {} users", self.user_cache.len());
+                }
             }
 
             ServerMessage::Pong { .. } => {
@@ -623,10 +734,11 @@ impl App {
             }
         }
 
-        // Handle connection loss
+        // Handle connection loss - attempt automatic reconnection
         if connection_lost {
             self.connection = None;
-            self.error = Some("Connection lost".to_string());
+            self.add_system_message("Connection lost. Attempting to reconnect...");
+            self.reconnect().await;
         }
 
         // Process collected messages

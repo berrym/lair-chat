@@ -5,5 +5,7 @@
 pub mod messages;
 pub mod tcp;
 
-pub use messages::{ClientMessage, MessageTarget, Room, ServerMessage, Session, User};
+pub use messages::{
+    ClientMessage, MessageTarget, Room, RoomListItem, ServerMessage, Session, User,
+};
 pub use tcp::{Connection, TcpError};

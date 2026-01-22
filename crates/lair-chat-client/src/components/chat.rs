@@ -23,6 +23,8 @@ pub struct ChatRenderContext<'a> {
     pub status: Option<&'a str>,
     /// Error message to display.
     pub error: Option<&'a str>,
+    /// Online users in the current room.
+    pub online_users: &'a [String],
 }
 
 /// Chat screen state.
@@ -74,6 +76,7 @@ impl ChatScreen {
                 None
             }
             KeyCode::Char('r') => Some(Action::ShowRooms),
+            KeyCode::Char('R') => Some(Action::Reconnect),
             KeyCode::Char('j') | KeyCode::Down => {
                 self.scroll = self.scroll.saturating_add(1);
                 None
@@ -152,7 +155,29 @@ impl ChatScreen {
             username,
             status,
             error,
+            online_users,
         } = ctx;
+
+        // Main layout: chat area + users panel (if we have users)
+        let show_users_panel = !online_users.is_empty();
+        let main_chunks = if show_users_panel {
+            Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Min(40),    // Chat area (flexible)
+                    Constraint::Length(20), // Users panel (fixed width)
+                ])
+                .split(area)
+        } else {
+            // No users panel, use full width
+            Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(100)])
+                .split(area)
+        };
+
+        let chat_area = main_chunks[0];
+
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -160,7 +185,7 @@ impl ChatScreen {
                 Constraint::Length(3), // Input
                 Constraint::Length(1), // Status
             ])
-            .split(area);
+            .split(chat_area);
 
         // Messages area
         let title = room_name
@@ -238,6 +263,7 @@ impl ChatScreen {
         frame.render_widget(input_para, chunks[1]);
 
         // Status bar
+        let user_count = online_users.len();
         let status_spans = vec![
             Span::styled(
                 format!(" {} ", username.unwrap_or("Not logged in")),
@@ -248,6 +274,14 @@ impl ChatScreen {
                 format!("{} ", status.unwrap_or("Disconnected")),
                 Style::default().fg(Color::Cyan),
             ),
+            if user_count > 0 {
+                Span::styled(
+                    format!(" | {} online ", user_count),
+                    Style::default().fg(Color::Magenta),
+                )
+            } else {
+                Span::raw("")
+            },
             if let Some(err) = error {
                 Span::styled(
                     format!(" | Error: {}", err),
@@ -257,12 +291,40 @@ impl ChatScreen {
                 Span::raw("")
             },
             Span::styled(
-                " | q:quit r:rooms i:input ",
+                " | q:quit r:rooms i:input R:reconnect ",
                 Style::default().fg(Color::DarkGray),
             ),
         ];
         let status_line = Line::from(status_spans);
         let status_para = Paragraph::new(status_line);
         frame.render_widget(status_para, chunks[2]);
+
+        // Users panel (if showing)
+        if show_users_panel {
+            let users_area = main_chunks[1];
+            let users_block = Block::default()
+                .title(format!(" Users ({}) ", online_users.len()))
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::Magenta));
+
+            let user_items: Vec<ListItem> = online_users
+                .iter()
+                .map(|name| {
+                    let is_self = username.map(|u| u == name).unwrap_or(false);
+                    let style = if is_self {
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::White)
+                    };
+                    let prefix = if is_self { "* " } else { "  " };
+                    ListItem::new(format!("{}{}", prefix, name)).style(style)
+                })
+                .collect();
+
+            let users_list = List::new(user_items).block(users_block);
+            frame.render_widget(users_list, users_area);
+        }
     }
 }

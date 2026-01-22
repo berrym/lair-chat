@@ -93,12 +93,20 @@ async fn run_tui(server_addr: SocketAddr) -> Result<()> {
                     login_screen.render(frame, area, app.error.as_deref());
                 }
                 Screen::Chat => {
+                    // Collect online usernames for the panel
+                    let online_usernames: Vec<String> = app
+                        .online_users
+                        .iter()
+                        .map(|u| u.username.clone())
+                        .collect();
+
                     let ctx = ChatRenderContext {
                         messages: &app.messages,
                         room_name: app.current_room.as_ref().map(|r| r.name.as_str()),
                         username: app.user.as_ref().map(|u| u.username.as_str()),
                         status: app.status.as_deref(),
                         error: app.error.as_deref(),
+                        online_users: &online_usernames,
                     };
                     chat_screen.render(frame, area, &ctx);
                 }

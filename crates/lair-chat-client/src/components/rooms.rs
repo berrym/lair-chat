@@ -10,7 +10,7 @@ use ratatui::{
 };
 
 use crate::app::Action;
-use crate::protocol::Room;
+use crate::protocol::{Room, RoomListItem};
 
 /// Room list screen state.
 pub struct RoomsScreen {
@@ -41,7 +41,7 @@ impl RoomsScreen {
     }
 
     /// Handle a key event.
-    pub fn handle_key(&mut self, key: KeyEvent, rooms: &[Room]) -> Option<Action> {
+    pub fn handle_key(&mut self, key: KeyEvent, rooms: &[RoomListItem]) -> Option<Action> {
         if self.creating {
             return self.handle_create_key(key);
         }
@@ -59,8 +59,8 @@ impl RoomsScreen {
             }
             KeyCode::Enter => {
                 if let Some(idx) = self.state.selected() {
-                    if let Some(room) = rooms.get(idx) {
-                        return Some(Action::JoinRoom(room.id));
+                    if let Some(item) = rooms.get(idx) {
+                        return Some(Action::JoinRoom(item.room.id));
                     }
                 }
                 None
@@ -134,7 +134,7 @@ impl RoomsScreen {
         &mut self,
         frame: &mut Frame,
         area: Rect,
-        rooms: &[Room],
+        rooms: &[RoomListItem],
         current_room: Option<&Room>,
     ) {
         let chunks = Layout::default()
@@ -154,8 +154,8 @@ impl RoomsScreen {
 
         let items: Vec<ListItem> = rooms
             .iter()
-            .map(|room| {
-                let is_current = current_room.map(|c| c.id == room.id).unwrap_or(false);
+            .map(|item| {
+                let is_current = current_room.map(|c| c.id == item.room.id).unwrap_or(false);
                 let marker = if is_current { "* " } else { "  " };
                 let style = if is_current {
                     Style::default()
@@ -164,7 +164,14 @@ impl RoomsScreen {
                 } else {
                     Style::default()
                 };
-                ListItem::new(format!("{}{}", marker, room.name)).style(style)
+                // Show room name with member count
+                let member_text = if item.member_count == 1 {
+                    "1 member".to_string()
+                } else {
+                    format!("{} members", item.member_count)
+                };
+                ListItem::new(format!("{}{} ({})", marker, item.room.name, member_text))
+                    .style(style)
             })
             .collect();
 
