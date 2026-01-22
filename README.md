@@ -23,7 +23,7 @@ A secure, high-performance chat system built with Rust, featuring real-time mess
 - **Clean architecture** - Domain-driven design with trait-based abstractions
 - **Async throughout** - Built on Tokio for high performance
 - **SQLite storage** - With migration support and connection pooling
-- **Comprehensive tests** - 100+ unit and integration tests
+- **Comprehensive tests** - 44+ unit and integration tests with CI/CD
 
 ## Quick Start
 
@@ -34,7 +34,7 @@ A secure, high-performance chat system built with Rust, featuring real-time mess
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/lair-chat.git
+git clone https://github.com/berrym/lair-chat.git
 cd lair-chat
 
 # Start the server (TCP on 8080, HTTP on 8082)
@@ -178,6 +178,16 @@ cargo clippy --workspace
 # Build release
 cargo build --release --workspace
 ```
+
+## Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## License
 

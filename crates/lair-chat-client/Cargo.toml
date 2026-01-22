@@ -1,6 +1,6 @@
 [package]
 name = "lair-chat-client"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 description = "Lair Chat TUI Client - A terminal-based chat client"
 license = "MIT"

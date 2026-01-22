@@ -1,6 +1,6 @@
 [package]
 name = "lair-chat-server"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 description = "Lair Chat Server - A secure, high-performance chat server"
 license = "MIT"
