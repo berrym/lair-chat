@@ -113,13 +113,11 @@ lair-chat/
 │           ├── protocol/         # TCP protocol implementation
 │           └── components/       # TUI components
 │
-├── docs/
-│   ├── architecture/             # Architecture documentation
-│   └── protocols/                # Protocol specifications
-│       ├── TCP.md                # TCP wire protocol
-│       └── HTTP.md               # REST API specification
-│
-└── archive/                      # Legacy code for reference
+└── docs/
+    ├── architecture/             # Architecture documentation
+    └── protocols/                # Protocol specifications
+        ├── TCP.md                # TCP wire protocol
+        └── HTTP.md               # REST API specification
 ```
 
 ## Protocol Documentation
