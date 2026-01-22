@@ -99,7 +99,7 @@ impl Protocol {
     }
 
     /// Parse a protocol from a database string.
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "tcp" => Protocol::Tcp,
             "websocket" | "ws" => Protocol::WebSocket,
@@ -212,7 +212,7 @@ impl Session {
 
     /// Extend the session expiration.
     pub fn extend(&mut self, duration: Duration) {
-        self.expires_at = self.expires_at + duration;
+        self.expires_at += duration;
     }
 
     /// Extend the session to the default duration from now.

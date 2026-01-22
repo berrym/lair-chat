@@ -11,7 +11,7 @@ use crate::storage::sqlite::SqliteConfig;
 use crate::Result;
 
 /// Server configuration.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Config {
     /// TCP server configuration.
     pub tcp: TcpConfig,
@@ -19,16 +19,6 @@ pub struct Config {
     pub http: HttpConfig,
     /// Database configuration.
     pub database: SqliteConfig,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            tcp: TcpConfig::default(),
-            http: HttpConfig::default(),
-            database: SqliteConfig::default(),
-        }
-    }
 }
 
 impl Config {

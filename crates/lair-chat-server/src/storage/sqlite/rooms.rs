@@ -338,7 +338,7 @@ fn row_to_membership(row: sqlx::sqlite::SqliteRow) -> Result<RoomMembership> {
     Ok(RoomMembership {
         room_id: RoomId::parse(&room_id).map_err(|e| crate::Error::Internal(e.to_string()))?,
         user_id: UserId::parse(&user_id).map_err(|e| crate::Error::Internal(e.to_string()))?,
-        role: RoomRole::from_str(&role),
+        role: RoomRole::parse(&role),
         joined_at: chrono::DateTime::from_timestamp(joined_at, 0).unwrap_or_default(),
     })
 }
@@ -357,7 +357,7 @@ fn row_to_user_from_join(row: &sqlx::sqlite::SqliteRow) -> Result<User> {
         id: UserId::parse(&id).map_err(|e| crate::Error::Internal(e.to_string()))?,
         username: Username::new_unchecked(username),
         email: Email::new_unchecked(email),
-        role: Role::from_str(&role),
+        role: Role::parse(&role),
         created_at: chrono::DateTime::from_timestamp(created_at, 0).unwrap_or_default(),
         updated_at: chrono::DateTime::from_timestamp(updated_at, 0).unwrap_or_default(),
         last_seen_at: last_seen_at.and_then(|ts| chrono::DateTime::from_timestamp(ts, 0)),
@@ -374,7 +374,7 @@ fn row_to_membership_from_join(row: &sqlx::sqlite::SqliteRow) -> Result<RoomMemb
     Ok(RoomMembership {
         room_id: RoomId::parse(&room_id).map_err(|e| crate::Error::Internal(e.to_string()))?,
         user_id: UserId::parse(&user_id).map_err(|e| crate::Error::Internal(e.to_string()))?,
-        role: RoomRole::from_str(&role),
+        role: RoomRole::parse(&role),
         joined_at: chrono::DateTime::from_timestamp(joined_at, 0).unwrap_or_default(),
     })
 }
@@ -392,7 +392,7 @@ mod tests {
     fn test_user(name: &str) -> User {
         User::new(
             Username::new(name).unwrap(),
-            Email::new(&format!("{name}@example.com")).unwrap(),
+            Email::new(format!("{name}@example.com")).unwrap(),
             Role::User,
         )
     }

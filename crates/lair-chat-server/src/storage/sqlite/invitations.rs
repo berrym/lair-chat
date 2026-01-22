@@ -219,7 +219,7 @@ fn row_to_invitation(row: sqlx::sqlite::SqliteRow) -> Result<Invitation> {
         room_id: RoomId::parse(&room_id).map_err(|e| crate::Error::Internal(e.to_string()))?,
         inviter: UserId::parse(&inviter_id).map_err(|e| crate::Error::Internal(e.to_string()))?,
         invitee: UserId::parse(&invitee_id).map_err(|e| crate::Error::Internal(e.to_string()))?,
-        status: InvitationStatus::from_str(&status),
+        status: InvitationStatus::parse(&status),
         message,
         created_at: chrono::DateTime::from_timestamp(created_at, 0).unwrap_or_default(),
         responded_at: responded_at.and_then(|ts| chrono::DateTime::from_timestamp(ts, 0)),
@@ -242,7 +242,7 @@ mod tests {
     fn test_user(name: &str) -> User {
         User::new(
             Username::new(name).unwrap(),
-            Email::new(&format!("{name}@example.com")).unwrap(),
+            Email::new(format!("{name}@example.com")).unwrap(),
             Role::User,
         )
     }

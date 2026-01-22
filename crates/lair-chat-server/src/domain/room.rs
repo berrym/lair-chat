@@ -139,24 +139,15 @@ impl AsRef<str> for RoomName {
 // ============================================================================
 
 /// Room configuration options.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RoomSettings {
     /// Optional room description.
     pub description: Option<String>,
     /// Whether the room is private (invite-only).
+    #[serde(default)]
     pub is_private: bool,
     /// Maximum number of members (None = unlimited).
     pub max_members: Option<u32>,
-}
-
-impl Default for RoomSettings {
-    fn default() -> Self {
-        Self {
-            description: None,
-            is_private: false,
-            max_members: None,
-        }
-    }
 }
 
 impl RoomSettings {
@@ -197,12 +188,12 @@ pub enum RoomRole {
 impl RoomRole {
     /// Check if this role has at least the given permission level.
     pub fn has_permission(&self, required: RoomRole) -> bool {
-        match (self, required) {
-            (RoomRole::Owner, _) => true,
-            (RoomRole::Moderator, RoomRole::Moderator | RoomRole::Member) => true,
-            (RoomRole::Member, RoomRole::Member) => true,
-            _ => false,
-        }
+        matches!(
+            (self, required),
+            (RoomRole::Owner, _)
+                | (RoomRole::Moderator, RoomRole::Moderator | RoomRole::Member)
+                | (RoomRole::Member, RoomRole::Member)
+        )
     }
 
     /// Check if this role is owner.
@@ -225,7 +216,7 @@ impl RoomRole {
     }
 
     /// Parse a role from a database string.
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "owner" => RoomRole::Owner,
             "moderator" | "admin" => RoomRole::Moderator,

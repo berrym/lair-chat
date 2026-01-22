@@ -294,12 +294,12 @@ impl Role {
     ///
     /// Permission hierarchy: Admin > Moderator > User
     pub fn has_permission(&self, required: Role) -> bool {
-        match (self, required) {
-            (Role::Admin, _) => true,
-            (Role::Moderator, Role::Moderator | Role::User) => true,
-            (Role::User, Role::User) => true,
-            _ => false,
-        }
+        matches!(
+            (self, required),
+            (Role::Admin, _)
+                | (Role::Moderator, Role::Moderator | Role::User)
+                | (Role::User, Role::User)
+        )
     }
 
     /// Check if this role is admin.
@@ -322,7 +322,7 @@ impl Role {
     }
 
     /// Parse a role from a database string.
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "admin" => Role::Admin,
             "moderator" => Role::Moderator,

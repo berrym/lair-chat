@@ -67,10 +67,11 @@ impl From<Uuid> for InvitationId {
 // ============================================================================
 
 /// The status of a room invitation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum InvitationStatus {
     /// Waiting for response.
+    #[default]
     Pending,
     /// Invitation accepted.
     Accepted,
@@ -105,7 +106,7 @@ impl InvitationStatus {
     }
 
     /// Parse a status from a database string.
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "accepted" => InvitationStatus::Accepted,
             "declined" => InvitationStatus::Declined,
@@ -125,12 +126,6 @@ impl Display for InvitationStatus {
             InvitationStatus::Cancelled => write!(f, "cancelled"),
             InvitationStatus::Expired => write!(f, "expired"),
         }
-    }
-}
-
-impl Default for InvitationStatus {
-    fn default() -> Self {
-        InvitationStatus::Pending
     }
 }
 

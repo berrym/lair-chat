@@ -156,7 +156,7 @@ fn row_to_session(row: sqlx::sqlite::SqliteRow) -> Result<Session> {
     Ok(Session {
         id: SessionId::parse(&id).map_err(|e| crate::Error::Internal(e.to_string()))?,
         user_id: UserId::parse(&user_id).map_err(|e| crate::Error::Internal(e.to_string()))?,
-        protocol: Protocol::from_str(&protocol),
+        protocol: Protocol::parse(&protocol),
         ip_address,
         user_agent,
         created_at: chrono::DateTime::from_timestamp(created_at, 0).unwrap_or_default(),

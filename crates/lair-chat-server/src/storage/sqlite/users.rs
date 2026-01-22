@@ -209,7 +209,7 @@ fn row_to_user(row: sqlx::sqlite::SqliteRow) -> Result<User> {
         id: UserId::parse(&id).map_err(|e| crate::Error::Internal(e.to_string()))?,
         username: Username::new_unchecked(username),
         email: Email::new_unchecked(email),
-        role: Role::from_str(&role),
+        role: Role::parse(&role),
         created_at: chrono::DateTime::from_timestamp(created_at, 0).unwrap_or_default(),
         updated_at: chrono::DateTime::from_timestamp(updated_at, 0).unwrap_or_default(),
         last_seen_at: last_seen_at.and_then(|ts| chrono::DateTime::from_timestamp(ts, 0)),
@@ -328,8 +328,8 @@ mod tests {
         // Create multiple users
         for i in 0..5 {
             let user = User::new(
-                Username::new(&format!("user{i}")).unwrap(),
-                Email::new(&format!("user{i}@example.com")).unwrap(),
+                Username::new(format!("user{i}")).unwrap(),
+                Email::new(format!("user{i}@example.com")).unwrap(),
                 Role::User,
             );
             UserRepository::create(&storage, &user, "password")

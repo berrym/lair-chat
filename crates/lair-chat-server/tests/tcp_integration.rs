@@ -600,7 +600,7 @@ async fn test_list_users() {
 
         assert_eq!(response["type"], "list_users_response");
         assert_eq!(response["success"], true);
-        assert!(response["users"].as_array().unwrap().len() >= 1);
+        assert!(!response["users"].as_array().unwrap().is_empty());
     })
     .await;
 

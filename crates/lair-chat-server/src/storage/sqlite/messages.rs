@@ -218,12 +218,11 @@ impl MessageRepository for SqliteStorage {
     }
 
     async fn delete_by_room(&self, room_id: RoomId) -> Result<u64> {
-        let result = sqlx::query(
-            "DELETE FROM messages WHERE target_type = 'room' AND target_id = ?",
-        )
-        .bind(room_id.to_string())
-        .execute(&self.pool)
-        .await?;
+        let result =
+            sqlx::query("DELETE FROM messages WHERE target_type = 'room' AND target_id = ?")
+                .bind(room_id.to_string())
+                .execute(&self.pool)
+                .await?;
 
         Ok(result.rows_affected())
     }
@@ -258,10 +257,12 @@ fn row_to_message(row: sqlx::sqlite::SqliteRow) -> Result<Message> {
 
     let target = match target_type.as_str() {
         "room" => MessageTarget::Room {
-            room_id: RoomId::parse(&target_id).map_err(|e| crate::Error::Internal(e.to_string()))?,
+            room_id: RoomId::parse(&target_id)
+                .map_err(|e| crate::Error::Internal(e.to_string()))?,
         },
         "dm" => MessageTarget::DirectMessage {
-            recipient: UserId::parse(&target_id).map_err(|e| crate::Error::Internal(e.to_string()))?,
+            recipient: UserId::parse(&target_id)
+                .map_err(|e| crate::Error::Internal(e.to_string()))?,
         },
         _ => {
             return Err(crate::Error::Internal(format!(
@@ -294,7 +295,7 @@ mod tests {
     fn test_user(name: &str) -> User {
         User::new(
             Username::new(name).unwrap(),
-            Email::new(&format!("{name}@example.com")).unwrap(),
+            Email::new(format!("{name}@example.com")).unwrap(),
             Role::User,
         )
     }
@@ -310,9 +311,7 @@ mod tests {
     fn test_message(author: &User, room: &Room, content: &str) -> Message {
         Message::new(
             author.id,
-            MessageTarget::Room {
-                room_id: room.id,
-            },
+            MessageTarget::Room { room_id: room.id },
             MessageContent::new(content).unwrap(),
         )
     }
@@ -322,7 +321,9 @@ mod tests {
         let storage = setup().await;
 
         let user = test_user("sender");
-        UserRepository::create(&storage, &user, "password").await.unwrap();
+        UserRepository::create(&storage, &user, "password")
+            .await
+            .unwrap();
 
         let room = test_room("general", &user);
         RoomRepository::create(&storage, &room).await.unwrap();
@@ -345,7 +346,9 @@ mod tests {
         let storage = setup().await;
 
         let user = test_user("sender");
-        UserRepository::create(&storage, &user, "password").await.unwrap();
+        UserRepository::create(&storage, &user, "password")
+            .await
+            .unwrap();
 
         let room = test_room("general", &user);
         RoomRepository::create(&storage, &room).await.unwrap();
@@ -380,7 +383,9 @@ mod tests {
         let storage = setup().await;
 
         let user = test_user("sender");
-        UserRepository::create(&storage, &user, "password").await.unwrap();
+        UserRepository::create(&storage, &user, "password")
+            .await
+            .unwrap();
 
         let room = test_room("general", &user);
         RoomRepository::create(&storage, &room).await.unwrap();
@@ -406,7 +411,9 @@ mod tests {
         let storage = setup().await;
 
         let user = test_user("sender");
-        UserRepository::create(&storage, &user, "password").await.unwrap();
+        UserRepository::create(&storage, &user, "password")
+            .await
+            .unwrap();
 
         let room = test_room("general", &user);
         RoomRepository::create(&storage, &room).await.unwrap();
@@ -415,7 +422,9 @@ mod tests {
         MessageRepository::create(&storage, &message).await.unwrap();
 
         // Delete
-        MessageRepository::delete(&storage, message.id).await.unwrap();
+        MessageRepository::delete(&storage, message.id)
+            .await
+            .unwrap();
 
         let found = MessageRepository::find_by_id(&storage, message.id)
             .await
@@ -428,7 +437,9 @@ mod tests {
         let storage = setup().await;
 
         let user = test_user("sender");
-        UserRepository::create(&storage, &user, "password").await.unwrap();
+        UserRepository::create(&storage, &user, "password")
+            .await
+            .unwrap();
 
         let room = test_room("general", &user);
         RoomRepository::create(&storage, &room).await.unwrap();
@@ -457,8 +468,12 @@ mod tests {
 
         let user1 = test_user("alice");
         let user2 = test_user("bob");
-        UserRepository::create(&storage, &user1, "password").await.unwrap();
-        UserRepository::create(&storage, &user2, "password").await.unwrap();
+        UserRepository::create(&storage, &user1, "password")
+            .await
+            .unwrap();
+        UserRepository::create(&storage, &user2, "password")
+            .await
+            .unwrap();
 
         // Send DM from user1 to user2
         let dm1 = Message::new(
@@ -503,7 +518,9 @@ mod tests {
         let storage = setup().await;
 
         let user = test_user("sender");
-        UserRepository::create(&storage, &user, "password").await.unwrap();
+        UserRepository::create(&storage, &user, "password")
+            .await
+            .unwrap();
 
         let room = test_room("general", &user);
         RoomRepository::create(&storage, &room).await.unwrap();
