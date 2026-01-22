@@ -15,8 +15,10 @@ use crate::app::{Action, ChatMessage};
 pub struct ChatRenderContext<'a> {
     /// Messages to display.
     pub messages: &'a [ChatMessage],
-    /// Current room name.
+    /// Current room name (None if in DM mode).
     pub room_name: Option<&'a str>,
+    /// Current DM partner username (None if in room mode).
+    pub dm_user: Option<&'a str>,
     /// Current username.
     pub username: Option<&'a str>,
     /// Connection status.
@@ -143,6 +145,13 @@ impl ChatScreen {
                     None
                 }
             }
+            "dm" | "msg" | "whisper" | "w" => {
+                if !args.is_empty() {
+                    Some(Action::StartDM(args.to_string()))
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }
@@ -152,6 +161,7 @@ impl ChatScreen {
         let ChatRenderContext {
             messages,
             room_name,
+            dm_user,
             username,
             status,
             error,
@@ -188,13 +198,17 @@ impl ChatScreen {
             .split(chat_area);
 
         // Messages area
-        let title = room_name
-            .map(|r| format!(" {} ", r))
-            .unwrap_or_else(|| " Chat ".to_string());
+        let (title, title_color) = if let Some(dm) = dm_user {
+            (format!(" DM: {} ", dm), Color::Magenta)
+        } else if let Some(r) = room_name {
+            (format!(" {} ", r), Color::Cyan)
+        } else {
+            (" Chat ".to_string(), Color::Cyan)
+        };
         let messages_block = Block::default()
             .title(title)
             .borders(Borders::ALL)
-            .style(Style::default().fg(Color::Cyan));
+            .style(Style::default().fg(title_color));
 
         let inner_height = chunks[0].height.saturating_sub(2) as usize;
         let total_messages = messages.len();

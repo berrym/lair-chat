@@ -6,10 +6,13 @@ A terminal-based chat client for Lair Chat servers, built with Ratatui.
 
 - **Terminal UI**: Full-featured TUI with login, chat, and room management screens
 - **Real-time messaging**: Instant message delivery via TCP connection
-- **Message history**: Automatically loads recent messages when joining a room
+- **Direct messages**: Private one-on-one conversations with `/dm <username>`
+- **Message history**: Automatically loads recent messages when joining a room or DM
 - **Room support**: Create, join, and switch between chat rooms
+- **Online users panel**: See who's in the current room with a sidebar
 - **User presence**: See when users come online or go offline
 - **Vim-like navigation**: Use j/k, G/g for scrolling through messages
+- **Auto-reconnect**: Automatic reconnection when connection is lost
 - **Keepalive**: Automatic connection maintenance with ping/pong
 
 ## Installation
@@ -90,6 +93,9 @@ After logging in, you'll see the main chat interface:
 - `G` - Jump to newest message
 - `g` - Jump to oldest message
 
+**Controls (Normal mode continued):**
+- `R` - Reconnect to server (if disconnected)
+
 **Controls (Insert mode):**
 - Type your message
 - `Enter` - Send message
@@ -97,6 +103,20 @@ After logging in, you'll see the main chat interface:
 - `/quit` - Quit the application
 - `/rooms` - Open room list
 - `/create <name>` - Create a new room
+- `/dm <username>` - Start a direct message with a user
+
+### Direct Messages
+
+You can send private messages to other users:
+
+1. Use the `/dm <username>` command in insert mode
+2. The chat title changes to "DM: username" with a magenta border
+3. Message history with that user is loaded
+4. Send messages normally - they go directly to that user
+5. Use `/rooms` or `r` to return to room chat
+
+When you receive a DM while viewing a room, you'll see a notification:
+"New DM from username"
 
 ### Rooms Screen
 

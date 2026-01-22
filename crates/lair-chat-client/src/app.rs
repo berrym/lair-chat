@@ -29,8 +29,10 @@ pub struct App {
     pub session: Option<Session>,
     /// Rooms the user is a member of (with member counts).
     pub rooms: Vec<RoomListItem>,
-    /// Currently selected room.
+    /// Currently selected room (None if viewing DM).
     pub current_room: Option<Room>,
+    /// Currently selected DM partner (None if viewing room).
+    pub current_dm_user: Option<User>,
     /// Messages for the current view.
     pub messages: Vec<ChatMessage>,
     /// Status message.
@@ -121,6 +123,8 @@ pub enum Action {
     BackToChat,
     /// Reconnect to server.
     Reconnect,
+    /// Start a DM with a user by username.
+    StartDM(String),
 }
 
 impl App {
@@ -134,6 +138,7 @@ impl App {
             session: None,
             rooms: Vec::new(),
             current_room: None,
+            current_dm_user: None,
             messages: Vec::new(),
             status: None,
             error: None,
@@ -265,6 +270,59 @@ impl App {
             Action::Reconnect => {
                 self.reconnect().await;
             }
+            Action::StartDM(username) => {
+                self.handle_start_dm(username).await;
+            }
+        }
+    }
+
+    /// Handle starting a DM with a user.
+    async fn handle_start_dm(&mut self, username: String) {
+        // Don't DM yourself
+        if let Some(user) = &self.user {
+            if user.username.eq_ignore_ascii_case(&username) {
+                self.error = Some("Cannot send DM to yourself".to_string());
+                return;
+            }
+        }
+
+        // Find the user in online_users or user_cache
+        let target_user = self
+            .online_users
+            .iter()
+            .find(|u| u.username.eq_ignore_ascii_case(&username))
+            .cloned();
+
+        if let Some(user) = target_user {
+            // Switch to DM view
+            self.current_room = None;
+            self.current_dm_user = Some(user.clone());
+            self.messages.clear();
+            self.add_system_message(format!("Direct message with {}", user.username));
+            self.screen = Screen::Chat;
+
+            // Request DM history
+            self.request_dm_history(user.id).await;
+        } else {
+            self.error = Some(format!("User '{}' not found online", username));
+        }
+    }
+
+    /// Request DM history with a user.
+    async fn request_dm_history(&mut self, recipient: UserId) {
+        let Some(conn) = &self.connection else {
+            return;
+        };
+
+        let msg = ClientMessage::GetMessages {
+            request_id: Some(Uuid::new_v4().to_string()),
+            target: MessageTarget::DirectMessage { recipient },
+            limit: Some(50),
+            before: None,
+        };
+
+        if let Err(e) = conn.send(msg).await {
+            self.error = Some(format!("Failed to request DM history: {}", e));
         }
     }
 
@@ -313,13 +371,17 @@ impl App {
             return;
         };
 
-        // For now, we need a room to send to
-        let Some(room) = &self.current_room else {
-            self.error = Some("No room selected".to_string());
+        // Determine target: room or DM
+        let target = if let Some(room) = &self.current_room {
+            MessageTarget::Room { room_id: room.id }
+        } else if let Some(dm_user) = &self.current_dm_user {
+            MessageTarget::DirectMessage {
+                recipient: dm_user.id,
+            }
+        } else {
+            self.error = Some("No room or DM selected".to_string());
             return;
         };
-
-        let target = MessageTarget::Room { room_id: room.id };
 
         let msg = ClientMessage::send_message(target, &content);
 
@@ -617,21 +679,36 @@ impl App {
             }
 
             ServerMessage::MessageReceived { message } => {
-                // Only show if it's for our current room
-                if let Some(current) = &self.current_room {
-                    if let MessageTarget::Room { room_id } = &message.target {
-                        if room_id == &current.id {
-                            let author = self.get_username(message.author);
-
-                            self.messages.push(ChatMessage {
-                                id: Some(message.id),
-                                author,
-                                content: message.content,
-                                timestamp: message.created_at,
-                                is_system: false,
-                            });
+                let should_display = match &message.target {
+                    // Room message: show if viewing that room
+                    MessageTarget::Room { room_id } => {
+                        self.current_room.as_ref().map(|r| &r.id) == Some(room_id)
+                    }
+                    // DM: show if viewing DM with sender or recipient
+                    MessageTarget::DirectMessage { recipient } => {
+                        if let Some(dm_user) = &self.current_dm_user {
+                            // Show if DM is with the sender or recipient
+                            dm_user.id == message.author || dm_user.id == *recipient
+                        } else {
+                            false
                         }
                     }
+                };
+
+                if should_display {
+                    let author = self.get_username(message.author);
+
+                    self.messages.push(ChatMessage {
+                        id: Some(message.id),
+                        author,
+                        content: message.content,
+                        timestamp: message.created_at,
+                        is_system: false,
+                    });
+                } else if let MessageTarget::DirectMessage { .. } = &message.target {
+                    // Got a DM while not viewing it - show notification
+                    let author = self.get_username(message.author);
+                    self.add_system_message(format!("New DM from {}", author));
                 }
             }
 

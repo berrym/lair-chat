@@ -103,6 +103,7 @@ async fn run_tui(server_addr: SocketAddr) -> Result<()> {
                     let ctx = ChatRenderContext {
                         messages: &app.messages,
                         room_name: app.current_room.as_ref().map(|r| r.name.as_str()),
+                        dm_user: app.current_dm_user.as_ref().map(|u| u.username.as_str()),
                         username: app.user.as_ref().map(|u| u.username.as_str()),
                         status: app.status.as_deref(),
                         error: app.error.as_deref(),
