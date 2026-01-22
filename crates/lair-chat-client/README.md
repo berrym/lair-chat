@@ -6,8 +6,10 @@ A terminal-based chat client for Lair Chat servers, built with Ratatui.
 
 - **Terminal UI**: Full-featured TUI with login, chat, and room management screens
 - **Real-time messaging**: Instant message delivery via TCP connection
+- **Message history**: Automatically loads recent messages when joining a room
 - **Room support**: Create, join, and switch between chat rooms
 - **User presence**: See when users come online or go offline
+- **Vim-like navigation**: Use j/k, G/g for scrolling through messages
 - **Keepalive**: Automatic connection maintenance with ping/pong
 
 ## Installation
@@ -79,16 +81,26 @@ After logging in, you'll see the main chat interface:
 └─────────────────────────────────────────┘
 ```
 
-**Controls:**
-- Type to compose a message
+**Controls (Normal mode):**
+- `i` - Enter insert mode to type a message
+- `q` - Quit the application
+- `r` - Open room list
+- `j`/`↓` - Scroll down through messages
+- `k`/`↑` - Scroll up through messages
+- `G` - Jump to newest message
+- `g` - Jump to oldest message
+
+**Controls (Insert mode):**
+- Type your message
 - `Enter` - Send message
-- `Ctrl+R` - Open room list
-- `Esc` - Clear input / error message
-- `Ctrl+C` - Quit
+- `Esc` - Return to normal mode
+- `/quit` - Quit the application
+- `/rooms` - Open room list
+- `/create <name>` - Create a new room
 
 ### Rooms Screen
 
-Press `Ctrl+R` from chat to see available rooms:
+Press `r` (in normal mode) from chat to see available rooms:
 
 ```
 ┌─────────────────────────────────────────┐
@@ -104,10 +116,12 @@ Press `Ctrl+R` from chat to see available rooms:
 ```
 
 **Controls:**
-- `↑`/`↓` or `j`/`k` - Navigate room list
+- `j`/`↓` - Move selection down
+- `k`/`↑` - Move selection up
 - `Enter` - Join selected room
-- `N` - Create new room (prompts for name)
+- `n` - Create new room (prompts for name)
 - `Esc` - Return to chat
+- `q` - Quit the application
 
 ## Architecture
 

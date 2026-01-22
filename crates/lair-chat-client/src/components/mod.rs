@@ -5,6 +5,6 @@ pub mod login;
 pub mod rooms;
 pub mod status;
 
-pub use chat::ChatScreen;
+pub use chat::{ChatRenderContext, ChatScreen};
 pub use login::LoginScreen;
 pub use rooms::RoomsScreen;

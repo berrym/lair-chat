@@ -295,6 +295,28 @@ impl App {
         }
     }
 
+    /// Request message history for the current room.
+    async fn request_message_history(&mut self) {
+        let Some(conn) = &self.connection else {
+            return;
+        };
+
+        let Some(room) = &self.current_room else {
+            return;
+        };
+
+        let msg = ClientMessage::GetMessages {
+            request_id: Some(uuid::Uuid::new_v4().to_string()),
+            target: MessageTarget::Room { room_id: room.id },
+            limit: Some(50),
+            before: None,
+        };
+
+        if let Err(e) = conn.send(msg).await {
+            self.error = Some(format!("Failed to request message history: {}", e));
+        }
+    }
+
     /// Handle creating a room.
     async fn handle_create_room(&mut self, name: String) {
         let Some(conn) = &self.connection else {
@@ -419,6 +441,8 @@ impl App {
                         self.current_room = Some(room);
                         self.messages.clear();
                         self.screen = Screen::Chat;
+                        // Request message history for the room
+                        self.request_message_history().await;
                     }
                 } else {
                     let err_msg = error
@@ -446,6 +470,46 @@ impl App {
                     let err_msg = error
                         .map(|e| e.message)
                         .unwrap_or_else(|| "Failed to create room".to_string());
+                    self.error = Some(err_msg);
+                }
+            }
+
+            ServerMessage::GetMessagesResponse {
+                success,
+                messages,
+                error,
+                ..
+            } => {
+                if success {
+                    // Insert historical messages at the beginning (they're older)
+                    let history: Vec<ChatMessage> = messages
+                        .into_iter()
+                        .map(|msg| {
+                            let author = self
+                                .online_users
+                                .iter()
+                                .find(|u| u.id == msg.author)
+                                .map(|u| u.username.clone())
+                                .unwrap_or_else(|| msg.author.to_string());
+
+                            ChatMessage {
+                                id: Some(msg.id),
+                                author,
+                                content: msg.content,
+                                timestamp: msg.created_at,
+                                is_system: false,
+                            }
+                        })
+                        .collect();
+
+                    // Prepend history to existing messages (system messages about joining)
+                    let mut new_messages = history;
+                    new_messages.append(&mut self.messages);
+                    self.messages = new_messages;
+                } else {
+                    let err_msg = error
+                        .map(|e| e.message)
+                        .unwrap_or_else(|| "Failed to load message history".to_string());
                     self.error = Some(err_msg);
                 }
             }

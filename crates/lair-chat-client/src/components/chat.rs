@@ -11,6 +11,20 @@ use ratatui::{
 
 use crate::app::{Action, ChatMessage};
 
+/// Context for rendering the chat screen.
+pub struct ChatRenderContext<'a> {
+    /// Messages to display.
+    pub messages: &'a [ChatMessage],
+    /// Current room name.
+    pub room_name: Option<&'a str>,
+    /// Current username.
+    pub username: Option<&'a str>,
+    /// Connection status.
+    pub status: Option<&'a str>,
+    /// Error message to display.
+    pub error: Option<&'a str>,
+}
+
 /// Chat screen state.
 pub struct ChatScreen {
     /// Current input mode.
@@ -131,16 +145,14 @@ impl ChatScreen {
     }
 
     /// Render the chat screen.
-    pub fn render(
-        &self,
-        frame: &mut Frame,
-        area: Rect,
-        messages: &[ChatMessage],
-        room_name: Option<&str>,
-        username: Option<&str>,
-        status: Option<&str>,
-        error: Option<&str>,
-    ) {
+    pub fn render(&self, frame: &mut Frame, area: Rect, ctx: &ChatRenderContext<'_>) {
+        let ChatRenderContext {
+            messages,
+            room_name,
+            username,
+            status,
+            error,
+        } = ctx;
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([

@@ -22,7 +22,7 @@ mod components;
 mod protocol;
 
 use app::{Action, App, Screen};
-use components::{ChatScreen, LoginScreen, RoomsScreen};
+use components::{ChatRenderContext, ChatScreen, LoginScreen, RoomsScreen};
 
 /// Lair Chat TUI Client
 #[derive(Parser, Debug)]
@@ -93,15 +93,14 @@ async fn run_tui(server_addr: SocketAddr) -> Result<()> {
                     login_screen.render(frame, area, app.error.as_deref());
                 }
                 Screen::Chat => {
-                    chat_screen.render(
-                        frame,
-                        area,
-                        &app.messages,
-                        app.current_room.as_ref().map(|r| r.name.as_str()),
-                        app.user.as_ref().map(|u| u.username.as_str()),
-                        app.status.as_deref(),
-                        app.error.as_deref(),
-                    );
+                    let ctx = ChatRenderContext {
+                        messages: &app.messages,
+                        room_name: app.current_room.as_ref().map(|r| r.name.as_str()),
+                        username: app.user.as_ref().map(|u| u.username.as_str()),
+                        status: app.status.as_deref(),
+                        error: app.error.as_deref(),
+                    };
+                    chat_screen.render(frame, area, &ctx);
                 }
                 Screen::Rooms => {
                     rooms_screen.render(frame, area, &app.rooms, app.current_room.as_ref());
