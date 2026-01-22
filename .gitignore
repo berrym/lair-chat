@@ -1,24 +1,24 @@
+# Build artifacts
 /target
-Cargo.lock
 
 # SQLite database files
 *.db
 *.db-shm
 *.db-wal
 
-# Debug logs
+# Logs
 *.log
-debug.log
-client_debug.log
-server_debug.log
+logs/
 
-# Development scripts (if temporary)
-debug_client.sh
-show_real_logs.sh
+# Runtime data
+data/
+backups/
+test_results/
 
 # IDE and editor files
 .vscode/
 .idea/
+.ropeproject/
 *.swp
 *.swo
 *~
@@ -26,3 +26,6 @@ show_real_logs.sh
 # OS files
 .DS_Store
 Thumbs.db
+
+# Environment files (keep .env.example)
+.env
