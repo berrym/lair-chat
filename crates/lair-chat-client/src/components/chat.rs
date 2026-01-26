@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
     Frame,
 };
 
@@ -25,8 +25,20 @@ pub struct ChatRenderContext<'a> {
     pub status: Option<&'a str>,
     /// Error message to display.
     pub error: Option<&'a str>,
-    /// Online users in the current room.
+    /// Online users (usernames).
     pub online_users: &'a [String],
+    /// Offline users (usernames).
+    pub offline_users: &'a [String],
+}
+
+/// Which panel is focused in the chat screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ChatFocus {
+    /// Messages/input panel is focused.
+    #[default]
+    Messages,
+    /// Users panel is focused.
+    Users,
 }
 
 /// Chat screen state.
@@ -37,6 +49,10 @@ pub struct ChatScreen {
     pub input: String,
     /// Scroll position.
     pub scroll: usize,
+    /// Which panel is focused.
+    pub focus: ChatFocus,
+    /// Selection state for the users list.
+    pub user_list_state: ListState,
 }
 
 /// Input mode for chat.
@@ -59,26 +75,52 @@ impl ChatScreen {
             mode: ChatMode::Normal,
             input: String::new(),
             scroll: 0,
+            focus: ChatFocus::Messages,
+            user_list_state: ListState::default(),
         }
     }
 
     /// Handle a key event.
-    pub fn handle_key(&mut self, key: KeyEvent) -> Option<Action> {
+    /// `user_count` is the number of users in the online users list (for navigation).
+    pub fn handle_key(&mut self, key: KeyEvent, user_count: usize) -> Option<Action> {
         match self.mode {
-            ChatMode::Normal => self.handle_normal_key(key),
+            ChatMode::Normal => self.handle_normal_key(key, user_count),
             ChatMode::Insert => self.handle_insert_key(key),
         }
     }
 
-    fn handle_normal_key(&mut self, key: KeyEvent) -> Option<Action> {
+    fn handle_normal_key(&mut self, key: KeyEvent, user_count: usize) -> Option<Action> {
+        // Handle Tab key to switch focus (available in both focuses)
+        if key.code == KeyCode::Tab {
+            self.focus = match self.focus {
+                ChatFocus::Messages => {
+                    // When switching to Users, select first user if none selected
+                    if user_count > 0 && self.user_list_state.selected().is_none() {
+                        self.user_list_state.select(Some(0));
+                    }
+                    ChatFocus::Users
+                }
+                ChatFocus::Users => ChatFocus::Messages,
+            };
+            return None;
+        }
+
+        match self.focus {
+            ChatFocus::Messages => self.handle_messages_key(key),
+            ChatFocus::Users => self.handle_users_key(key, user_count),
+        }
+    }
+
+    fn handle_messages_key(&mut self, key: KeyEvent) -> Option<Action> {
         match key.code {
             KeyCode::Char('q') => Some(Action::Quit),
-            KeyCode::Char('i') => {
+            KeyCode::Char('i') | KeyCode::Enter => {
                 self.mode = ChatMode::Insert;
                 None
             }
             KeyCode::Char('r') => Some(Action::ShowRooms),
             KeyCode::Char('R') => Some(Action::Reconnect),
+            KeyCode::Char('?') | KeyCode::F(1) => Some(Action::ShowHelp),
             KeyCode::Char('j') | KeyCode::Down => {
                 self.scroll = self.scroll.saturating_add(1);
                 None
@@ -93,6 +135,45 @@ impl ChatScreen {
             }
             KeyCode::Char('g') => {
                 self.scroll = 0;
+                None
+            }
+            KeyCode::Esc => Some(Action::ClearError),
+            _ => None,
+        }
+    }
+
+    fn handle_users_key(&mut self, key: KeyEvent, user_count: usize) -> Option<Action> {
+        match key.code {
+            KeyCode::Char('q') => Some(Action::Quit),
+            KeyCode::Char('r') => Some(Action::ShowRooms),
+            KeyCode::Char('R') => Some(Action::Reconnect),
+            KeyCode::Char('?') | KeyCode::F(1) => Some(Action::ShowHelp),
+            KeyCode::Char('j') | KeyCode::Down => {
+                if user_count > 0 {
+                    let current = self.user_list_state.selected().unwrap_or(0);
+                    let next = (current + 1).min(user_count.saturating_sub(1));
+                    self.user_list_state.select(Some(next));
+                }
+                None
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                if user_count > 0 {
+                    let current = self.user_list_state.selected().unwrap_or(0);
+                    let next = current.saturating_sub(1);
+                    self.user_list_state.select(Some(next));
+                }
+                None
+            }
+            KeyCode::Enter => {
+                // Start DM with selected user
+                if let Some(idx) = self.user_list_state.selected() {
+                    return Some(Action::StartDMByIndex(idx));
+                }
+                None
+            }
+            KeyCode::Esc => {
+                // Switch back to messages focus
+                self.focus = ChatFocus::Messages;
                 None
             }
             _ => None,
@@ -138,6 +219,7 @@ impl ChatScreen {
         match *cmd {
             "quit" | "q" => Some(Action::Quit),
             "rooms" | "r" => Some(Action::ShowRooms),
+            "help" | "h" | "?" => Some(Action::ShowHelp),
             "create" => {
                 if !args.is_empty() {
                     Some(Action::CreateRoom(args.to_string()))
@@ -157,7 +239,7 @@ impl ChatScreen {
     }
 
     /// Render the chat screen.
-    pub fn render(&self, frame: &mut Frame, area: Rect, ctx: &ChatRenderContext<'_>) {
+    pub fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &ChatRenderContext<'_>) {
         let ChatRenderContext {
             messages,
             room_name,
@@ -166,27 +248,20 @@ impl ChatScreen {
             status,
             error,
             online_users,
+            offline_users,
         } = ctx;
 
-        // Main layout: chat area + users panel (if we have users)
-        let show_users_panel = !online_users.is_empty();
-        let main_chunks = if show_users_panel {
-            Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Min(40),    // Chat area (flexible)
-                    Constraint::Length(20), // Users panel (fixed width)
-                ])
-                .split(area)
-        } else {
-            // No users panel, use full width
-            Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(100)])
-                .split(area)
-        };
+        // Main layout: chat area + users panel (always show users panel)
+        let main_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Min(40),    // Chat area (flexible)
+                Constraint::Length(22), // Users panel (fixed width)
+            ])
+            .split(area);
 
         let chat_area = main_chunks[0];
+        let users_area = main_chunks[1];
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -197,17 +272,27 @@ impl ChatScreen {
             ])
             .split(chat_area);
 
+        // Determine border colors based on focus
+        let (messages_border_color, users_border_color) = match self.focus {
+            ChatFocus::Messages => (Color::Cyan, Color::DarkGray),
+            ChatFocus::Users => (Color::DarkGray, Color::Yellow),
+        };
+
         // Messages area
         let (title, title_color) = if let Some(dm) = dm_user {
             (format!(" DM: {} ", dm), Color::Magenta)
         } else if let Some(r) = room_name {
-            (format!(" {} ", r), Color::Cyan)
+            (format!(" #{} ", r), Color::Cyan)
         } else {
-            (" Chat ".to_string(), Color::Cyan)
+            (
+                " No Room - Press 'r' for rooms ".to_string(),
+                Color::Yellow,
+            )
         };
         let messages_block = Block::default()
             .title(title)
             .borders(Borders::ALL)
+            .border_style(Style::default().fg(messages_border_color))
             .style(Style::default().fg(title_color));
 
         let inner_height = chunks[0].height.saturating_sub(2) as usize;
@@ -255,9 +340,12 @@ impl ChatScreen {
         frame.render_widget(messages_list, chunks[0]);
 
         // Input area
-        let input_title = match self.mode {
-            ChatMode::Normal => " Press 'i' to type ",
-            ChatMode::Insert => " Type your message (Esc to exit) ",
+        let has_target = room_name.is_some() || dm_user.is_some();
+        let input_title = match (self.mode, has_target) {
+            (ChatMode::Normal, true) => " Press 'i' to type ",
+            (ChatMode::Normal, false) => " Press 'r' to join a room ",
+            (ChatMode::Insert, true) => " Enter:send Esc:cancel ",
+            (ChatMode::Insert, false) => " No room! Esc then 'r' ",
         };
         let input_style = match self.mode {
             ChatMode::Normal => Style::default().fg(Color::DarkGray),
@@ -276,9 +364,10 @@ impl ChatScreen {
         let input_para = Paragraph::new(input_text).block(input_block);
         frame.render_widget(input_para, chunks[1]);
 
-        // Status bar
-        let user_count = online_users.len();
-        let status_spans = vec![
+        // Status bar with context-aware hints
+        let online_count = online_users.len();
+        let total_count = online_users.len() + offline_users.len();
+        let mut status_spans = vec![
             Span::styled(
                 format!(" {} ", username.unwrap_or("Not logged in")),
                 Style::default().fg(Color::Green),
@@ -288,57 +377,114 @@ impl ChatScreen {
                 format!("{} ", status.unwrap_or("Disconnected")),
                 Style::default().fg(Color::Cyan),
             ),
-            if user_count > 0 {
-                Span::styled(
-                    format!(" | {} online ", user_count),
-                    Style::default().fg(Color::Magenta),
-                )
-            } else {
-                Span::raw("")
-            },
-            if let Some(err) = error {
-                Span::styled(
-                    format!(" | Error: {}", err),
-                    Style::default().fg(Color::Red),
-                )
-            } else {
-                Span::raw("")
-            },
-            Span::styled(
-                " | q:quit r:rooms i:input R:reconnect ",
-                Style::default().fg(Color::DarkGray),
-            ),
         ];
+
+        status_spans.push(Span::styled(
+            format!(" | {}/{} online ", online_count, total_count),
+            Style::default().fg(Color::Magenta),
+        ));
+
+        if let Some(err) = error {
+            status_spans.push(Span::styled(
+                format!(" | {} ", err),
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ));
+        }
+
+        // Context-aware keybind hints
+        let hints = match (self.mode, self.focus) {
+            (ChatMode::Insert, _) => " Esc:normal Enter:send ",
+            (ChatMode::Normal, ChatFocus::Messages) => " Tab:users i:type r:rooms ?:help q:quit ",
+            (ChatMode::Normal, ChatFocus::Users) => " Tab:chat j/k:nav Enter:DM Esc:back ",
+        };
+        status_spans.push(Span::styled(hints, Style::default().fg(Color::DarkGray)));
+
         let status_line = Line::from(status_spans);
         let status_para = Paragraph::new(status_line);
         frame.render_widget(status_para, chunks[2]);
 
-        // Users panel (if showing)
-        if show_users_panel {
-            let users_area = main_chunks[1];
-            let users_block = Block::default()
-                .title(format!(" Users ({}) ", online_users.len()))
-                .borders(Borders::ALL)
-                .style(Style::default().fg(Color::Magenta));
+        // Users panel (always visible)
+        let users_title = if self.focus == ChatFocus::Users {
+            format!(" Users ({}) [Tab:back] ", total_count)
+        } else {
+            format!(" Users ({}) [Tab] ", total_count)
+        };
+        let users_block = Block::default()
+            .title(users_title)
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(users_border_color))
+            .style(Style::default().fg(Color::Magenta));
 
-            let user_items: Vec<ListItem> = online_users
-                .iter()
-                .map(|name| {
-                    let is_self = username.map(|u| u == name).unwrap_or(false);
-                    let style = if is_self {
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(Color::White)
-                    };
-                    let prefix = if is_self { "* " } else { "  " };
-                    ListItem::new(format!("{}{}", prefix, name)).style(style)
-                })
-                .collect();
+        if online_users.is_empty() && offline_users.is_empty() {
+            // Show "no users" message
+            let empty_msg = Paragraph::new("  No other users")
+                .style(Style::default().fg(Color::DarkGray))
+                .block(users_block);
+            frame.render_widget(empty_msg, users_area);
+        } else {
+            // Build user list with sections
+            let mut user_items: Vec<ListItem> = Vec::new();
+            let mut list_idx = 0usize;
 
-            let users_list = List::new(user_items).block(users_block);
-            frame.render_widget(users_list, users_area);
+            // Online section header
+            if !online_users.is_empty() {
+                user_items.push(
+                    ListItem::new(format!("─ Online ({}) ─", online_users.len()))
+                        .style(Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                );
+            }
+
+            // Online users
+            for name in online_users.iter() {
+                let is_selected =
+                    self.user_list_state.selected() == Some(list_idx) && self.focus == ChatFocus::Users;
+                let style = if is_selected {
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::Green)
+                };
+                let prefix = if is_selected { "> " } else { "  " };
+                user_items.push(ListItem::new(format!("{}{}", prefix, name)).style(style));
+                list_idx += 1;
+            }
+
+            // Offline section header
+            if !offline_users.is_empty() {
+                user_items.push(
+                    ListItem::new(format!("─ Offline ({}) ─", offline_users.len()))
+                        .style(Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+                );
+            }
+
+            // Offline users
+            for name in offline_users.iter() {
+                let is_selected =
+                    self.user_list_state.selected() == Some(list_idx) && self.focus == ChatFocus::Users;
+                let style = if is_selected {
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::DarkGray)
+                };
+                let prefix = if is_selected { "> " } else { "  " };
+                user_items.push(ListItem::new(format!("{}{}", prefix, name)).style(style));
+                list_idx += 1;
+            }
+
+            let users_list = List::new(user_items)
+                .block(users_block)
+                .highlight_style(
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                );
+            frame.render_stateful_widget(users_list, users_area, &mut self.user_list_state);
         }
     }
 }

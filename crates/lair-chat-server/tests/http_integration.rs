@@ -569,7 +569,7 @@ async fn test_edit_message() {
     response.assert_status_ok();
     let body: Value = response.json();
     assert_eq!(body["message"]["content"], "Edited message");
-    assert_eq!(body["message"]["is_edited"], true);
+    assert_eq!(body["message"]["edited"], true);
 }
 
 #[tokio::test]

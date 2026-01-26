@@ -13,6 +13,7 @@ use tokio::time::timeout;
 
 use lair_chat_server::adapters::tcp::{TcpConfig, TcpServer};
 use lair_chat_server::core::engine::ChatEngine;
+use lair_chat_server::crypto::{parse_public_key, Cipher, KeyPair, NONCE_SIZE};
 use lair_chat_server::storage::sqlite::SqliteStorage;
 
 /// Default test timeout.
@@ -81,10 +82,39 @@ impl TestClient {
         serde_json::from_str(&json).unwrap()
     }
 
-    /// Send a message and receive the response.
+    /// Check if a message type is an event (not a response).
+    fn is_event(msg: &Value) -> bool {
+        let event_types = [
+            "message_received",
+            "message_edited",
+            "message_deleted",
+            "user_joined_room",
+            "user_left_room",
+            "room_updated",
+            "room_deleted",
+            "user_online",
+            "user_offline",
+            "user_typing",
+            "invitation_received",
+            "server_notice",
+        ];
+        if let Some(msg_type) = msg.get("type").and_then(|t| t.as_str()) {
+            event_types.contains(&msg_type)
+        } else {
+            false
+        }
+    }
+
+    /// Send a message and receive the response, skipping any events.
     async fn request(&mut self, msg: &Value) -> Value {
         self.send(msg).await;
-        self.recv().await
+        loop {
+            let response = self.recv().await;
+            if !Self::is_event(&response) {
+                return response;
+            }
+            // Skip events and keep waiting for the actual response
+        }
     }
 
     /// Complete the handshake.
@@ -678,6 +708,319 @@ async fn test_ping_pong_authenticated() {
 
         assert_eq!(pong["type"], "pong");
         assert!(pong["server_time"].is_string());
+    })
+    .await;
+
+    server.shutdown().await;
+    result.unwrap();
+}
+
+// ============================================================================
+// Encryption Tests
+// ============================================================================
+
+/// Encrypted test client that handles key exchange and AES-256-GCM.
+struct EncryptedTestClient {
+    reader: BufReader<tokio::net::tcp::OwnedReadHalf>,
+    writer: BufWriter<tokio::net::tcp::OwnedWriteHalf>,
+    cipher: Option<Cipher>,
+}
+
+impl EncryptedTestClient {
+    async fn connect(port: u16) -> Self {
+        let stream = TcpStream::connect(format!("127.0.0.1:{}", port))
+            .await
+            .unwrap();
+        let (read_half, write_half) = stream.into_split();
+        Self {
+            reader: BufReader::new(read_half),
+            writer: BufWriter::new(write_half),
+            cipher: None,
+        }
+    }
+
+    async fn send(&mut self, msg: &Value) {
+        let json = serde_json::to_string(msg).unwrap();
+
+        if let Some(ref cipher) = self.cipher {
+            // Encrypted send
+            let plaintext = json.as_bytes();
+            let (nonce, ciphertext) = cipher.encrypt(plaintext).unwrap();
+            let frame_size = NONCE_SIZE + ciphertext.len();
+            let length = frame_size as u32;
+
+            self.writer.write_all(&length.to_be_bytes()).await.unwrap();
+            self.writer.write_all(&nonce).await.unwrap();
+            self.writer.write_all(&ciphertext).await.unwrap();
+            self.writer.flush().await.unwrap();
+        } else {
+            // Unencrypted send
+            let bytes = json.as_bytes();
+            let len = bytes.len() as u32;
+            self.writer.write_all(&len.to_be_bytes()).await.unwrap();
+            self.writer.write_all(bytes).await.unwrap();
+            self.writer.flush().await.unwrap();
+        }
+    }
+
+    async fn recv(&mut self) -> Value {
+        let mut len_bytes = [0u8; 4];
+        self.reader.read_exact(&mut len_bytes).await.unwrap();
+        let len = u32::from_be_bytes(len_bytes) as usize;
+
+        if let Some(ref cipher) = self.cipher {
+            // Encrypted recv
+            let mut nonce = [0u8; NONCE_SIZE];
+            self.reader.read_exact(&mut nonce).await.unwrap();
+
+            let ciphertext_len = len - NONCE_SIZE;
+            let mut ciphertext = vec![0u8; ciphertext_len];
+            self.reader.read_exact(&mut ciphertext).await.unwrap();
+
+            let plaintext = cipher.decrypt(&nonce, &ciphertext).unwrap();
+            let json = String::from_utf8(plaintext).unwrap();
+            serde_json::from_str(&json).unwrap()
+        } else {
+            // Unencrypted recv
+            let mut payload = vec![0u8; len];
+            self.reader.read_exact(&mut payload).await.unwrap();
+            let json = String::from_utf8(payload).unwrap();
+            serde_json::from_str(&json).unwrap()
+        }
+    }
+
+    /// Check if a message type is an event (not a response).
+    fn is_event(msg: &Value) -> bool {
+        let event_types = [
+            "message_received",
+            "message_edited",
+            "message_deleted",
+            "user_joined_room",
+            "user_left_room",
+            "room_updated",
+            "room_deleted",
+            "user_online",
+            "user_offline",
+            "user_typing",
+            "invitation_received",
+            "server_notice",
+        ];
+        if let Some(msg_type) = msg.get("type").and_then(|t| t.as_str()) {
+            event_types.contains(&msg_type)
+        } else {
+            false
+        }
+    }
+
+    async fn request(&mut self, msg: &Value) -> Value {
+        self.send(msg).await;
+        loop {
+            let response = self.recv().await;
+            if !Self::is_event(&response) {
+                return response;
+            }
+            // Skip events and keep waiting for the actual response
+        }
+    }
+
+    /// Perform handshake with encryption support.
+    async fn handshake_with_encryption(&mut self) -> Value {
+        // Receive server hello
+        let server_hello = self.recv().await;
+        assert_eq!(server_hello["type"], "server_hello");
+
+        // Check server supports encryption
+        let features = server_hello["features"].as_array().unwrap();
+        let supports_encryption = features.iter().any(|f| f == "encryption");
+        assert!(supports_encryption, "Server should support encryption");
+
+        // Send client hello with encryption feature
+        self.send(&json!({
+            "type": "client_hello",
+            "version": "1.0",
+            "client_name": "encrypted-test-client",
+            "features": ["encryption"]
+        }))
+        .await;
+
+        // Generate client keypair
+        let keypair = KeyPair::generate();
+        let client_public = keypair.public_key_base64();
+
+        // Send key exchange
+        self.send(&json!({
+            "type": "key_exchange",
+            "public_key": client_public
+        }))
+        .await;
+
+        // Receive server's public key
+        let key_response = self.recv().await;
+        assert_eq!(key_response["type"], "key_exchange_response");
+
+        let server_public_str = key_response["public_key"].as_str().unwrap();
+        let server_public = parse_public_key(server_public_str).unwrap();
+
+        // Derive shared secret
+        let shared_secret = keypair.diffie_hellman(server_public);
+
+        // Create cipher
+        self.cipher = Some(Cipher::new(&shared_secret));
+
+        server_hello
+    }
+
+    async fn register(&mut self, username: &str, email: &str, password: &str) -> Value {
+        self.request(&json!({
+            "type": "register",
+            "username": username,
+            "email": email,
+            "password": password
+        }))
+        .await
+    }
+}
+
+#[tokio::test]
+async fn test_server_advertises_encryption() {
+    let (server, port) = create_test_server().await;
+
+    let result = timeout(TEST_TIMEOUT, async {
+        let mut client = TestClient::connect(port).await;
+        let hello = client.recv().await;
+
+        assert_eq!(hello["type"], "server_hello");
+        let features = hello["features"].as_array().unwrap();
+        assert!(
+            features.iter().any(|f| f == "encryption"),
+            "Server should advertise encryption feature"
+        );
+    })
+    .await;
+
+    server.shutdown().await;
+    result.unwrap();
+}
+
+#[tokio::test]
+async fn test_encryption_handshake() {
+    let (server, port) = create_test_server().await;
+
+    let result = timeout(TEST_TIMEOUT, async {
+        let mut client = EncryptedTestClient::connect(port).await;
+        let server_hello = client.handshake_with_encryption().await;
+
+        assert_eq!(server_hello["type"], "server_hello");
+        assert!(client.cipher.is_some(), "Cipher should be established");
+    })
+    .await;
+
+    server.shutdown().await;
+    result.unwrap();
+}
+
+#[tokio::test]
+async fn test_encrypted_communication() {
+    let (server, port) = create_test_server().await;
+
+    let result = timeout(TEST_TIMEOUT, async {
+        let mut client = EncryptedTestClient::connect(port).await;
+        client.handshake_with_encryption().await;
+
+        // Register (encrypted)
+        let response = client
+            .register("encuser", "enc@example.com", "SecurePass123!")
+            .await;
+
+        assert_eq!(response["type"], "register_response");
+        assert_eq!(response["success"], true);
+        assert_eq!(response["user"]["username"], "encuser");
+    })
+    .await;
+
+    server.shutdown().await;
+    result.unwrap();
+}
+
+#[tokio::test]
+async fn test_encrypted_ping_pong() {
+    let (server, port) = create_test_server().await;
+
+    let result = timeout(TEST_TIMEOUT, async {
+        let mut client = EncryptedTestClient::connect(port).await;
+        client.handshake_with_encryption().await;
+        client
+            .register("encping", "encping@example.com", "SecurePass123!")
+            .await;
+
+        // Send encrypted ping
+        let pong = client.request(&json!({"type": "ping"})).await;
+
+        assert_eq!(pong["type"], "pong");
+        assert!(pong["server_time"].is_string());
+    })
+    .await;
+
+    server.shutdown().await;
+    result.unwrap();
+}
+
+#[tokio::test]
+async fn test_encrypted_room_and_messages() {
+    let (server, port) = create_test_server().await;
+
+    let result = timeout(TEST_TIMEOUT, async {
+        let mut client = EncryptedTestClient::connect(port).await;
+        client.handshake_with_encryption().await;
+        client
+            .register("encroom", "encroom@example.com", "SecurePass123!")
+            .await;
+
+        // Create room
+        let create_response = client
+            .request(&json!({
+                "type": "create_room",
+                "name": "Encrypted Room"
+            }))
+            .await;
+
+        assert_eq!(create_response["type"], "create_room_response");
+        assert_eq!(create_response["success"], true);
+
+        let room_id = create_response["room"]["id"].as_str().unwrap();
+
+        // Send message
+        let send_response = client
+            .request(&json!({
+                "type": "send_message",
+                "target": {"type": "room", "room_id": room_id},
+                "content": "Secret encrypted message!"
+            }))
+            .await;
+
+        assert_eq!(send_response["type"], "send_message_response");
+        assert_eq!(send_response["success"], true);
+        assert_eq!(
+            send_response["message"]["content"],
+            "Secret encrypted message!"
+        );
+
+        // Get messages
+        let get_response = client
+            .request(&json!({
+                "type": "get_messages",
+                "target": {"type": "room", "room_id": room_id},
+                "limit": 50
+            }))
+            .await;
+
+        assert_eq!(get_response["type"], "get_messages_response");
+        assert_eq!(get_response["success"], true);
+        assert_eq!(get_response["messages"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            get_response["messages"][0]["content"],
+            "Secret encrypted message!"
+        );
     })
     .await;
 

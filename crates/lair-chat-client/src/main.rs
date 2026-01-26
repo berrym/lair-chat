@@ -19,6 +19,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod app;
 mod components;
+mod crypto;
 mod protocol;
 
 use app::{Action, App, Screen};
@@ -93,12 +94,8 @@ async fn run_tui(server_addr: SocketAddr) -> Result<()> {
                     login_screen.render(frame, area, app.error.as_deref());
                 }
                 Screen::Chat => {
-                    // Collect online usernames for the panel
-                    let online_usernames: Vec<String> = app
-                        .online_users
-                        .iter()
-                        .map(|u| u.username.clone())
-                        .collect();
+                    // Get online and offline user lists
+                    let (online_usernames, offline_usernames) = app.get_user_lists();
 
                     let ctx = ChatRenderContext {
                         messages: &app.messages,
@@ -108,11 +105,19 @@ async fn run_tui(server_addr: SocketAddr) -> Result<()> {
                         status: app.status.as_deref(),
                         error: app.error.as_deref(),
                         online_users: &online_usernames,
+                        offline_users: &offline_usernames,
                     };
                     chat_screen.render(frame, area, &ctx);
                 }
                 Screen::Rooms => {
-                    rooms_screen.render(frame, area, &app.rooms, app.current_room.as_ref());
+                    rooms_screen.render(
+                        frame,
+                        area,
+                        &app.rooms,
+                        app.current_room.as_ref(),
+                        app.status.as_deref(),
+                        app.error.as_deref(),
+                    );
                 }
             }
         })?;
@@ -136,8 +141,16 @@ async fn run_tui(server_addr: SocketAddr) -> Result<()> {
                 // Route to appropriate screen
                 let action = match app.screen {
                     Screen::Login => login_screen.handle_key(key),
-                    Screen::Chat => chat_screen.handle_key(key),
-                    Screen::Rooms => rooms_screen.handle_key(key, &app.rooms),
+                    Screen::Chat => chat_screen.handle_key(key, app.all_users.len()),
+                    Screen::Rooms => {
+                        // Debug: show which screen we're on and the key pressed
+                        app.status = Some(format!("Rooms: {:?}, {} rooms", key.code, app.rooms.len()));
+                        let (action, debug_msg) = rooms_screen.handle_key(key, &app.rooms);
+                        if let Some(msg) = debug_msg {
+                            app.status = Some(msg);
+                        }
+                        action
+                    }
                 };
 
                 if let Some(action) = action {

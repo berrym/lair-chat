@@ -8,7 +8,7 @@
 //! - Cleanup
 
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use tokio::io::{BufReader, BufWriter};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
@@ -18,12 +18,16 @@ use tokio::time::{timeout, Duration};
 use tracing::{debug, error, info, warn};
 
 use crate::core::engine::ChatEngine;
-use crate::domain::{Protocol, Session, SessionId, User};
-use crate::storage::Storage;
+use crate::core::events::{should_receive_event, EventDispatcher};
+use crate::crypto::{parse_public_key, Cipher, KeyPair};
+use crate::domain::events::{Event, EventPayload};
+use crate::domain::{Protocol, RoomId, Session, SessionId, User};
+use crate::storage::{RoomRepository, Storage, UserRepository};
 
 use super::commands::CommandHandler;
 use super::protocol::{
-    read_message, write_message, ClientMessage, ProtocolError, ServerMessage, PROTOCOL_VERSION,
+    read_encrypted_message, read_message, write_encrypted_message, write_message, ClientMessage,
+    ProtocolError, ServerMessage, PROTOCOL_VERSION,
 };
 
 /// Timeout for handshake completion.
@@ -40,12 +44,28 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 enum ConnectionState {
     /// Waiting for client hello.
     AwaitingHandshake,
+    /// Waiting for key exchange (client requested encryption).
+    AwaitingKeyExchange,
     /// Handshake complete, waiting for authentication.
     AwaitingAuth,
     /// Fully authenticated and operational.
     Authenticated,
     /// Connection is closing.
     Closing,
+}
+
+/// Encryption state shared between connection handler and writer task.
+///
+/// The `pending` flag handles the race condition during key exchange:
+/// - When cipher is first set, `pending` is true (not yet active for writes)
+/// - After the writer sends a message with pending cipher, it sets pending=false
+/// - This ensures KeyExchangeResponse is sent unencrypted
+#[derive(Default)]
+struct EncryptionState {
+    cipher: Option<Arc<Cipher>>,
+    /// True when cipher is set but not yet active for writing.
+    /// The writer task will activate it after sending the next message.
+    pending: bool,
 }
 
 /// A single TCP client connection.
@@ -62,6 +82,18 @@ pub struct Connection<S: Storage> {
     commands: CommandHandler<S>,
     /// Channel for sending outgoing messages.
     outgoing_tx: mpsc::Sender<ServerMessage>,
+    /// Whether encryption is enabled for this connection.
+    encryption_enabled: bool,
+    /// Server's keypair for key exchange (consumed during exchange).
+    keypair: Option<KeyPair>,
+    /// Encryption state (shared with writer task).
+    encryption_state: Arc<RwLock<EncryptionState>>,
+    /// Event listener task handle (spawned after authentication).
+    event_task: Option<tokio::task::JoinHandle<()>>,
+    /// Storage backend for fetching room memberships.
+    storage: Arc<S>,
+    /// Event dispatcher for subscribing to events.
+    events: EventDispatcher,
 }
 
 impl<S: Storage + 'static> Connection<S> {
@@ -77,6 +109,9 @@ impl<S: Storage + 'static> Connection<S> {
         // Create outgoing message channel
         let (outgoing_tx, outgoing_rx) = mpsc::channel::<ServerMessage>(100);
 
+        // Create encryption state holder (shared with writer task)
+        let encryption_state = Arc::new(RwLock::new(EncryptionState::default()));
+
         // Create connection handler
         let mut conn = Connection {
             addr,
@@ -85,6 +120,12 @@ impl<S: Storage + 'static> Connection<S> {
             session: None,
             commands: CommandHandler::new(engine.clone()),
             outgoing_tx: outgoing_tx.clone(),
+            encryption_enabled: false,
+            keypair: None,
+            encryption_state: encryption_state.clone(),
+            event_task: None,
+            storage: engine.storage_clone(),
+            events: engine.events_clone(),
         };
 
         // Send server hello
@@ -93,9 +134,12 @@ impl<S: Storage + 'static> Connection<S> {
             return;
         }
 
-        // Spawn writer task
+        // Spawn writer task with encryption state for encrypted writes
+        let writer_encryption = encryption_state;
         let writer_handle =
-            tokio::spawn(async move { Self::writer_task(writer, outgoing_rx).await });
+            tokio::spawn(
+                async move { Self::writer_task(writer, outgoing_rx, writer_encryption).await },
+            );
 
         // Process messages
         let result = conn
@@ -123,11 +167,39 @@ impl<S: Storage + 'static> Connection<S> {
     async fn writer_task(
         mut writer: BufWriter<OwnedWriteHalf>,
         mut rx: mpsc::Receiver<ServerMessage>,
+        encryption_state: Arc<RwLock<EncryptionState>>,
     ) {
         while let Some(msg) = rx.recv().await {
             match msg.to_json() {
                 Ok(json) => {
-                    if let Err(e) = write_message(&mut writer, &json).await {
+                    // Get cipher and pending state
+                    let (cipher_opt, was_pending) = {
+                        let state = encryption_state.read().unwrap();
+                        // Only use cipher for encryption if it's not pending
+                        // (pending means KeyExchangeResponse hasn't been sent yet)
+                        let cipher = if state.pending {
+                            None // Don't encrypt while pending
+                        } else {
+                            state.cipher.as_ref().cloned()
+                        };
+                        (cipher, state.pending)
+                    };
+
+                    let result = match cipher_opt {
+                        Some(c) => write_encrypted_message(&mut writer, &json, &c).await,
+                        None => write_message(&mut writer, &json).await,
+                    };
+
+                    // If cipher was pending, activate it now (after writing unencrypted)
+                    if was_pending {
+                        let mut state = encryption_state.write().unwrap();
+                        if state.pending {
+                            state.pending = false;
+                            debug!("Encryption activated for subsequent messages");
+                        }
+                    }
+
+                    if let Err(e) = result {
                         error!("Failed to write message: {}", e);
                         break;
                     }
@@ -167,28 +239,64 @@ impl<S: Storage + 'static> Connection<S> {
             // Determine timeout based on state
             let read_timeout = match self.state {
                 ConnectionState::AwaitingHandshake => HANDSHAKE_TIMEOUT,
+                ConnectionState::AwaitingKeyExchange => HANDSHAKE_TIMEOUT,
                 ConnectionState::AwaitingAuth => AUTH_TIMEOUT,
                 ConnectionState::Authenticated => IDLE_TIMEOUT,
                 ConnectionState::Closing => return Ok(()),
             };
 
-            // Read with timeout
-            let json = match timeout(read_timeout, read_message(reader)).await {
-                Ok(Ok(json)) => json,
-                Ok(Err(e)) => return Err(e),
-                Err(_) => {
-                    warn!(
-                        "Connection {} timed out in state {:?}",
-                        self.addr, self.state
-                    );
-                    let _ = self
-                        .send(ServerMessage::error(
-                            None,
-                            "timeout",
-                            "Connection timed out",
-                        ))
-                        .await;
-                    return Ok(());
+            // Read with timeout - use encrypted read if encryption is enabled
+            // Clone the cipher Arc before releasing lock (if encryption enabled and not pending)
+            let cipher_opt = if self.encryption_enabled {
+                let state = self.encryption_state.read().unwrap();
+                // Only use cipher for reading if it's active (not pending)
+                // Note: for reading, we should always decrypt after key exchange,
+                // because the client will start encrypting after receiving KeyExchangeResponse
+                state.cipher.as_ref().cloned()
+            } else {
+                None
+            };
+
+            let json = match cipher_opt {
+                Some(cipher) => {
+                    match timeout(read_timeout, read_encrypted_message(reader, &cipher)).await {
+                        Ok(Ok(json)) => json,
+                        Ok(Err(e)) => return Err(e),
+                        Err(_) => {
+                            warn!(
+                                "Connection {} timed out in state {:?}",
+                                self.addr, self.state
+                            );
+                            let _ = self
+                                .send(ServerMessage::error(
+                                    None,
+                                    "timeout",
+                                    "Connection timed out",
+                                ))
+                                .await;
+                            return Ok(());
+                        }
+                    }
+                }
+                None => {
+                    match timeout(read_timeout, read_message(reader)).await {
+                        Ok(Ok(json)) => json,
+                        Ok(Err(e)) => return Err(e),
+                        Err(_) => {
+                            warn!(
+                                "Connection {} timed out in state {:?}",
+                                self.addr, self.state
+                            );
+                            let _ = self
+                                .send(ServerMessage::error(
+                                    None,
+                                    "timeout",
+                                    "Connection timed out",
+                                ))
+                                .await;
+                            return Ok(());
+                        }
+                    }
                 }
             };
 
@@ -224,6 +332,7 @@ impl<S: Storage + 'static> Connection<S> {
     async fn handle_message(&mut self, msg: ClientMessage) -> Result<(), ProtocolError> {
         match &self.state {
             ConnectionState::AwaitingHandshake => self.handle_handshake(msg).await,
+            ConnectionState::AwaitingKeyExchange => self.handle_key_exchange(msg).await,
             ConnectionState::AwaitingAuth => self.handle_auth(msg).await,
             ConnectionState::Authenticated => self.handle_authenticated(msg).await,
             ConnectionState::Closing => Ok(()),
@@ -233,7 +342,9 @@ impl<S: Storage + 'static> Connection<S> {
     /// Handle messages during handshake phase.
     async fn handle_handshake(&mut self, msg: ClientMessage) -> Result<(), ProtocolError> {
         match msg {
-            ClientMessage::ClientHello { version, .. } => {
+            ClientMessage::ClientHello {
+                version, features, ..
+            } => {
                 // Check version compatibility
                 if !version.starts_with("1.") {
                     self.send(ServerMessage::error(
@@ -249,11 +360,30 @@ impl<S: Storage + 'static> Connection<S> {
                     return Ok(());
                 }
 
-                debug!(
-                    "Handshake complete with {} (version {})",
-                    self.addr, version
-                );
-                self.state = ConnectionState::AwaitingAuth;
+                // Check if client wants encryption
+                let wants_encryption = features.iter().any(|f| f == "encryption");
+
+                if wants_encryption {
+                    debug!(
+                        "Client {} requested encryption, generating keypair",
+                        self.addr
+                    );
+                    // Generate server keypair for key exchange
+                    self.keypair = Some(KeyPair::generate());
+                    self.state = ConnectionState::AwaitingKeyExchange;
+
+                    debug!(
+                        "Handshake complete with {} (version {}), awaiting key exchange",
+                        self.addr, version
+                    );
+                } else {
+                    debug!(
+                        "Handshake complete with {} (version {}), no encryption",
+                        self.addr, version
+                    );
+                    self.state = ConnectionState::AwaitingAuth;
+                }
+
                 Ok(())
             }
             ClientMessage::Ping => self.send(ServerMessage::pong()).await,
@@ -262,6 +392,56 @@ impl<S: Storage + 'static> Connection<S> {
                     None,
                     "unauthorized",
                     "Must complete handshake first",
+                ))
+                .await
+            }
+        }
+    }
+
+    /// Handle key exchange message.
+    async fn handle_key_exchange(&mut self, msg: ClientMessage) -> Result<(), ProtocolError> {
+        match msg {
+            ClientMessage::KeyExchange { public_key } => {
+                // Parse client's public key
+                let client_public = parse_public_key(&public_key).map_err(|e| {
+                    ProtocolError::KeyExchangeFailed(format!("Invalid client public key: {}", e))
+                })?;
+
+                // Get server's keypair
+                let keypair = self.keypair.take().ok_or_else(|| {
+                    ProtocolError::KeyExchangeFailed("Server keypair not available".to_string())
+                })?;
+
+                // Send our public key to client
+                let server_public = keypair.public_key_base64();
+                self.send(ServerMessage::KeyExchangeResponse {
+                    public_key: server_public,
+                })
+                .await?;
+
+                // Derive shared secret
+                let shared_secret = keypair.diffie_hellman(client_public);
+
+                // Create cipher from shared secret and store in shared holder.
+                // Set pending=true so the KeyExchangeResponse is sent unencrypted.
+                // The writer task will clear pending after sending that message.
+                {
+                    let mut state = self.encryption_state.write().unwrap();
+                    state.cipher = Some(Arc::new(Cipher::new(&shared_secret)));
+                    state.pending = true;
+                }
+                self.encryption_enabled = true;
+
+                info!("Encryption enabled for connection from {}", self.addr);
+                self.state = ConnectionState::AwaitingAuth;
+                Ok(())
+            }
+            ClientMessage::Ping => self.send(ServerMessage::pong()).await,
+            _ => {
+                self.send(ServerMessage::error(
+                    None,
+                    "unauthorized",
+                    "Must complete key exchange first",
                 ))
                 .await
             }
@@ -296,7 +476,10 @@ impl<S: Storage + 'static> Connection<S> {
                         info!("User {} authenticated from {}", user.username, self.addr);
 
                         // Notify engine of user connection
-                        self.commands.user_connected(user.id).await;
+                        self.commands.user_connected(user.id, user.username.to_string()).await;
+
+                        // Spawn event listener to receive real-time updates
+                        self.spawn_event_listener(user.id);
                     }
                 }
 
@@ -329,7 +512,10 @@ impl<S: Storage + 'static> Connection<S> {
                         self.state = ConnectionState::Authenticated;
                         info!("New user {} registered from {}", user.username, self.addr);
 
-                        self.commands.user_connected(user.id).await;
+                        self.commands.user_connected(user.id, user.username.to_string()).await;
+
+                        // Spawn event listener to receive real-time updates
+                        self.spawn_event_listener(user.id);
                     }
                 }
 
@@ -473,9 +659,150 @@ impl<S: Storage + 'static> Connection<S> {
 
     /// Clean up when connection closes.
     async fn cleanup(&mut self) {
+        // Abort the event listener task if running
+        if let Some(handle) = self.event_task.take() {
+            handle.abort();
+        }
+
         if let Some(user) = &self.user {
             info!("Cleaning up connection for user {}", user.username);
-            self.commands.user_disconnected(user.id).await;
+            self.commands.user_disconnected(user.id, user.username.to_string()).await;
         }
+    }
+
+    /// Convert a domain event to a protocol ServerMessage.
+    /// For MessageReceived, use `convert_message_received_event` instead to include author username.
+    fn event_to_server_message(event: &Event) -> Option<ServerMessage> {
+        match &event.payload {
+            // MessageReceived is handled separately in event_listener_task to include author_username
+            EventPayload::MessageReceived(_) => None,
+            EventPayload::MessageEdited(e) => Some(ServerMessage::MessageEdited {
+                message: e.message.clone(),
+                previous_content: e.previous_content.clone(),
+            }),
+            EventPayload::MessageDeleted(e) => Some(ServerMessage::MessageDeleted {
+                message_id: e.message_id.to_string(),
+                target: e.target.clone(),
+                deleted_by: e.deleted_by.to_string(),
+            }),
+            EventPayload::UserJoinedRoom(e) => Some(ServerMessage::UserJoinedRoom {
+                room_id: e.room_id.to_string(),
+                user: e.user.clone(),
+                membership: e.membership.clone(),
+            }),
+            EventPayload::UserLeftRoom(e) => Some(ServerMessage::UserLeftRoom {
+                room_id: e.room_id.to_string(),
+                user_id: e.user_id.to_string(),
+                reason: e.reason.to_string(),
+            }),
+            EventPayload::RoomUpdated(e) => Some(ServerMessage::RoomUpdated {
+                room: e.room.clone(),
+                changed_by: e.changed_by.to_string(),
+            }),
+            EventPayload::RoomDeleted(e) => Some(ServerMessage::RoomDeleted {
+                room_id: e.room_id.to_string(),
+                room_name: e.room_name.clone(),
+                deleted_by: e.deleted_by.to_string(),
+            }),
+            EventPayload::UserOnline(e) => Some(ServerMessage::UserOnline {
+                user_id: e.user_id.to_string(),
+                username: e.username.clone(),
+            }),
+            EventPayload::UserOffline(e) => Some(ServerMessage::UserOffline {
+                user_id: e.user_id.to_string(),
+                username: e.username.clone(),
+            }),
+            EventPayload::UserTyping(e) => Some(ServerMessage::UserTyping {
+                user_id: e.user_id.to_string(),
+                target: e.target.clone(),
+            }),
+            EventPayload::InvitationReceived(e) => Some(ServerMessage::InvitationReceived {
+                invitation: e.invitation.clone(),
+            }),
+            EventPayload::ServerNotice(e) => Some(ServerMessage::ServerNotice {
+                message: e.message.clone(),
+                severity: e.severity.to_string(),
+            }),
+            // Session-specific events are not broadcast to connections
+            EventPayload::InvitationCancelled(_) | EventPayload::SessionExpiring(_) => None,
+        }
+    }
+
+    /// Event listener task - receives events and forwards to client.
+    async fn event_listener_task(
+        mut event_rx: tokio::sync::broadcast::Receiver<Event>,
+        outgoing_tx: mpsc::Sender<ServerMessage>,
+        user_id: crate::domain::UserId,
+        storage: Arc<S>,
+    ) {
+        loop {
+            match event_rx.recv().await {
+                Ok(event) => {
+                    // Fetch user's current room memberships for filtering
+                    let user_rooms: Vec<RoomId> =
+                        match RoomRepository::list_for_user(&*storage, user_id).await {
+                            Ok(rooms) => rooms.into_iter().map(|r| r.id).collect(),
+                            Err(e) => {
+                                debug!("Failed to fetch user rooms for event filtering: {}", e);
+                                Vec::new()
+                            }
+                        };
+
+                    // Check if this user should receive this event
+                    if !should_receive_event(&event, user_id, &user_rooms) {
+                        continue;
+                    }
+
+                    // Handle MessageReceived specially to include author username
+                    let msg = if let EventPayload::MessageReceived(e) = &event.payload {
+                        // Look up author username
+                        let author_username =
+                            match UserRepository::find_by_id(&*storage, e.message.author).await {
+                                Ok(Some(user)) => user.username.to_string(),
+                                _ => e.message.author.to_string(), // Fallback to ID
+                            };
+                        Some(ServerMessage::MessageReceived {
+                            message: e.message.clone(),
+                            author_username,
+                        })
+                    } else {
+                        Self::event_to_server_message(&event)
+                    };
+
+                    // Convert to server message and send
+                    if let Some(msg) = msg {
+                        if outgoing_tx.send(msg).await.is_err() {
+                            // Channel closed, connection is shutting down
+                            break;
+                        }
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    // Dispatcher shut down
+                    break;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    warn!("Event listener lagged, missed {} events", n);
+                    // Continue receiving
+                }
+            }
+        }
+    }
+
+    /// Spawn the event listener task after successful authentication.
+    fn spawn_event_listener(&mut self, user_id: crate::domain::UserId) {
+        let event_rx = self.events.subscribe();
+        let outgoing_tx = self.outgoing_tx.clone();
+        let storage = self.storage.clone();
+
+        let handle = tokio::spawn(Self::event_listener_task(
+            event_rx,
+            outgoing_tx,
+            user_id,
+            storage,
+        ));
+
+        self.event_task = Some(handle);
+        debug!("Event listener spawned for user {}", user_id);
     }
 }

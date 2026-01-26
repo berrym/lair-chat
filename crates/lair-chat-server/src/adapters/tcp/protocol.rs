@@ -14,6 +14,7 @@
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+use crate::crypto::{Cipher, NONCE_SIZE};
 use crate::domain::{
     Invitation, Message, MessageTarget, Room, RoomMembership, RoomSettings, Session, User,
 };
@@ -100,6 +101,125 @@ pub async fn write_message<W: AsyncWriteExt + Unpin>(
 }
 
 // ============================================================================
+// Encrypted Frame Reading/Writing
+// ============================================================================
+
+/// Minimum size for encrypted frame: nonce (12) + tag (16) = 28 bytes
+const MIN_ENCRYPTED_SIZE: usize = NONCE_SIZE + 16;
+
+/// Read an encrypted message from a stream.
+///
+/// Frame format:
+/// ```text
+/// ┌──────────────────┬──────────────────┬─────────────────────────────┐
+/// │ Length (4 bytes) │ Nonce (12 bytes) │ Ciphertext (N bytes)        │
+/// │ Big-endian u32   │ Random           │ AES-256-GCM + 16-byte tag   │
+/// └──────────────────┴──────────────────┴─────────────────────────────┘
+/// ```
+pub async fn read_encrypted_message<R: AsyncReadExt + Unpin>(
+    reader: &mut R,
+    cipher: &Cipher,
+) -> Result<String, ProtocolError> {
+    // Read 4-byte length prefix
+    let mut length_bytes = [0u8; 4];
+    reader.read_exact(&mut length_bytes).await.map_err(|e| {
+        if e.kind() == std::io::ErrorKind::UnexpectedEof {
+            ProtocolError::ConnectionClosed
+        } else {
+            ProtocolError::Io(e)
+        }
+    })?;
+
+    let length = u32::from_be_bytes(length_bytes) as usize;
+
+    // Validate length
+    if length > MAX_MESSAGE_SIZE as usize {
+        return Err(ProtocolError::MessageTooLarge {
+            size: length as u32,
+            max: MAX_MESSAGE_SIZE,
+        });
+    }
+
+    if length < MIN_ENCRYPTED_SIZE {
+        return Err(ProtocolError::EncryptedMessageTooSmall);
+    }
+
+    // Read nonce
+    let mut nonce = [0u8; NONCE_SIZE];
+    reader.read_exact(&mut nonce).await.map_err(|e| {
+        if e.kind() == std::io::ErrorKind::UnexpectedEof {
+            ProtocolError::ConnectionClosed
+        } else {
+            ProtocolError::Io(e)
+        }
+    })?;
+
+    // Read ciphertext (length - nonce size)
+    let ciphertext_len = length - NONCE_SIZE;
+    let mut ciphertext = vec![0u8; ciphertext_len];
+    reader.read_exact(&mut ciphertext).await.map_err(|e| {
+        if e.kind() == std::io::ErrorKind::UnexpectedEof {
+            ProtocolError::ConnectionClosed
+        } else {
+            ProtocolError::Io(e)
+        }
+    })?;
+
+    // Decrypt
+    let plaintext = cipher
+        .decrypt(&nonce, &ciphertext)
+        .map_err(|e| ProtocolError::DecryptionFailed(e.to_string()))?;
+
+    // Decode as UTF-8
+    String::from_utf8(plaintext).map_err(|_| ProtocolError::InvalidUtf8)
+}
+
+/// Write an encrypted message to a stream.
+pub async fn write_encrypted_message<W: AsyncWriteExt + Unpin>(
+    writer: &mut W,
+    payload: &str,
+    cipher: &Cipher,
+) -> Result<(), ProtocolError> {
+    let plaintext = payload.as_bytes();
+
+    // Encrypt
+    let (nonce, ciphertext) = cipher
+        .encrypt(plaintext)
+        .map_err(|e| ProtocolError::EncryptionFailed(e.to_string()))?;
+
+    // Total frame size = nonce + ciphertext
+    let frame_size = NONCE_SIZE + ciphertext.len();
+
+    if frame_size > MAX_MESSAGE_SIZE as usize {
+        return Err(ProtocolError::MessageTooLarge {
+            size: frame_size as u32,
+            max: MAX_MESSAGE_SIZE,
+        });
+    }
+
+    // Write length prefix
+    let length = frame_size as u32;
+    writer
+        .write_all(&length.to_be_bytes())
+        .await
+        .map_err(ProtocolError::Io)?;
+
+    // Write nonce
+    writer.write_all(&nonce).await.map_err(ProtocolError::Io)?;
+
+    // Write ciphertext
+    writer
+        .write_all(&ciphertext)
+        .await
+        .map_err(ProtocolError::Io)?;
+
+    // Flush
+    writer.flush().await.map_err(ProtocolError::Io)?;
+
+    Ok(())
+}
+
+// ============================================================================
 // Protocol Errors
 // ============================================================================
 
@@ -122,6 +242,14 @@ pub enum ProtocolError {
     MissingField(String),
     /// Version mismatch.
     VersionMismatch { client: String, server: String },
+    /// Encrypted message too small (must have at least nonce + tag).
+    EncryptedMessageTooSmall,
+    /// Encryption failed.
+    EncryptionFailed(String),
+    /// Decryption failed.
+    DecryptionFailed(String),
+    /// Key exchange failed.
+    KeyExchangeFailed(String),
 }
 
 impl std::fmt::Display for ProtocolError {
@@ -139,6 +267,10 @@ impl std::fmt::Display for ProtocolError {
             Self::VersionMismatch { client, server } => {
                 write!(f, "Version mismatch: client={}, server={}", client, server)
             }
+            Self::EncryptedMessageTooSmall => write!(f, "Encrypted message too small"),
+            Self::EncryptionFailed(e) => write!(f, "Encryption failed: {}", e),
+            Self::DecryptionFailed(e) => write!(f, "Decryption failed: {}", e),
+            Self::KeyExchangeFailed(e) => write!(f, "Key exchange failed: {}", e),
         }
     }
 }
@@ -274,6 +406,11 @@ pub enum ClientMessage {
 
     // Keepalive
     Ping,
+
+    // Key Exchange (encryption handshake)
+    KeyExchange {
+        public_key: String,
+    },
 }
 
 fn default_limit() -> u32 {
@@ -488,6 +625,8 @@ pub enum ServerMessage {
         success: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         users: Option<Vec<User>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        online_user_ids: Option<Vec<String>>,
         has_more: bool,
         total_count: u32,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -507,9 +646,15 @@ pub enum ServerMessage {
         server_time: String,
     },
 
+    // Key Exchange Response
+    KeyExchangeResponse {
+        public_key: String,
+    },
+
     // Events (server-initiated)
     MessageReceived {
         message: Message,
+        author_username: String,
     },
     MessageEdited {
         message: Message,
@@ -632,7 +777,7 @@ impl ServerMessage {
         Self::ServerHello {
             version: PROTOCOL_VERSION.to_string(),
             server_name: SERVER_NAME.to_string(),
-            features: vec![], // No encryption yet
+            features: vec!["encryption".to_string()],
             encryption_required: false,
         }
     }

@@ -176,6 +176,11 @@ pub enum ClientMessage {
 
     // Keepalive
     Ping,
+
+    // Key Exchange (encryption handshake)
+    KeyExchange {
+        public_key: String,
+    },
 }
 
 // ============================================================================
@@ -375,6 +380,8 @@ pub enum ServerMessage {
         #[serde(default)]
         users: Vec<User>,
         #[serde(default)]
+        online_user_ids: Vec<String>,
+        #[serde(default)]
         has_more: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         total_count: Option<u64>,
@@ -397,6 +404,11 @@ pub enum ServerMessage {
         server_time: Option<DateTime<Utc>>,
     },
 
+    // Key Exchange Response
+    KeyExchangeResponse {
+        public_key: String,
+    },
+
     // Error
     Error {
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -410,6 +422,7 @@ pub enum ServerMessage {
     // Server-pushed events
     MessageReceived {
         message: Message,
+        author_username: String,
     },
     MessageEdited {
         message: Message,
@@ -473,9 +486,10 @@ pub enum ServerMessage {
 
 /// Target for a message (room or direct message).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "lowercase")]
 pub enum MessageTarget {
     Room { room_id: RoomId },
+    #[serde(rename = "dm")]
     DirectMessage { recipient: UserId },
 }
 
@@ -636,6 +650,20 @@ impl ClientMessage {
             client_name: "Lair Chat TUI".to_string(),
             features: vec![],
         }
+    }
+
+    /// Create a client hello message with encryption support.
+    pub fn client_hello_with_encryption() -> Self {
+        Self::ClientHello {
+            version: "1.0".to_string(),
+            client_name: "Lair Chat TUI".to_string(),
+            features: vec!["encryption".to_string()],
+        }
+    }
+
+    /// Create a key exchange message.
+    pub fn key_exchange(public_key: String) -> Self {
+        Self::KeyExchange { public_key }
     }
 }
 

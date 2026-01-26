@@ -73,7 +73,7 @@ impl EventDispatcher {
     ///
     /// Called when a user establishes a connection.
     /// Emits `UserOnline` event if this is their first connection.
-    pub async fn user_online(&self, user_id: UserId) {
+    pub async fn user_online(&self, user_id: UserId, username: String) {
         let mut counts = self.inner.connection_counts.write().await;
         let count = counts.entry(user_id).or_insert(0);
         *count += 1;
@@ -86,8 +86,7 @@ impl EventDispatcher {
 
             // Emit online event
             let event = Event::new(EventPayload::UserOnline(UserOnlineEvent::new(
-                user_id,
-                user_id.to_string(), // TODO: Get actual username
+                user_id, username,
             )));
             self.dispatch(event).await;
         }
@@ -97,7 +96,7 @@ impl EventDispatcher {
     ///
     /// Called when a user's connection closes.
     /// Emits `UserOffline` event if this was their last connection.
-    pub async fn user_offline(&self, user_id: UserId) {
+    pub async fn user_offline(&self, user_id: UserId, username: String) {
         let mut counts = self.inner.connection_counts.write().await;
         if let Some(count) = counts.get_mut(&user_id) {
             *count = count.saturating_sub(1);
@@ -113,8 +112,7 @@ impl EventDispatcher {
 
                 // Emit offline event
                 let event = Event::new(EventPayload::UserOffline(UserOfflineEvent::new(
-                    user_id,
-                    user_id.to_string(), // TODO: Get actual username
+                    user_id, username,
                 )));
                 self.dispatch(event).await;
             }
@@ -199,11 +197,11 @@ mod tests {
 
         assert!(!dispatcher.is_online(user_id).await);
 
-        dispatcher.user_online(user_id).await;
+        dispatcher.user_online(user_id, "testuser".to_string()).await;
         assert!(dispatcher.is_online(user_id).await);
         assert_eq!(dispatcher.online_user_count().await, 1);
 
-        dispatcher.user_offline(user_id).await;
+        dispatcher.user_offline(user_id, "testuser".to_string()).await;
         assert!(!dispatcher.is_online(user_id).await);
         assert_eq!(dispatcher.online_user_count().await, 0);
     }
@@ -214,19 +212,19 @@ mod tests {
         let user_id = UserId::new();
 
         // First connection
-        dispatcher.user_online(user_id).await;
+        dispatcher.user_online(user_id, "testuser".to_string()).await;
         assert!(dispatcher.is_online(user_id).await);
 
         // Second connection
-        dispatcher.user_online(user_id).await;
+        dispatcher.user_online(user_id, "testuser".to_string()).await;
         assert!(dispatcher.is_online(user_id).await);
 
         // First connection closes - still online
-        dispatcher.user_offline(user_id).await;
+        dispatcher.user_offline(user_id, "testuser".to_string()).await;
         assert!(dispatcher.is_online(user_id).await);
 
         // Second connection closes - now offline
-        dispatcher.user_offline(user_id).await;
+        dispatcher.user_offline(user_id, "testuser".to_string()).await;
         assert!(!dispatcher.is_online(user_id).await);
     }
 

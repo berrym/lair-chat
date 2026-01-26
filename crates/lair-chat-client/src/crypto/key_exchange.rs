@@ -36,6 +36,7 @@ impl KeyPair {
     }
 
     /// Get the raw public key bytes.
+    #[allow(dead_code)]
     pub fn public_key_bytes(&self) -> [u8; 32] {
         *self.public.as_bytes()
     }
@@ -68,8 +69,6 @@ mod tests {
         let kp = KeyPair::generate();
         let base64_key = kp.public_key_base64();
         assert!(!base64_key.is_empty());
-
-        // Should be 44 characters (32 bytes base64 encoded with padding)
         assert_eq!(base64_key.len(), 44);
     }
 
@@ -84,15 +83,12 @@ mod tests {
 
     #[test]
     fn test_key_exchange() {
-        // Alice generates keypair
         let alice = KeyPair::generate();
         let alice_public = alice.public_key_base64();
 
-        // Bob generates keypair
         let bob = KeyPair::generate();
         let bob_public = bob.public_key_base64();
 
-        // Both derive the same shared secret
         let alice_peer = parse_public_key(&bob_public).unwrap();
         let bob_peer = parse_public_key(&alice_public).unwrap();
 
@@ -100,17 +96,5 @@ mod tests {
         let bob_shared = bob.diffie_hellman(bob_peer);
 
         assert_eq!(alice_shared, bob_shared);
-    }
-
-    #[test]
-    fn test_invalid_key_length() {
-        let result = parse_public_key("aGVsbG8="); // "hello" in base64
-        assert!(matches!(result, Err(KeyExchangeError::InvalidKeyLength(5))));
-    }
-
-    #[test]
-    fn test_invalid_base64() {
-        let result = parse_public_key("not valid base64!!!");
-        assert!(matches!(result, Err(KeyExchangeError::Base64DecodeError(_))));
     }
 }

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::core::engine::ChatEngine;
 use crate::domain::{InvitationId, MessageTarget, Pagination, RoomId, SessionId, UserId};
-use crate::storage::Storage;
+use crate::storage::{MembershipRepository, Storage};
 
 use super::protocol::{
     ErrorInfo, RoomFilter, RoomListItem, RoomSettingsRequest, ServerMessage, SessionInfo,
@@ -330,14 +330,20 @@ impl<S: Storage + 'static> CommandHandler<S> {
 
             match self.engine.list_user_rooms(session_id).await {
                 Ok(rooms) => {
-                    let items: Vec<RoomListItem> = rooms
-                        .into_iter()
-                        .map(|room| RoomListItem {
+                    let mut items = Vec::with_capacity(rooms.len());
+                    for room in rooms {
+                        let member_count = MembershipRepository::count_members(
+                            self.engine.storage_clone().as_ref(),
+                            room.id,
+                        )
+                        .await
+                        .unwrap_or(0) as u32;
+                        items.push(RoomListItem {
                             room,
-                            member_count: 0, // TODO: Get actual count
+                            member_count,
                             is_member: true,
-                        })
-                        .collect();
+                        });
+                    }
                     let total = items.len() as u32;
                     ServerMessage::ListRoomsResponse {
                         request_id: None,
@@ -359,17 +365,46 @@ impl<S: Storage + 'static> CommandHandler<S> {
             }
         } else {
             // List public rooms
+            // Get user_id if session is valid (for membership checking)
+            let user_id = if let Some(session_id) = session_id {
+                self.engine
+                    .validate_session(session_id)
+                    .await
+                    .ok()
+                    .map(|(_, user)| user.id)
+            } else {
+                None
+            };
+
             match self.engine.list_public_rooms(pagination).await {
                 Ok(rooms) => {
                     let has_more = rooms.len() == limit as usize;
-                    let items: Vec<RoomListItem> = rooms
-                        .into_iter()
-                        .map(|room| RoomListItem {
+                    let mut items = Vec::with_capacity(rooms.len());
+                    for room in rooms {
+                        let member_count = MembershipRepository::count_members(
+                            self.engine.storage_clone().as_ref(),
+                            room.id,
+                        )
+                        .await
+                        .unwrap_or(0) as u32;
+                        // Check if current user is a member
+                        let is_member = if let Some(uid) = user_id {
+                            MembershipRepository::is_member(
+                                self.engine.storage_clone().as_ref(),
+                                room.id,
+                                uid,
+                            )
+                            .await
+                            .unwrap_or(false)
+                        } else {
+                            false
+                        };
+                        items.push(RoomListItem {
                             room,
-                            member_count: 0,
-                            is_member: false, // TODO: Check membership
-                        })
-                        .collect();
+                            member_count,
+                            is_member,
+                        });
+                    }
                     let total = items.len() as u32;
                     ServerMessage::ListRoomsResponse {
                         request_id: None,
@@ -621,10 +656,19 @@ impl<S: Storage + 'static> CommandHandler<S> {
             Ok(users) => {
                 let has_more = users.len() == limit as usize;
                 let total = users.len() as u32;
+                // Get currently online user IDs
+                let online_ids: Vec<String> = self
+                    .engine
+                    .online_user_ids()
+                    .await
+                    .into_iter()
+                    .map(|id| id.to_string())
+                    .collect();
                 ServerMessage::ListUsersResponse {
                     request_id: None,
                     success: true,
                     users: Some(users),
+                    online_user_ids: Some(online_ids),
                     has_more,
                     total_count: total,
                     error: None,
@@ -634,6 +678,7 @@ impl<S: Storage + 'static> CommandHandler<S> {
                 request_id: None,
                 success: false,
                 users: None,
+                online_user_ids: None,
                 has_more: false,
                 total_count: 0,
                 error: Some(error_to_info(&e)),
@@ -651,13 +696,13 @@ impl<S: Storage + 'static> CommandHandler<S> {
     }
 
     /// Notify that a user connected.
-    pub async fn user_connected(&self, user_id: UserId) {
-        self.engine.user_connected(user_id).await;
+    pub async fn user_connected(&self, user_id: UserId, username: String) {
+        self.engine.user_connected(user_id, username).await;
     }
 
     /// Notify that a user disconnected.
-    pub async fn user_disconnected(&self, user_id: UserId) {
-        self.engine.user_disconnected(user_id).await;
+    pub async fn user_disconnected(&self, user_id: UserId, username: String) {
+        self.engine.user_disconnected(user_id, username).await;
     }
 }
 

@@ -1,6 +1,6 @@
 //! Application state and logic.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 
 use chrono::{DateTime, Utc};
@@ -41,8 +41,10 @@ pub struct App {
     pub error: Option<String>,
     /// Should quit.
     pub should_quit: bool,
-    /// Online users.
-    pub online_users: Vec<User>,
+    /// All known users (excluding self).
+    pub all_users: Vec<User>,
+    /// Set of user IDs that are currently online.
+    pub online_user_ids: HashSet<UserId>,
     /// User cache for username lookups (UserId -> username).
     pub user_cache: HashMap<UserId, String>,
 }
@@ -117,6 +119,8 @@ pub enum Action {
     ShowRooms,
     /// Join a room.
     JoinRoom(uuid::Uuid),
+    /// Switch to a room we're already a member of.
+    SwitchToRoom(crate::protocol::Room),
     /// Create a room.
     CreateRoom(String),
     /// Go back to chat.
@@ -125,6 +129,12 @@ pub enum Action {
     Reconnect,
     /// Start a DM with a user by username.
     StartDM(String),
+    /// Start a DM with a user by index in online_users list.
+    StartDMByIndex(usize),
+    /// Show help.
+    ShowHelp,
+    /// Clear error message.
+    ClearError,
 }
 
 impl App {
@@ -143,9 +153,26 @@ impl App {
             status: None,
             error: None,
             should_quit: false,
-            online_users: Vec::new(),
+            all_users: Vec::new(),
+            online_user_ids: HashSet::new(),
             user_cache: HashMap::new(),
         }
+    }
+
+    /// Get lists of online and offline users (excluding self).
+    pub fn get_user_lists(&self) -> (Vec<String>, Vec<String>) {
+        let mut online = Vec::new();
+        let mut offline = Vec::new();
+
+        for user in &self.all_users {
+            if self.online_user_ids.contains(&user.id) {
+                online.push(user.username.clone());
+            } else {
+                offline.push(user.username.clone());
+            }
+        }
+
+        (online, offline)
     }
 
     /// Look up a username by user ID, returning a display string.
@@ -162,8 +189,8 @@ impl App {
             return username.clone();
         }
 
-        // Check online users list
-        if let Some(user) = self.online_users.iter().find(|u| u.id == user_id) {
+        // Check all users list
+        if let Some(user) = self.all_users.iter().find(|u| u.id == user_id) {
             return user.username.clone();
         }
 
@@ -261,6 +288,17 @@ impl App {
             Action::JoinRoom(room_id) => {
                 self.handle_join_room(room_id).await;
             }
+            Action::SwitchToRoom(room) => {
+                self.status = Some(format!("In room: {}", room.name));
+                self.add_system_message(format!("Switched to room: {}", room.name));
+                self.current_room = Some(room);
+                self.current_dm_user = None;
+                self.messages.clear();
+                self.screen = Screen::Chat;
+                self.error = None;
+                // Request message history
+                self.request_message_history().await;
+            }
             Action::CreateRoom(name) => {
                 self.handle_create_room(name).await;
             }
@@ -273,7 +311,51 @@ impl App {
             Action::StartDM(username) => {
                 self.handle_start_dm(username).await;
             }
+            Action::StartDMByIndex(idx) => {
+                // Get combined user list (online first, then offline)
+                let (online, offline) = self.get_user_lists();
+                let combined: Vec<_> = online.iter().chain(offline.iter()).collect();
+                if let Some(username) = combined.get(idx) {
+                    self.handle_start_dm((*username).clone()).await;
+                }
+            }
+            Action::ShowHelp => {
+                self.show_help();
+            }
+            Action::ClearError => {
+                self.error = None;
+            }
         }
+    }
+
+    /// Show help message.
+    fn show_help(&mut self) {
+        self.messages.clear();
+        self.add_system_message("=== Lair Chat Help ===");
+        self.add_system_message("");
+        self.add_system_message("NAVIGATION:");
+        self.add_system_message("  i        - Enter insert mode to type messages");
+        self.add_system_message("  Esc      - Exit insert mode");
+        self.add_system_message("  r        - Open room list");
+        self.add_system_message("  j/k      - Scroll messages down/up");
+        self.add_system_message("  G/g      - Jump to bottom/top of messages");
+        self.add_system_message("  q        - Quit application");
+        self.add_system_message("  R        - Reconnect to server");
+        self.add_system_message("  ?/F1     - Show this help");
+        self.add_system_message("");
+        self.add_system_message("COMMANDS (type in insert mode):");
+        self.add_system_message("  /help              - Show this help");
+        self.add_system_message("  /rooms             - Open room list");
+        self.add_system_message("  /create <name>     - Create a new room");
+        self.add_system_message("  /join <room>       - Join a room (use room list instead)");
+        self.add_system_message("  /dm <username>     - Start direct message with user");
+        self.add_system_message("  /quit              - Quit application");
+        self.add_system_message("");
+        self.add_system_message("GETTING STARTED:");
+        self.add_system_message("  1. Press 'r' to open rooms and join or create one");
+        self.add_system_message("  2. Press 'i' to start typing a message");
+        self.add_system_message("  3. Press Enter to send, Esc to cancel");
+        self.add_system_message("");
     }
 
     /// Handle starting a DM with a user.
@@ -286,9 +368,9 @@ impl App {
             }
         }
 
-        // Find the user in online_users or user_cache
+        // Find the user in all_users
         let target_user = self
-            .online_users
+            .all_users
             .iter()
             .find(|u| u.username.eq_ignore_ascii_case(&username))
             .cloned();
@@ -304,7 +386,7 @@ impl App {
             // Request DM history
             self.request_dm_history(user.id).await;
         } else {
-            self.error = Some(format!("User '{}' not found online", username));
+            self.error = Some(format!("User '{}' not found", username));
         }
     }
 
@@ -436,8 +518,11 @@ impl App {
     /// Handle joining a room.
     async fn handle_join_room(&mut self, room_id: uuid::Uuid) {
         let Some(conn) = &self.connection else {
+            self.error = Some("Not connected to server".to_string());
             return;
         };
+
+        self.status = Some(format!("Joining room {}...", room_id));
 
         let msg = ClientMessage::JoinRoom {
             request_id: Some(uuid::Uuid::new_v4().to_string()),
@@ -502,6 +587,8 @@ impl App {
                 ..
             } => {
                 if success {
+                    // Clear any previous errors
+                    self.error = None;
                     // Cache the logged-in user
                     if let Some(ref u) = user {
                         self.cache_user(u);
@@ -516,7 +603,14 @@ impl App {
                             .map(|u| &u.username)
                             .unwrap_or(&"?".to_string())
                     ));
-                    self.add_system_message("Login successful! Welcome to Lair Chat.");
+                    self.add_system_message("Welcome to Lair Chat!");
+                    self.add_system_message("");
+                    self.add_system_message("Quick start:");
+                    self.add_system_message("  r      - Open rooms list to join or create a room");
+                    self.add_system_message("  Tab    - Switch to Users panel, select user + Enter to DM");
+                    self.add_system_message("  i      - Start typing a message");
+                    self.add_system_message("  ?/F1   - Show full help");
+                    self.add_system_message("");
                     // Request room list and user list after login
                     self.request_room_list().await;
                     self.request_user_list().await;
@@ -537,6 +631,8 @@ impl App {
                 ..
             } => {
                 if success {
+                    // Clear any previous errors
+                    self.error = None;
                     // Cache the registered user
                     if let Some(ref u) = user {
                         self.cache_user(u);
@@ -551,7 +647,14 @@ impl App {
                             .map(|u| &u.username)
                             .unwrap_or(&"?".to_string())
                     ));
-                    self.add_system_message("Registration successful! Welcome to Lair Chat.");
+                    self.add_system_message("Registration successful! Welcome to Lair Chat!");
+                    self.add_system_message("");
+                    self.add_system_message("Quick start:");
+                    self.add_system_message("  r      - Open rooms list to join or create a room");
+                    self.add_system_message("  Tab    - Switch to Users panel, select user + Enter to DM");
+                    self.add_system_message("  i      - Start typing a message");
+                    self.add_system_message("  ?/F1   - Show full help");
+                    self.add_system_message("");
                     self.request_room_list().await;
                     self.request_user_list().await;
                 } else {
@@ -580,11 +683,7 @@ impl App {
             } => {
                 if success {
                     self.rooms = rooms;
-                    // Auto-join first room if none selected
-                    if self.current_room.is_none() && !self.rooms.is_empty() {
-                        let first_room = self.rooms[0].room.clone();
-                        self.handle_join_room(first_room.id).await;
-                    }
+                    // Don't auto-join - let user choose from room list
                 } else {
                     let err_msg = error
                         .map(|e| e.message)
@@ -601,12 +700,16 @@ impl App {
             } => {
                 if success {
                     if let Some(room) = room {
+                        self.status = Some(format!("In room: {}", room.name));
                         self.add_system_message(format!("Joined room: {}", room.name));
                         self.current_room = Some(room);
+                        self.current_dm_user = None; // Clear DM if any
                         self.messages.clear();
                         self.screen = Screen::Chat;
                         // Request message history for the room
                         self.request_message_history().await;
+                    } else {
+                        self.error = Some("Join succeeded but no room data returned".to_string());
                     }
                 } else {
                     let err_msg = error
@@ -650,7 +753,11 @@ impl App {
                 ..
             } => {
                 if success {
-                    // Insert historical messages at the beginning (they're older)
+                    // Messages come from server newest-first, reverse to display oldest-first
+                    let mut messages = messages;
+                    messages.reverse();
+
+                    // Convert to ChatMessages
                     let history: Vec<ChatMessage> = messages
                         .into_iter()
                         .map(|msg| {
@@ -678,7 +785,18 @@ impl App {
                 }
             }
 
-            ServerMessage::MessageReceived { message } => {
+            ServerMessage::MessageReceived {
+                message,
+                author_username,
+            } => {
+                // Skip if this is our own message (already added optimistically)
+                if self.user.as_ref().map(|u| u.id) == Some(message.author) {
+                    return;
+                }
+
+                // Cache the author for future lookups
+                self.user_cache.insert(message.author, author_username.clone());
+
                 let should_display = match &message.target {
                     // Room message: show if viewing that room
                     MessageTarget::Room { room_id } => {
@@ -696,32 +814,35 @@ impl App {
                 };
 
                 if should_display {
-                    let author = self.get_username(message.author);
-
                     self.messages.push(ChatMessage {
                         id: Some(message.id),
-                        author,
+                        author: author_username,
                         content: message.content,
                         timestamp: message.created_at,
                         is_system: false,
                     });
                 } else if let MessageTarget::DirectMessage { .. } = &message.target {
-                    // Got a DM while not viewing it - show notification
-                    let author = self.get_username(message.author);
-                    self.add_system_message(format!("New DM from {}", author));
+                    // Got a DM while not viewing it - show notification with instructions
+                    self.add_system_message(format!(
+                        "New DM from {} (Tab to Users, select with j/k, Enter to reply)",
+                        author_username
+                    ));
                 }
             }
 
             ServerMessage::UserJoinedRoom { room_id, user, .. } => {
                 // Always cache the user info
                 self.cache_user(&user);
+                // Mark user as online
+                self.online_user_ids.insert(user.id);
+                // Add to all_users if not present
+                if !self.all_users.iter().any(|u| u.id == user.id) {
+                    self.all_users.push(user.clone());
+                }
 
                 if let Some(current) = &self.current_room {
                     if room_id == current.id {
                         self.add_system_message(format!("{} joined the room", user.username));
-                        if !self.online_users.iter().any(|u| u.id == user.id) {
-                            self.online_users.push(user);
-                        }
                     }
                 }
             }
@@ -733,26 +854,22 @@ impl App {
             } => {
                 if let Some(current) = &self.current_room {
                     if room_id == current.id {
-                        if let Some(user) = self.online_users.iter().find(|u| u.id == user_id) {
-                            self.add_system_message(format!(
-                                "{} left the room ({})",
-                                user.username, reason
-                            ));
-                        }
-                        self.online_users.retain(|u| u.id != user_id);
+                        let username = self.get_username(user_id);
+                        self.add_system_message(format!("{} left the room ({})", username, reason));
                     }
                 }
             }
 
             ServerMessage::UserOnline { user_id, username } => {
-                // Cache this user
+                // Cache this user and mark as online
                 self.user_cache.insert(user_id, username.clone());
+                self.online_user_ids.insert(user_id);
                 self.add_system_message(format!("{} is now online", username));
             }
 
             ServerMessage::UserOffline { user_id, username } => {
                 self.add_system_message(format!("{} went offline", username));
-                self.online_users.retain(|u| u.id != user_id);
+                self.online_user_ids.remove(&user_id);
             }
 
             ServerMessage::ServerNotice { message, severity } => {
@@ -763,13 +880,37 @@ impl App {
                 self.error = Some(format!("{}: {}", code, message));
             }
 
-            ServerMessage::ListUsersResponse { success, users, .. } => {
+            ServerMessage::ListUsersResponse {
+                success,
+                users,
+                online_user_ids,
+                ..
+            } => {
                 if success {
-                    // Populate user cache with all returned users
+                    // Clear and repopulate all_users list and online status
+                    self.all_users.clear();
+                    self.online_user_ids.clear();
+
+                    // Parse online user IDs from server
+                    for id_str in online_user_ids {
+                        if let Ok(id) = Uuid::parse_str(&id_str) {
+                            self.online_user_ids.insert(id);
+                        }
+                    }
+
                     for user in users {
                         self.cache_user(&user);
+                        // Add to all_users if not the current user
+                        if self.user.as_ref().map(|u| u.id != user.id).unwrap_or(true) {
+                            self.all_users.push(user);
+                        }
                     }
-                    debug!("Cached {} users", self.user_cache.len());
+                    debug!(
+                        "Cached {} users, {} in all_users, {} online",
+                        self.user_cache.len(),
+                        self.all_users.len(),
+                        self.online_user_ids.len()
+                    );
                 }
             }
 

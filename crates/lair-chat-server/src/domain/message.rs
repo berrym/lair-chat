@@ -225,6 +225,7 @@ pub struct Message {
     /// Message content.
     pub content: MessageContent,
     /// Whether the message has been edited.
+    #[serde(rename = "edited")]
     pub is_edited: bool,
     /// When the message was sent.
     pub created_at: DateTime<Utc>,

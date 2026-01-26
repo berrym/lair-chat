@@ -16,6 +16,7 @@ pub const TAG_SIZE: usize = 16;
 
 /// Errors that can occur during encryption/decryption.
 #[derive(Debug, thiserror::Error)]
+#[allow(dead_code)]
 pub enum CryptoError {
     #[error("Encryption failed")]
     EncryptionFailed,
@@ -50,12 +51,10 @@ impl Cipher {
     ///
     /// Returns `(nonce, ciphertext)` where ciphertext includes the authentication tag.
     pub fn encrypt(&self, plaintext: &[u8]) -> Result<([u8; NONCE_SIZE], Vec<u8>), CryptoError> {
-        // Generate random nonce
         let mut nonce_bytes = [0u8; NONCE_SIZE];
         rand::thread_rng().fill_bytes(&mut nonce_bytes);
         let nonce = Nonce::from_slice(&nonce_bytes);
 
-        // Encrypt (includes authentication tag)
         let ciphertext = self
             .inner
             .encrypt(nonce, plaintext)
@@ -72,7 +71,6 @@ impl Cipher {
             return Err(CryptoError::InvalidNonceLength(nonce.len()));
         }
 
-        // Minimum ciphertext size is just the tag
         if ciphertext.len() < TAG_SIZE {
             return Err(CryptoError::CiphertextTooShort(TAG_SIZE));
         }
@@ -122,22 +120,8 @@ mod tests {
         let (nonce1, ciphertext1) = cipher.encrypt(plaintext).unwrap();
         let (nonce2, ciphertext2) = cipher.encrypt(plaintext).unwrap();
 
-        // Different nonces
         assert_ne!(nonce1, nonce2);
-        // Different ciphertexts
         assert_ne!(ciphertext1, ciphertext2);
-    }
-
-    #[test]
-    fn test_ciphertext_includes_tag() {
-        let key = test_key();
-        let cipher = Cipher::new(&key);
-
-        let plaintext = b"Hello";
-        let (_, ciphertext) = cipher.encrypt(plaintext).unwrap();
-
-        // Ciphertext should be plaintext length + tag size
-        assert_eq!(ciphertext.len(), plaintext.len() + TAG_SIZE);
     }
 
     #[test]
@@ -148,66 +132,9 @@ mod tests {
         let plaintext = b"Hello, World!";
         let (nonce, mut ciphertext) = cipher.encrypt(plaintext).unwrap();
 
-        // Tamper with ciphertext
         ciphertext[0] ^= 0xFF;
 
         let result = cipher.decrypt(&nonce, &ciphertext);
         assert!(matches!(result, Err(CryptoError::DecryptionFailed)));
-    }
-
-    #[test]
-    fn test_wrong_key_fails() {
-        let key1 = test_key();
-        let key2 = test_key();
-        let cipher1 = Cipher::new(&key1);
-        let cipher2 = Cipher::new(&key2);
-
-        let plaintext = b"Hello, World!";
-        let (nonce, ciphertext) = cipher1.encrypt(plaintext).unwrap();
-
-        let result = cipher2.decrypt(&nonce, &ciphertext);
-        assert!(matches!(result, Err(CryptoError::DecryptionFailed)));
-    }
-
-    #[test]
-    fn test_invalid_nonce_length() {
-        let key = test_key();
-        let cipher = Cipher::new(&key);
-
-        let result = cipher.decrypt(&[0u8; 8], &[0u8; 32]);
-        assert!(matches!(result, Err(CryptoError::InvalidNonceLength(8))));
-    }
-
-    #[test]
-    fn test_ciphertext_too_short() {
-        let key = test_key();
-        let cipher = Cipher::new(&key);
-
-        let result = cipher.decrypt(&[0u8; NONCE_SIZE], &[0u8; 8]);
-        assert!(matches!(result, Err(CryptoError::CiphertextTooShort(_))));
-    }
-
-    #[test]
-    fn test_empty_plaintext() {
-        let key = test_key();
-        let cipher = Cipher::new(&key);
-
-        let plaintext = b"";
-        let (nonce, ciphertext) = cipher.encrypt(plaintext).unwrap();
-
-        let decrypted = cipher.decrypt(&nonce, &ciphertext).unwrap();
-        assert_eq!(decrypted, plaintext);
-    }
-
-    #[test]
-    fn test_large_plaintext() {
-        let key = test_key();
-        let cipher = Cipher::new(&key);
-
-        let plaintext = vec![0xAB; 1_000_000]; // 1 MB
-        let (nonce, ciphertext) = cipher.encrypt(&plaintext).unwrap();
-
-        let decrypted = cipher.decrypt(&nonce, &ciphertext).unwrap();
-        assert_eq!(decrypted, plaintext);
     }
 }

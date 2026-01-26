@@ -92,6 +92,13 @@ impl<S: Storage + 'static> ChatEngine<S> {
         self.events.clone()
     }
 
+    /// Get a clone of the storage backend.
+    ///
+    /// Protocol adapters use this to fetch user room memberships for event filtering.
+    pub fn storage_clone(&self) -> Arc<S> {
+        self.storage.clone()
+    }
+
     // ========================================================================
     // Authentication Operations
     // ========================================================================
@@ -330,13 +337,23 @@ impl<S: Storage + 'static> ChatEngine<S> {
     // ========================================================================
 
     /// Mark a user as online (called when connection established).
-    pub async fn user_connected(&self, user_id: UserId) {
-        self.events.user_online(user_id).await;
+    pub async fn user_connected(&self, user_id: UserId, username: String) {
+        self.events.user_online(user_id, username).await;
     }
 
     /// Mark a user as offline (called when last connection closed).
-    pub async fn user_disconnected(&self, user_id: UserId) {
-        self.events.user_offline(user_id).await;
+    pub async fn user_disconnected(&self, user_id: UserId, username: String) {
+        self.events.user_offline(user_id, username).await;
+    }
+
+    /// Get list of online user IDs.
+    pub async fn online_user_ids(&self) -> Vec<UserId> {
+        self.events.online_users().await
+    }
+
+    /// Check if a user is online.
+    pub async fn is_user_online(&self, user_id: UserId) -> bool {
+        self.events.is_online(user_id).await
     }
 
     /// Send a typing indicator.
