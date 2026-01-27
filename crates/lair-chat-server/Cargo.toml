@@ -44,7 +44,7 @@ argon2 = { version = "0.5", features = ["std"] }
 x25519-dalek = { version = "2.0", features = ["getrandom"] }
 sha2 = "0.10"
 base64 = "0.22"
-jsonwebtoken = "9.3"
+jsonwebtoken = "10.2"
 password-hash = "0.5"
 rand = "0.8"
 
