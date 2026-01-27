@@ -170,9 +170,8 @@ impl RateLimiter {
         let mut trackers = self.trackers.write().await;
         let now = Instant::now();
 
-        trackers.retain(|_, tracker| {
-            now.duration_since(tracker.window_start) < self.config.window * 2
-        });
+        trackers
+            .retain(|_, tracker| now.duration_since(tracker.window_start) < self.config.window * 2);
     }
 }
 
@@ -307,10 +306,9 @@ impl IntoResponse for RateLimitError {
         });
 
         let mut response = (StatusCode::TOO_MANY_REQUESTS, body).into_response();
-        response.headers_mut().insert(
-            "Retry-After",
-            self.retry_after.to_string().parse().unwrap(),
-        );
+        response
+            .headers_mut()
+            .insert("Retry-After", self.retry_after.to_string().parse().unwrap());
 
         response
     }

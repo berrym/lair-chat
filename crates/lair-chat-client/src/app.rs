@@ -480,7 +480,11 @@ impl App {
         self.error = None;
 
         // Step 1: HTTP register to get JWT token
-        match self.http_client.register(&username, &email, &password).await {
+        match self
+            .http_client
+            .register(&username, &email, &password)
+            .await
+        {
             Ok(auth_response) => {
                 info!("HTTP registration successful");
 
@@ -693,7 +697,9 @@ impl App {
                     self.add_system_message("");
                     self.add_system_message("Quick start:");
                     self.add_system_message("  r      - Open rooms list to join or create a room");
-                    self.add_system_message("  Tab    - Switch to Users panel, select user + Enter to DM");
+                    self.add_system_message(
+                        "  Tab    - Switch to Users panel, select user + Enter to DM",
+                    );
                     self.add_system_message("  i      - Start typing a message");
                     self.add_system_message("  ?/F1   - Show full help");
                     self.add_system_message("");
@@ -743,7 +749,9 @@ impl App {
                     self.add_system_message("");
                     self.add_system_message("Quick start:");
                     self.add_system_message("  r      - Open rooms list to join or create a room");
-                    self.add_system_message("  Tab    - Switch to Users panel, select user + Enter to DM");
+                    self.add_system_message(
+                        "  Tab    - Switch to Users panel, select user + Enter to DM",
+                    );
                     self.add_system_message("  i      - Start typing a message");
                     self.add_system_message("  ?/F1   - Show full help");
                     self.add_system_message("");
@@ -767,7 +775,9 @@ impl App {
                 error,
                 ..
             } => {
-                warn!("Received deprecated RegisterResponse - client should use HTTP + Authenticate");
+                warn!(
+                    "Received deprecated RegisterResponse - client should use HTTP + Authenticate"
+                );
                 if success {
                     // Clear any previous errors
                     self.error = None;
@@ -789,7 +799,9 @@ impl App {
                     self.add_system_message("");
                     self.add_system_message("Quick start:");
                     self.add_system_message("  r      - Open rooms list to join or create a room");
-                    self.add_system_message("  Tab    - Switch to Users panel, select user + Enter to DM");
+                    self.add_system_message(
+                        "  Tab    - Switch to Users panel, select user + Enter to DM",
+                    );
                     self.add_system_message("  i      - Start typing a message");
                     self.add_system_message("  ?/F1   - Show full help");
                     self.add_system_message("");
@@ -933,7 +945,8 @@ impl App {
                 }
 
                 // Cache the author for future lookups
-                self.user_cache.insert(message.author, author_username.clone());
+                self.user_cache
+                    .insert(message.author, author_username.clone());
 
                 let should_display = match &message.target {
                     // Room message: show if viewing that room

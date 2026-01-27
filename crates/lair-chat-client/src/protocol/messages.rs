@@ -512,9 +512,13 @@ pub enum ServerMessage {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum MessageTarget {
-    Room { room_id: RoomId },
+    Room {
+        room_id: RoomId,
+    },
     #[serde(rename = "dm")]
-    DirectMessage { recipient: UserId },
+    DirectMessage {
+        recipient: UserId,
+    },
 }
 
 /// User information.

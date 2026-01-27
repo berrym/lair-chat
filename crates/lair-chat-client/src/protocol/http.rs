@@ -139,12 +139,7 @@ impl HttpClient {
             password: password.to_string(),
         };
 
-        let response = self
-            .client
-            .post(&url)
-            .json(&request)
-            .send()
-            .await?;
+        let response = self.client.post(&url).json(&request).send().await?;
 
         let status = response.status();
         let auth_response: AuthResponse = response.json().await?;
@@ -186,12 +181,7 @@ impl HttpClient {
             password: password.to_string(),
         };
 
-        let response = self
-            .client
-            .post(&url)
-            .json(&request)
-            .send()
-            .await?;
+        let response = self.client.post(&url).json(&request).send().await?;
 
         let status = response.status();
         let auth_response: AuthResponse = response.json().await?;
@@ -226,12 +216,7 @@ impl HttpClient {
         let url = format!("{}/api/v1/auth/logout", self.base_url);
         debug!("HTTP logout to {}", url);
 
-        let _ = self
-            .client
-            .post(&url)
-            .bearer_auth(token)
-            .send()
-            .await?;
+        let _ = self.client.post(&url).bearer_auth(token).send().await?;
 
         self.token = None;
         info!("Logout successful");
@@ -249,12 +234,7 @@ impl HttpClient {
         let url = format!("{}/api/v1/rooms", self.base_url);
         debug!("HTTP list rooms from {}", url);
 
-        let response = self
-            .client
-            .get(&url)
-            .bearer_auth(token)
-            .send()
-            .await?;
+        let response = self.client.get(&url).bearer_auth(token).send().await?;
 
         if !response.status().is_success() {
             return Err(HttpError::RequestFailed(format!(
@@ -278,12 +258,7 @@ impl HttpClient {
         let url = format!("{}/api/v1/users", self.base_url);
         debug!("HTTP list users from {}", url);
 
-        let response = self
-            .client
-            .get(&url)
-            .bearer_auth(token)
-            .send()
-            .await?;
+        let response = self.client.get(&url).bearer_auth(token).send().await?;
 
         if !response.status().is_success() {
             return Err(HttpError::RequestFailed(format!(

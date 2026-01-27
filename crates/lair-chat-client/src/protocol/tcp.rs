@@ -251,7 +251,10 @@ impl TcpClient {
     }
 
     /// Perform the initial handshake, optionally requesting encryption.
-    pub async fn handshake_with_encryption(&mut self, enable_encryption: bool) -> Result<(), TcpError> {
+    pub async fn handshake_with_encryption(
+        &mut self,
+        enable_encryption: bool,
+    ) -> Result<(), TcpError> {
         // Wait for ServerHello
         let server_hello = self.recv().await?;
 
@@ -299,7 +302,8 @@ impl TcpClient {
 
         // Send ClientHello with encryption feature if we want encryption
         if use_encryption {
-            self.send(&ClientMessage::client_hello_with_encryption()).await?;
+            self.send(&ClientMessage::client_hello_with_encryption())
+                .await?;
 
             // Perform key exchange
             self.perform_key_exchange().await?;
@@ -317,7 +321,8 @@ impl TcpClient {
         let client_public = keypair.public_key_base64();
 
         // Send our public key
-        self.send(&ClientMessage::key_exchange(client_public)).await?;
+        self.send(&ClientMessage::key_exchange(client_public))
+            .await?;
 
         // Wait for server's public key
         let response = self.recv().await?;
@@ -339,9 +344,9 @@ impl TcpClient {
                 info!("Encryption enabled");
                 Ok(())
             }
-            ServerMessage::Error { code, message, .. } => {
-                Err(TcpError::KeyExchangeFailed(format!("{}: {}", code, message)))
-            }
+            ServerMessage::Error { code, message, .. } => Err(TcpError::KeyExchangeFailed(
+                format!("{}: {}", code, message),
+            )),
             other => Err(TcpError::KeyExchangeFailed(format!(
                 "Expected KeyExchangeResponse, got {:?}",
                 other
@@ -383,9 +388,8 @@ impl Connection {
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
 
         // Take cipher from client (if encryption enabled)
-        let cipher: Arc<RwLock<Option<Arc<Cipher>>>> = Arc::new(RwLock::new(
-            client.cipher.take().map(Arc::new),
-        ));
+        let cipher: Arc<RwLock<Option<Arc<Cipher>>>> =
+            Arc::new(RwLock::new(client.cipher.take().map(Arc::new)));
         let encryption_enabled = client.encryption_enabled;
 
         // Split the stream for concurrent read/write

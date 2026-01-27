@@ -144,7 +144,8 @@ async fn run_tui(server_addr: SocketAddr) -> Result<()> {
                     Screen::Chat => chat_screen.handle_key(key, app.all_users.len()),
                     Screen::Rooms => {
                         // Debug: show which screen we're on and the key pressed
-                        app.status = Some(format!("Rooms: {:?}, {} rooms", key.code, app.rooms.len()));
+                        app.status =
+                            Some(format!("Rooms: {:?}, {} rooms", key.code, app.rooms.len()));
                         let (action, debug_msg) = rooms_screen.handle_key(key, &app.rooms);
                         if let Some(msg) = debug_msg {
                             app.status = Some(msg);

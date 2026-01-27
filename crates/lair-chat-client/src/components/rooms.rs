@@ -42,7 +42,11 @@ impl RoomsScreen {
     }
 
     /// Handle a key event. Returns (action, debug_message).
-    pub fn handle_key(&mut self, key: KeyEvent, rooms: &[RoomListItem]) -> (Option<Action>, Option<String>) {
+    pub fn handle_key(
+        &mut self,
+        key: KeyEvent,
+        rooms: &[RoomListItem],
+    ) -> (Option<Action>, Option<String>) {
         if self.creating {
             return (self.handle_create_key(key), None);
         }
@@ -73,10 +77,16 @@ impl RoomsScreen {
                         } else {
                             // Not a member - need to join
                             debug!("Joining room: {} ({})", item.room.name, item.room.id);
-                            (Some(Action::JoinRoom(item.room.id)), Some(format!("Joining {}", item.room.name)))
+                            (
+                                Some(Action::JoinRoom(item.room.id)),
+                                Some(format!("Joining {}", item.room.name)),
+                            )
                         }
                     } else {
-                        (None, Some(format!("No room at index {} (len={})", idx, rooms.len())))
+                        (
+                            None,
+                            Some(format!("No room at index {} (len={})", idx, rooms.len())),
+                        )
                     }
                 } else {
                     (None, Some("No room selected".to_string()))

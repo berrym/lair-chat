@@ -111,6 +111,9 @@ mod tests {
     #[test]
     fn test_invalid_base64() {
         let result = parse_public_key("not valid base64!!!");
-        assert!(matches!(result, Err(KeyExchangeError::Base64DecodeError(_))));
+        assert!(matches!(
+            result,
+            Err(KeyExchangeError::Base64DecodeError(_))
+        ));
     }
 }

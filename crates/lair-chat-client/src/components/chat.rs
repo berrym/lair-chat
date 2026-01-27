@@ -284,10 +284,7 @@ impl ChatScreen {
         } else if let Some(r) = room_name {
             (format!(" #{} ", r), Color::Cyan)
         } else {
-            (
-                " No Room - Press 'r' for rooms ".to_string(),
-                Color::Yellow,
-            )
+            (" No Room - Press 'r' for rooms ".to_string(), Color::Yellow)
         };
         let messages_block = Block::default()
             .title(title)
@@ -429,15 +426,18 @@ impl ChatScreen {
             // Online section header
             if !online_users.is_empty() {
                 user_items.push(
-                    ListItem::new(format!("─ Online ({}) ─", online_users.len()))
-                        .style(Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                    ListItem::new(format!("─ Online ({}) ─", online_users.len())).style(
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                 );
             }
 
             // Online users
             for name in online_users.iter() {
-                let is_selected =
-                    self.user_list_state.selected() == Some(list_idx) && self.focus == ChatFocus::Users;
+                let is_selected = self.user_list_state.selected() == Some(list_idx)
+                    && self.focus == ChatFocus::Users;
                 let style = if is_selected {
                     Style::default()
                         .fg(Color::Black)
@@ -454,15 +454,18 @@ impl ChatScreen {
             // Offline section header
             if !offline_users.is_empty() {
                 user_items.push(
-                    ListItem::new(format!("─ Offline ({}) ─", offline_users.len()))
-                        .style(Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+                    ListItem::new(format!("─ Offline ({}) ─", offline_users.len())).style(
+                        Style::default()
+                            .fg(Color::DarkGray)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                 );
             }
 
             // Offline users
             for name in offline_users.iter() {
-                let is_selected =
-                    self.user_list_state.selected() == Some(list_idx) && self.focus == ChatFocus::Users;
+                let is_selected = self.user_list_state.selected() == Some(list_idx)
+                    && self.focus == ChatFocus::Users;
                 let style = if is_selected {
                     Style::default()
                         .fg(Color::Black)
@@ -476,14 +479,12 @@ impl ChatScreen {
                 list_idx += 1;
             }
 
-            let users_list = List::new(user_items)
-                .block(users_block)
-                .highlight_style(
-                    Style::default()
-                        .fg(Color::Black)
-                        .bg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                );
+            let users_list = List::new(user_items).block(users_block).highlight_style(
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            );
             frame.render_stateful_widget(users_list, users_area, &mut self.user_list_state);
         }
     }

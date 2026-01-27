@@ -1,10 +1,6 @@
 //! Authentication handlers.
 
-use axum::{
-    extract::State,
-    http::StatusCode,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 
 use crate::adapters::http::middleware::AuthUser;

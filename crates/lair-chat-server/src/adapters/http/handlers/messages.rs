@@ -162,6 +162,9 @@ pub async fn delete_message<S: Storage + Clone + 'static>(
 ) -> Result<Json<SuccessResponse>, Error> {
     let message_id = MessageId::parse(&message_id).map_err(|_| Error::MessageNotFound)?;
 
-    state.engine.delete_message(auth.session_id, message_id).await?;
+    state
+        .engine
+        .delete_message(auth.session_id, message_id)
+        .await?;
     Ok(Json(SuccessResponse::ok()))
 }

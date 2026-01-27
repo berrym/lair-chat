@@ -237,10 +237,7 @@ impl<S: Storage + 'static> AuthService<S> {
     /// Validate a JWT token and return the claims.
     ///
     /// This can be used by other services (like TCP) to validate tokens.
-    pub fn validate_token(
-        &self,
-        token: &str,
-    ) -> Result<(UserId, SessionId, Role)> {
+    pub fn validate_token(&self, token: &str) -> Result<(UserId, SessionId, Role)> {
         self.jwt_service.validate_and_extract(token)
     }
 

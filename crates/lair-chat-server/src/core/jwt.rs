@@ -144,7 +144,8 @@ impl JwtService {
         };
 
         let header = Header::new(JWT_ALGORITHM);
-        encode(&header, &claims, &self.encoding_key).map_err(|e| Error::Internal(format!("failed to generate JWT: {}", e)))
+        encode(&header, &claims, &self.encoding_key)
+            .map_err(|e| Error::Internal(format!("failed to generate JWT: {}", e)))
     }
 
     /// Generate a token with custom expiration duration.
@@ -168,7 +169,8 @@ impl JwtService {
         };
 
         let header = Header::new(JWT_ALGORITHM);
-        encode(&header, &claims, &self.encoding_key).map_err(|e| Error::Internal(format!("failed to generate JWT: {}", e)))
+        encode(&header, &claims, &self.encoding_key)
+            .map_err(|e| Error::Internal(format!("failed to generate JWT: {}", e)))
     }
 
     /// Validate a JWT token and extract its claims.
@@ -297,7 +299,8 @@ mod tests {
         let user = create_test_user();
 
         // Create session that's already expired
-        let expired_session = Session::with_duration(user.id, Protocol::Http, Duration::seconds(-1));
+        let expired_session =
+            Session::with_duration(user.id, Protocol::Http, Duration::seconds(-1));
 
         let token = service.generate(&user, &expired_session).unwrap();
         let result = service.validate(&token);

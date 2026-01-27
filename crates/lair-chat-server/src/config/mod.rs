@@ -42,7 +42,6 @@ fn generate_default_jwt_secret() -> String {
     base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &secret)
 }
 
-
 impl Config {
     /// Load configuration from environment variables.
     ///

@@ -278,26 +278,24 @@ impl<S: Storage + 'static> Connection<S> {
                         }
                     }
                 }
-                None => {
-                    match timeout(read_timeout, read_message(reader)).await {
-                        Ok(Ok(json)) => json,
-                        Ok(Err(e)) => return Err(e),
-                        Err(_) => {
-                            warn!(
-                                "Connection {} timed out in state {:?}",
-                                self.addr, self.state
-                            );
-                            let _ = self
-                                .send(ServerMessage::error(
-                                    None,
-                                    "timeout",
-                                    "Connection timed out",
-                                ))
-                                .await;
-                            return Ok(());
-                        }
+                None => match timeout(read_timeout, read_message(reader)).await {
+                    Ok(Ok(json)) => json,
+                    Ok(Err(e)) => return Err(e),
+                    Err(_) => {
+                        warn!(
+                            "Connection {} timed out in state {:?}",
+                            self.addr, self.state
+                        );
+                        let _ = self
+                            .send(ServerMessage::error(
+                                None,
+                                "timeout",
+                                "Connection timed out",
+                            ))
+                            .await;
+                        return Ok(());
                     }
-                }
+                },
             };
 
             // Parse message
@@ -453,7 +451,10 @@ impl<S: Storage + 'static> Connection<S> {
         match msg {
             // Recommended: Token-based authentication using JWT from HTTP API
             ClientMessage::Authenticate { request_id, token } => {
-                let response = self.commands.handle_authenticate(&token, request_id.clone()).await;
+                let response = self
+                    .commands
+                    .handle_authenticate(&token, request_id.clone())
+                    .await;
 
                 if let ServerMessage::AuthenticateResponse {
                     success: true,
@@ -468,9 +469,14 @@ impl<S: Storage + 'static> Connection<S> {
                         session.id = session_id;
                         self.session = Some(session);
                         self.state = ConnectionState::Authenticated;
-                        info!("User {} authenticated via token from {}", user.username, self.addr);
+                        info!(
+                            "User {} authenticated via token from {}",
+                            user.username, self.addr
+                        );
 
-                        self.commands.user_connected(user.id, user.username.to_string()).await;
+                        self.commands
+                            .user_connected(user.id, user.username.to_string())
+                            .await;
                         self.spawn_event_listener(user.id);
                     }
                 }
@@ -507,7 +513,9 @@ impl<S: Storage + 'static> Connection<S> {
                         info!("User {} authenticated from {}", user.username, self.addr);
 
                         // Notify engine of user connection
-                        self.commands.user_connected(user.id, user.username.to_string()).await;
+                        self.commands
+                            .user_connected(user.id, user.username.to_string())
+                            .await;
 
                         // Spawn event listener to receive real-time updates
                         self.spawn_event_listener(user.id);
@@ -548,7 +556,9 @@ impl<S: Storage + 'static> Connection<S> {
                         self.state = ConnectionState::Authenticated;
                         info!("New user {} registered from {}", user.username, self.addr);
 
-                        self.commands.user_connected(user.id, user.username.to_string()).await;
+                        self.commands
+                            .user_connected(user.id, user.username.to_string())
+                            .await;
 
                         // Spawn event listener to receive real-time updates
                         self.spawn_event_listener(user.id);
@@ -651,7 +661,9 @@ impl<S: Storage + 'static> Connection<S> {
             }
             // DEPRECATED: Use HTTP GET /invitations instead
             ClientMessage::ListInvitations { request_id: _ } => {
-                warn!("Client using deprecated ListInvitations. Use HTTP GET /invitations instead.");
+                warn!(
+                    "Client using deprecated ListInvitations. Use HTTP GET /invitations instead."
+                );
                 self.commands.handle_list_invitations(session_id).await
             }
             ClientMessage::AcceptInvitation {
@@ -727,7 +739,9 @@ impl<S: Storage + 'static> Connection<S> {
 
         if let Some(user) = &self.user {
             info!("Cleaning up connection for user {}", user.username);
-            self.commands.user_disconnected(user.id, user.username.to_string()).await;
+            self.commands
+                .user_disconnected(user.id, user.username.to_string())
+                .await;
         }
     }
 
