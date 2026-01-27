@@ -6,6 +6,7 @@ A terminal-based chat client for Lair Chat servers, built with Ratatui.
 
 - **Terminal UI**: Full-featured TUI with login, chat, and room management screens
 - **Real-time messaging**: Instant message delivery via TCP connection
+- **HTTP authentication**: Login/register via REST API per [ADR-013](../../docs/architecture/DECISIONS.md#adr-013-protocol-responsibility-split)
 - **Direct messages**: Private one-on-one conversations with `/dm <username>`
 - **Message history**: Automatically loads recent messages when joining a room or DM
 - **Room support**: Create, join, and switch between chat rooms
@@ -29,7 +30,7 @@ cargo build --release -p lair-chat-client
 ### Running
 
 ```bash
-# Connect to default server (127.0.0.1:8080)
+# Connect to default server (127.0.0.1 - HTTP:8082, TCP:8080)
 lair-chat-client
 
 # Connect to specific server
@@ -145,15 +146,38 @@ Press `r` (in normal mode) from chat to see available rooms:
 
 ## Architecture
 
-The client is built with a clean separation of concerns:
+The client implements ADR-013's protocol responsibility split:
+
+1. **HTTP** (port 8082) - Authentication (login/register) and queries
+2. **TCP** (port 8080) - Real-time messaging and events
+
+```
+┌────────┐                  ┌──────────┐                  ┌────────┐
+│ Client │                  │   HTTP   │                  │  TCP   │
+└───┬────┘                  └────┬─────┘                  └───┬────┘
+    │                            │                            │
+    │── POST /auth/login ───────▶│                            │
+    │◀── JWT Token + User ───────│                            │
+    │                            │                            │
+    │─────────────── TCP Connect ────────────────────────────▶│
+    │◀────────────── ServerHello ─────────────────────────────│
+    │─────────────── ClientHello ────────────────────────────▶│
+    │─────────────── Authenticate(jwt) ──────────────────────▶│
+    │◀────────────── AuthenticateResponse ────────────────────│
+    │                            │                            │
+    │◀═══════════════ Real-time Messaging ═══════════════════▶│
+```
+
+### Directory Structure
 
 ```
 src/
 ├── main.rs           # Entry point, terminal setup, event loop
 ├── app.rs            # Application state and business logic
-├── protocol/         # TCP protocol implementation
+├── protocol/         # Protocol implementations
 │   ├── mod.rs
 │   ├── tcp.rs        # TCP client with framing
+│   ├── http.rs       # HTTP client for auth (per ADR-013)
 │   └── messages.rs   # Protocol message types
 └── components/       # TUI components
     ├── mod.rs
@@ -165,8 +189,12 @@ src/
 
 ### Protocol Layer
 
-The client implements the Lair Chat TCP protocol as documented in
-`docs/protocols/TCP.md`. Messages are length-prefixed JSON:
+The client implements the Lair Chat protocols as documented:
+
+- **[HTTP API](../../docs/protocols/HTTP.md)** - Authentication and CRUD
+- **[TCP Protocol](../../docs/protocols/TCP.md)** - Real-time messaging
+
+Messages are length-prefixed JSON over TCP:
 
 ```
 ┌──────────────┬─────────────────────────────────┐
@@ -195,6 +223,8 @@ Options:
   -V, --version          Print version
 ```
 
+Note: The HTTP port is automatically inferred as TCP port + 2 (e.g., TCP 8080 -> HTTP 8082).
+
 ## Troubleshooting
 
 ### Connection Refused
@@ -205,6 +235,10 @@ Make sure the Lair Chat server is running:
 # From workspace root
 cargo run -p lair-chat-server
 ```
+
+The server must expose both:
+- HTTP on port 8082 (for authentication)
+- TCP on port 8080 (for real-time messaging)
 
 ### Display Issues
 
@@ -252,13 +286,16 @@ cargo run -p lair-chat-client
 
 ## Protocol Compatibility
 
-This client implements the Lair Chat TCP protocol v1. It's designed to work
-with `lair-chat-server` but can connect to any server implementing the same
-protocol as specified in `docs/protocols/TCP.md`.
+This client implements:
+- HTTP API v1 for authentication
+- TCP Protocol v1.1 for real-time messaging
+
+It's designed to work with `lair-chat-server` but can connect to any server
+implementing the same protocols as specified in the docs/protocols/ directory.
 
 The protocol documentation is intentionally language-agnostic - you could
 implement a compatible client in Python, Go, TypeScript, or any language
-that supports TCP sockets and JSON.
+that supports HTTP requests, TCP sockets, and JSON.
 
 ## License
 
