@@ -2,17 +2,17 @@
 
 use axum::{
     extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     Json,
 };
 use serde::{Deserialize, Serialize};
 
+use crate::adapters::http::middleware::AuthUser;
 use crate::adapters::http::routes::AppState;
 use crate::domain::{Message, MessageId, MessageTarget, Pagination, RoomId, UserId};
 use crate::storage::Storage;
 use crate::Error;
 
-use super::auth::extract_session_id;
 use super::SuccessResponse;
 
 // ============================================================================
@@ -86,15 +86,14 @@ pub struct MessagesListResponse {
 /// Send a message.
 pub async fn send_message<S: Storage + Clone + 'static>(
     State(state): State<AppState<S>>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Json(req): Json<SendMessageRequest>,
 ) -> Result<(StatusCode, Json<MessageResponse>), Error> {
-    let session_id = extract_session_id(&headers)?;
     let target: MessageTarget = req.target.try_into()?;
 
     let message = state
         .engine
-        .send_message(session_id, target, &req.content)
+        .send_message(auth.session_id, target, &req.content)
         .await?;
 
     Ok((StatusCode::CREATED, Json(MessageResponse { message })))
@@ -103,11 +102,9 @@ pub async fn send_message<S: Storage + Clone + 'static>(
 /// Get messages for a target.
 pub async fn get_messages<S: Storage + Clone + 'static>(
     State(state): State<AppState<S>>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Query(query): Query<GetMessagesQuery>,
 ) -> Result<Json<MessagesListResponse>, Error> {
-    let session_id = extract_session_id(&headers)?;
-
     let target = match query.target_type.as_str() {
         "room" => {
             let id = RoomId::parse(&query.target_id).map_err(|_| Error::RoomNotFound)?;
@@ -132,7 +129,7 @@ pub async fn get_messages<S: Storage + Clone + 'static>(
 
     let messages = state
         .engine
-        .get_messages(session_id, target, pagination)
+        .get_messages(auth.session_id, target, pagination)
         .await?;
 
     let has_more = messages.len() == query.limit as usize;
@@ -143,16 +140,15 @@ pub async fn get_messages<S: Storage + Clone + 'static>(
 /// Edit a message.
 pub async fn edit_message<S: Storage + Clone + 'static>(
     State(state): State<AppState<S>>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Path(message_id): Path<String>,
     Json(req): Json<EditMessageRequest>,
 ) -> Result<Json<MessageResponse>, Error> {
-    let session_id = extract_session_id(&headers)?;
     let message_id = MessageId::parse(&message_id).map_err(|_| Error::MessageNotFound)?;
 
     let message = state
         .engine
-        .edit_message(session_id, message_id, &req.content)
+        .edit_message(auth.session_id, message_id, &req.content)
         .await?;
 
     Ok(Json(MessageResponse { message }))
@@ -161,12 +157,11 @@ pub async fn edit_message<S: Storage + Clone + 'static>(
 /// Delete a message.
 pub async fn delete_message<S: Storage + Clone + 'static>(
     State(state): State<AppState<S>>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Path(message_id): Path<String>,
 ) -> Result<Json<SuccessResponse>, Error> {
-    let session_id = extract_session_id(&headers)?;
     let message_id = MessageId::parse(&message_id).map_err(|_| Error::MessageNotFound)?;
 
-    state.engine.delete_message(session_id, message_id).await?;
+    state.engine.delete_message(auth.session_id, message_id).await?;
     Ok(Json(SuccessResponse::ok()))
 }

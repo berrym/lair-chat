@@ -26,7 +26,34 @@ impl<S: Storage + 'static> CommandHandler<S> {
     // Authentication
     // ========================================================================
 
-    /// Handle login request.
+    /// Handle authenticate request (JWT token validation).
+    ///
+    /// This is the recommended authentication method for TCP connections.
+    /// The token should be obtained from HTTP POST /auth/login.
+    pub async fn handle_authenticate(
+        &self,
+        token: &str,
+        request_id: Option<String>,
+    ) -> ServerMessage {
+        match self.engine.validate_token(token).await {
+            Ok((user, session)) => ServerMessage::AuthenticateResponse {
+                request_id,
+                success: true,
+                user: Some(user),
+                session: Some(SessionInfo::from(&session)),
+                error: None,
+            },
+            Err(e) => ServerMessage::AuthenticateResponse {
+                request_id,
+                success: false,
+                user: None,
+                session: None,
+                error: Some(error_to_info(&e)),
+            },
+        }
+    }
+
+    /// Handle login request (DEPRECATED - use handle_authenticate).
     pub async fn handle_login(&self, identifier: &str, password: &str) -> ServerMessage {
         match self.engine.login(identifier, password).await {
             Ok((user, session, token)) => ServerMessage::LoginResponse {
@@ -48,7 +75,7 @@ impl<S: Storage + 'static> CommandHandler<S> {
         }
     }
 
-    /// Handle register request.
+    /// Handle register request (DEPRECATED - use HTTP /auth/register + handle_authenticate).
     pub async fn handle_register(
         &self,
         username: &str,

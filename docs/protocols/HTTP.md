@@ -2,18 +2,31 @@
 
 This document specifies the Lair Chat REST API. Any client can use this API to interact with a Lair Chat server using standard HTTP requests.
 
-**API Version**: v1  
+**API Version**: v1
 **Base URL**: `http://localhost:8082/api/v1`
 
 ---
 
 ## Overview
 
+The REST API is the **primary protocol for authentication and CRUD operations**. Use HTTP for:
+- All authentication (login, register, logout, token refresh)
+- User management and queries
+- Room CRUD operations
+- Message history retrieval
+- Invitation management
+- Admin operations
+
+For real-time messaging and presence, use the [TCP protocol](TCP.md) after authenticating via HTTP.
+
+See [ADR-013](../architecture/DECISIONS.md#adr-013-protocol-responsibility-split) for the rationale behind this split.
+
 The REST API provides:
 - Stateless request/response communication
 - JWT-based authentication
 - JSON request and response bodies
 - OpenAPI/Swagger documentation at `/docs`
+- Rate limiting and CORS support
 
 ### Authentication
 
@@ -1073,10 +1086,16 @@ GET /messages?target_type=room&target_id=...&before=2025-01-21T12:00:00Z
 
 The REST API is stateless and does not support push notifications. For real-time updates:
 
-1. **Polling**: Periodically fetch new messages
-2. **Long-polling**: Use `/messages?after=...` with timeout (future)
+1. **TCP Protocol (Recommended)**: After authenticating via HTTP, connect to TCP and use `authenticate` with your JWT token. TCP provides:
+   - Real-time message delivery
+   - Presence updates (user online/offline)
+   - Typing indicators
+   - Live room events
+
+   See [TCP Protocol](TCP.md) for details.
+
+2. **Polling**: Periodically fetch new messages via `GET /messages` (not recommended for chat)
 3. **WebSocket**: Connect via `/ws` for real-time events (future)
-4. **TCP**: Use the TCP protocol for persistent connections
 
 ---
 
@@ -1113,4 +1132,5 @@ openapi-generator generate -i openapi.json -g go -o ./client
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v1.1 | 2025-01 | Marked as primary protocol for auth/CRUD per ADR-013 |
 | v1 | 2025-01 | Initial specification |

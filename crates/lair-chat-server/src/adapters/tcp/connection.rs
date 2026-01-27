@@ -451,11 +451,42 @@ impl<S: Storage + 'static> Connection<S> {
     /// Handle messages during authentication phase.
     async fn handle_auth(&mut self, msg: ClientMessage) -> Result<(), ProtocolError> {
         match msg {
+            // Recommended: Token-based authentication using JWT from HTTP API
+            ClientMessage::Authenticate { request_id, token } => {
+                let response = self.commands.handle_authenticate(&token, request_id.clone()).await;
+
+                if let ServerMessage::AuthenticateResponse {
+                    success: true,
+                    user: Some(ref user),
+                    session: Some(ref session_info),
+                    ..
+                } = response
+                {
+                    if let Ok(session_id) = SessionId::parse(&session_info.id) {
+                        self.user = Some(user.clone());
+                        let mut session = Session::new(user.id, Protocol::Tcp);
+                        session.id = session_id;
+                        self.session = Some(session);
+                        self.state = ConnectionState::Authenticated;
+                        info!("User {} authenticated via token from {}", user.username, self.addr);
+
+                        self.commands.user_connected(user.id, user.username.to_string()).await;
+                        self.spawn_event_listener(user.id);
+                    }
+                }
+
+                self.send(response).await
+            }
+            // DEPRECATED: Direct login - use HTTP + Authenticate instead
             ClientMessage::Login {
                 request_id: _,
                 identifier,
                 password,
             } => {
+                warn!(
+                    "Client {} using deprecated Login command. Use HTTP POST /auth/login + Authenticate instead.",
+                    self.addr
+                );
                 let response = self.commands.handle_login(&identifier, &password).await;
 
                 if let ServerMessage::LoginResponse {
@@ -485,12 +516,17 @@ impl<S: Storage + 'static> Connection<S> {
 
                 self.send(response).await
             }
+            // DEPRECATED: Direct register - use HTTP + Authenticate instead
             ClientMessage::Register {
                 request_id: _,
                 username,
                 email,
                 password,
             } => {
+                warn!(
+                    "Client {} using deprecated Register command. Use HTTP POST /auth/register + Authenticate instead.",
+                    self.addr
+                );
                 let response = self
                     .commands
                     .handle_register(&username, &email, &password)
@@ -561,22 +597,26 @@ impl<S: Storage + 'static> Connection<S> {
                     .handle_send_message(session_id, &target, &content)
                     .await
             }
+            // DEPRECATED: Use HTTP GET /messages instead
             ClientMessage::GetMessages {
                 request_id: _,
                 target,
                 limit,
                 before,
             } => {
+                warn!("Client using deprecated GetMessages. Use HTTP GET /messages instead.");
                 self.commands
                     .handle_get_messages(session_id, &target, limit, before.as_deref())
                     .await
             }
+            // DEPRECATED: Use HTTP POST /rooms instead
             ClientMessage::CreateRoom {
                 request_id: _,
                 name,
                 description,
                 settings,
             } => {
+                warn!("Client using deprecated CreateRoom. Use HTTP POST /rooms instead.");
                 self.commands
                     .handle_create_room(session_id, &name, description, settings)
                     .await
@@ -589,21 +629,29 @@ impl<S: Storage + 'static> Connection<S> {
                 request_id: _,
                 room_id,
             } => self.commands.handle_leave_room(session_id, &room_id).await,
+            // DEPRECATED: Use HTTP GET /rooms instead
             ClientMessage::ListRooms {
                 request_id: _,
                 filter,
                 limit,
                 offset,
             } => {
+                warn!("Client using deprecated ListRooms. Use HTTP GET /rooms instead.");
                 self.commands
                     .handle_list_rooms(session_id, filter, limit, offset)
                     .await
             }
+            // DEPRECATED: Use HTTP GET /rooms/{room_id} instead
             ClientMessage::GetRoom {
                 request_id: _,
                 room_id,
-            } => self.commands.handle_get_room(session_id, &room_id).await,
+            } => {
+                warn!("Client using deprecated GetRoom. Use HTTP GET /rooms/{{room_id}} instead.");
+                self.commands.handle_get_room(session_id, &room_id).await
+            }
+            // DEPRECATED: Use HTTP GET /invitations instead
             ClientMessage::ListInvitations { request_id: _ } => {
+                warn!("Client using deprecated ListInvitations. Use HTTP GET /invitations instead.");
                 self.commands.handle_list_invitations(session_id).await
             }
             ClientMessage::AcceptInvitation {
@@ -622,22 +670,34 @@ impl<S: Storage + 'static> Connection<S> {
                     .handle_decline_invitation(session_id, &invitation_id)
                     .await
             }
-            ClientMessage::GetCurrentUser { request_id } => ServerMessage::GetCurrentUserResponse {
-                request_id,
-                success: true,
-                user: Some(user.clone()),
-                error: None,
-            },
+            // DEPRECATED: Use HTTP GET /users/me instead
+            ClientMessage::GetCurrentUser { request_id } => {
+                warn!("Client using deprecated GetCurrentUser. Use HTTP GET /users/me instead.");
+                ServerMessage::GetCurrentUserResponse {
+                    request_id,
+                    success: true,
+                    user: Some(user.clone()),
+                    error: None,
+                }
+            }
+            // DEPRECATED: Use HTTP GET /users/{user_id} instead
             ClientMessage::GetUser {
                 request_id: _,
                 user_id,
-            } => self.commands.handle_get_user(&user_id).await,
+            } => {
+                warn!("Client using deprecated GetUser. Use HTTP GET /users/{{user_id}} instead.");
+                self.commands.handle_get_user(&user_id).await
+            }
+            // DEPRECATED: Use HTTP GET /users instead
             ClientMessage::ListUsers {
                 request_id: _,
                 filter,
                 limit,
                 offset,
-            } => self.commands.handle_list_users(filter, limit, offset).await,
+            } => {
+                warn!("Client using deprecated ListUsers. Use HTTP GET /users instead.");
+                self.commands.handle_list_users(filter, limit, offset).await
+            }
             ClientMessage::Typing { target } => {
                 if let Some(sid) = session_id {
                     let _ = self.commands.handle_typing(sid, &target).await;
@@ -646,6 +706,7 @@ impl<S: Storage + 'static> Connection<S> {
             }
             // Messages that shouldn't be sent when authenticated
             ClientMessage::ClientHello { .. }
+            | ClientMessage::Authenticate { .. }
             | ClientMessage::Login { .. }
             | ClientMessage::Register { .. } => {
                 ServerMessage::error(None, "invalid_state", "Already authenticated")

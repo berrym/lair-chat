@@ -27,11 +27,14 @@ async fn get_available_port() -> u16 {
     port
 }
 
+/// Test JWT secret for tests.
+const TEST_JWT_SECRET: &str = "test-jwt-secret-for-integration-tests-only";
+
 /// Test helper to create a server with in-memory database.
 async fn create_test_server() -> (TcpServer, u16) {
     let port = get_available_port().await;
     let storage = SqliteStorage::in_memory().await.unwrap();
-    let engine = Arc::new(ChatEngine::new(Arc::new(storage)));
+    let engine = Arc::new(ChatEngine::new(Arc::new(storage), TEST_JWT_SECRET));
     let config = TcpConfig { port };
     let server = TcpServer::start(config, engine).await.unwrap();
     // Give the server a moment to start

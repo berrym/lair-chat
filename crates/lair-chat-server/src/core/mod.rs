@@ -33,6 +33,7 @@
 pub mod auth;
 pub mod engine;
 pub mod events;
+pub mod jwt;
 pub mod messaging;
 pub mod rooms;
 pub mod sessions;
@@ -41,6 +42,7 @@ pub mod sessions;
 pub use auth::AuthService;
 pub use engine::{ChatEngine, SystemStats};
 pub use events::{should_receive_event, EventDispatcher};
+pub use jwt::{Claims, JwtService};
 pub use messaging::MessagingService;
 pub use rooms::RoomService;
 pub use sessions::SessionManager;

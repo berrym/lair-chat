@@ -11,7 +11,7 @@
 use std::sync::Arc;
 
 use crate::domain::{
-    Invitation, InvitationId, Message, MessageId, MessageTarget, Pagination, Room, RoomId,
+    Invitation, InvitationId, Message, MessageId, MessageTarget, Pagination, Role, Room, RoomId,
     RoomMembership, RoomSettings, Session, SessionId, User, UserId,
 };
 use crate::storage::{RoomRepository, Storage, UserRepository};
@@ -19,6 +19,7 @@ use crate::Result;
 
 use super::auth::AuthService;
 use super::events::EventDispatcher;
+use super::jwt::JwtService;
 use super::messaging::MessagingService;
 use super::rooms::RoomService;
 use super::sessions::SessionManager;
@@ -66,13 +67,15 @@ pub struct ChatEngine<S: Storage> {
 }
 
 impl<S: Storage + 'static> ChatEngine<S> {
-    /// Create a new chat engine with the given storage backend.
-    pub fn new(storage: Arc<S>) -> Self {
+    /// Create a new chat engine with the given storage backend and JWT secret.
+    ///
+    /// The JWT secret should be at least 32 bytes for security.
+    pub fn new(storage: Arc<S>, jwt_secret: &str) -> Self {
         let events = EventDispatcher::new();
 
         Self {
             storage: storage.clone(),
-            auth: AuthService::new(storage.clone()),
+            auth: AuthService::new(storage.clone(), jwt_secret),
             sessions: SessionManager::new(storage.clone()),
             rooms: RoomService::new(storage.clone(), events.clone()),
             messaging: MessagingService::new(storage.clone(), events.clone()),
@@ -135,6 +138,27 @@ impl<S: Storage + 'static> ChatEngine<S> {
     /// Refresh a session token.
     pub async fn refresh_token(&self, session_id: SessionId) -> Result<String> {
         self.auth.refresh_token(session_id).await
+    }
+
+    /// Validate a JWT token and return user/session info.
+    ///
+    /// This is used by TCP connections to authenticate with a token
+    /// obtained from the HTTP API.
+    pub async fn validate_token(&self, token: &str) -> Result<(User, Session)> {
+        self.auth.validate_token_full(token).await
+    }
+
+    /// Quick token validation (JWT only, no database check).
+    ///
+    /// Returns user ID, session ID, and role from the token claims.
+    /// Use `validate_token` for full validation including session status.
+    pub fn validate_token_quick(&self, token: &str) -> Result<(UserId, SessionId, Role)> {
+        self.auth.validate_token(token)
+    }
+
+    /// Get a reference to the JWT service.
+    pub fn jwt_service(&self) -> &JwtService {
+        self.auth.jwt_service()
     }
 
     // ========================================================================

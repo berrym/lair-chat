@@ -13,10 +13,13 @@ use lair_chat_server::adapters::http::routes::create_router;
 use lair_chat_server::core::engine::ChatEngine;
 use lair_chat_server::storage::sqlite::SqliteStorage;
 
+/// Test JWT secret for tests.
+const TEST_JWT_SECRET: &str = "test-jwt-secret-for-integration-tests-only";
+
 /// Create a test server with an in-memory database.
 async fn create_test_server() -> TestServer {
     let storage = SqliteStorage::in_memory().await.unwrap();
-    let engine = Arc::new(ChatEngine::new(Arc::new(storage)));
+    let engine = Arc::new(ChatEngine::new(Arc::new(storage), TEST_JWT_SECRET));
     let router = create_router(engine);
     TestServer::new(router).unwrap()
 }
@@ -289,7 +292,7 @@ async fn test_login_nonexistent_user() {
 async fn test_logout() {
     let server = create_test_server().await;
 
-    // Register and get session
+    // Register and get token
     let reg_response = server
         .post("/api/v1/auth/register")
         .json(&json!({
@@ -300,8 +303,8 @@ async fn test_logout() {
         .await;
 
     let body: Value = reg_response.json();
-    let session_id = body["session"]["id"].as_str().unwrap();
-    let (name, value) = auth_header(session_id);
+    let token = body["token"].as_str().unwrap();
+    let (name, value) = auth_header(token);
 
     // Logout
     let response = server
@@ -311,7 +314,7 @@ async fn test_logout() {
 
     response.assert_status_ok();
 
-    // Try to use the session - should fail
+    // Try to use the token - should fail (session invalidated)
     let response = server.get("/api/v1/users/me").add_header(name, value).await;
 
     response.assert_status(StatusCode::UNAUTHORIZED);
@@ -321,7 +324,8 @@ async fn test_logout() {
 // Room Tests
 // ============================================================================
 
-async fn register_and_get_session(server: &TestServer, username: &str) -> String {
+/// Register a user and get their JWT token for authentication.
+async fn register_and_get_token(server: &TestServer, username: &str) -> String {
     let response = server
         .post("/api/v1/auth/register")
         .json(&json!({
@@ -332,13 +336,13 @@ async fn register_and_get_session(server: &TestServer, username: &str) -> String
         .await;
 
     let body: Value = response.json();
-    body["session"]["id"].as_str().unwrap().to_string()
+    body["token"].as_str().unwrap().to_string()
 }
 
 #[tokio::test]
 async fn test_create_room() {
     let server = create_test_server().await;
-    let session = register_and_get_session(&server, "roomcreator").await;
+    let session = register_and_get_token(&server, "roomcreator").await;
     let (name, value) = auth_header(&session);
 
     let response = server
@@ -359,7 +363,7 @@ async fn test_create_room() {
 #[tokio::test]
 async fn test_list_rooms() {
     let server = create_test_server().await;
-    let session = register_and_get_session(&server, "roomlister").await;
+    let session = register_and_get_token(&server, "roomlister").await;
 
     // Create a few rooms
     for i in 1..=3 {
@@ -387,7 +391,7 @@ async fn test_join_and_leave_room() {
     let server = create_test_server().await;
 
     // Create room with first user
-    let owner_session = register_and_get_session(&server, "roomowner").await;
+    let owner_session = register_and_get_token(&server, "roomowner").await;
     let (name, value) = auth_header(&owner_session);
     let create_response = server
         .post("/api/v1/rooms")
@@ -399,7 +403,7 @@ async fn test_join_and_leave_room() {
     let room_id = body["room"]["id"].as_str().unwrap();
 
     // Second user joins
-    let joiner_session = register_and_get_session(&server, "roomjoiner").await;
+    let joiner_session = register_and_get_token(&server, "roomjoiner").await;
     let (name, value) = auth_header(&joiner_session);
     let join_response = server
         .post(&format!("/api/v1/rooms/{}/join", room_id))
@@ -423,7 +427,7 @@ async fn test_get_room_members() {
     let server = create_test_server().await;
 
     // Create room
-    let session = register_and_get_session(&server, "memberlister").await;
+    let session = register_and_get_token(&server, "memberlister").await;
     let (name, value) = auth_header(&session);
     let create_response = server
         .post("/api/v1/rooms")
@@ -456,7 +460,7 @@ async fn test_send_message() {
     let server = create_test_server().await;
 
     // Create user and room
-    let session = register_and_get_session(&server, "messagesender").await;
+    let session = register_and_get_token(&server, "messagesender").await;
     let (name, value) = auth_header(&session);
     let create_response = server
         .post("/api/v1/rooms")
@@ -488,7 +492,7 @@ async fn test_get_messages() {
     let server = create_test_server().await;
 
     // Create user and room
-    let session = register_and_get_session(&server, "messagegetter").await;
+    let session = register_and_get_token(&server, "messagegetter").await;
     let (name, value) = auth_header(&session);
     let create_response = server
         .post("/api/v1/rooms")
@@ -531,7 +535,7 @@ async fn test_edit_message() {
     let server = create_test_server().await;
 
     // Create user and room
-    let session = register_and_get_session(&server, "messageeditor").await;
+    let session = register_and_get_token(&server, "messageeditor").await;
     let (name, value) = auth_header(&session);
     let create_response = server
         .post("/api/v1/rooms")
@@ -577,7 +581,7 @@ async fn test_delete_message() {
     let server = create_test_server().await;
 
     // Create user and room
-    let session = register_and_get_session(&server, "messagedeleter").await;
+    let session = register_and_get_token(&server, "messagedeleter").await;
     let (name, value) = auth_header(&session);
     let create_response = server
         .post("/api/v1/rooms")
@@ -619,7 +623,7 @@ async fn test_delete_message() {
 #[tokio::test]
 async fn test_get_current_user() {
     let server = create_test_server().await;
-    let session = register_and_get_session(&server, "currentuser").await;
+    let session = register_and_get_token(&server, "currentuser").await;
     let (name, value) = auth_header(&session);
 
     let response = server.get("/api/v1/users/me").add_header(name, value).await;
@@ -635,10 +639,10 @@ async fn test_list_users() {
 
     // Create multiple users
     for i in 1..=3 {
-        register_and_get_session(&server, &format!("listuser{}", i)).await;
+        register_and_get_token(&server, &format!("listuser{}", i)).await;
     }
 
-    let session = register_and_get_session(&server, "listusers").await;
+    let session = register_and_get_token(&server, "listusers").await;
     let (name, value) = auth_header(&session);
 
     let response = server.get("/api/v1/users").add_header(name, value).await;
@@ -678,7 +682,7 @@ async fn test_invalid_session() {
 #[tokio::test]
 async fn test_admin_stats_requires_permission() {
     let server = create_test_server().await;
-    let session = register_and_get_session(&server, "regularuser").await;
+    let session = register_and_get_token(&server, "regularuser").await;
     let (name, value) = auth_header(&session);
 
     let response = server
