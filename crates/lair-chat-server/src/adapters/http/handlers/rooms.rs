@@ -2,17 +2,17 @@
 
 use axum::{
     extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     Json,
 };
 use serde::{Deserialize, Serialize};
 
+use crate::adapters::http::middleware::AuthUser;
 use crate::adapters::http::routes::AppState;
 use crate::domain::{Pagination, Room, RoomId, RoomMembership, RoomSettings, User};
 use crate::storage::Storage;
 use crate::Error;
 
-use super::auth::extract_session_id;
 use super::SuccessResponse;
 
 // ============================================================================
@@ -120,15 +120,14 @@ pub struct MemberWithUser {
 /// Create a new room.
 pub async fn create_room<S: Storage + Clone + 'static>(
     State(state): State<AppState<S>>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Json(req): Json<CreateRoomRequest>,
 ) -> Result<(StatusCode, Json<RoomResponse>), Error> {
-    let session_id = extract_session_id(&headers)?;
     let settings = req.settings.map(|s| s.into());
 
     let room = state
         .engine
-        .create_room(session_id, &req.name, req.description, settings)
+        .create_room(auth.session_id, &req.name, req.description, settings)
         .await?;
 
     Ok((StatusCode::CREATED, Json(RoomResponse { room })))
@@ -137,10 +136,9 @@ pub async fn create_room<S: Storage + Clone + 'static>(
 /// Get a room by ID.
 pub async fn get_room<S: Storage + Clone + 'static>(
     State(state): State<AppState<S>>,
-    headers: HeaderMap,
+    _auth: AuthUser,
     Path(room_id): Path<String>,
 ) -> Result<Json<RoomWithMembershipResponse>, Error> {
-    let _session_id = extract_session_id(&headers)?;
     let room_id = RoomId::parse(&room_id).map_err(|_| Error::RoomNotFound)?;
 
     let room = state
@@ -162,18 +160,16 @@ pub async fn get_room<S: Storage + Clone + 'static>(
 /// List rooms with filtering.
 pub async fn list_rooms<S: Storage + Clone + 'static>(
     State(state): State<AppState<S>>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Query(query): Query<ListRoomsQuery>,
 ) -> Result<Json<RoomsListResponse>, Error> {
-    let session_id = extract_session_id(&headers)?;
-
     let pagination = Pagination {
         limit: query.limit.min(100),
         offset: query.offset,
     };
 
     let rooms = if query.joined_only {
-        state.engine.list_user_rooms(session_id).await?
+        state.engine.list_user_rooms(auth.session_id).await?
     } else {
         state.engine.list_public_rooms(pagination).await?
     };
@@ -200,11 +196,10 @@ pub async fn list_rooms<S: Storage + Clone + 'static>(
 /// Update a room.
 pub async fn update_room<S: Storage + Clone + 'static>(
     State(state): State<AppState<S>>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Path(room_id): Path<String>,
     Json(req): Json<UpdateRoomRequest>,
 ) -> Result<Json<RoomResponse>, Error> {
-    let session_id = extract_session_id(&headers)?;
     let room_id = RoomId::parse(&room_id).map_err(|_| Error::RoomNotFound)?;
 
     let settings = req.settings.map(|s| s.into());
@@ -212,7 +207,7 @@ pub async fn update_room<S: Storage + Clone + 'static>(
     let room = state
         .engine
         .update_room(
-            session_id,
+            auth.session_id,
             room_id,
             req.name.as_deref(),
             req.description,
@@ -226,26 +221,24 @@ pub async fn update_room<S: Storage + Clone + 'static>(
 /// Delete a room.
 pub async fn delete_room<S: Storage + Clone + 'static>(
     State(state): State<AppState<S>>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Path(room_id): Path<String>,
 ) -> Result<Json<SuccessResponse>, Error> {
-    let session_id = extract_session_id(&headers)?;
     let room_id = RoomId::parse(&room_id).map_err(|_| Error::RoomNotFound)?;
 
-    state.engine.delete_room(session_id, room_id).await?;
+    state.engine.delete_room(auth.session_id, room_id).await?;
     Ok(Json(SuccessResponse::ok()))
 }
 
 /// Join a room.
 pub async fn join_room<S: Storage + Clone + 'static>(
     State(state): State<AppState<S>>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Path(room_id): Path<String>,
 ) -> Result<Json<JoinRoomResponse>, Error> {
-    let session_id = extract_session_id(&headers)?;
     let room_id = RoomId::parse(&room_id).map_err(|_| Error::RoomNotFound)?;
 
-    let membership = state.engine.join_room(session_id, room_id).await?;
+    let membership = state.engine.join_room(auth.session_id, room_id).await?;
     let room = state
         .engine
         .get_room(room_id)
@@ -258,23 +251,21 @@ pub async fn join_room<S: Storage + Clone + 'static>(
 /// Leave a room.
 pub async fn leave_room<S: Storage + Clone + 'static>(
     State(state): State<AppState<S>>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Path(room_id): Path<String>,
 ) -> Result<Json<SuccessResponse>, Error> {
-    let session_id = extract_session_id(&headers)?;
     let room_id = RoomId::parse(&room_id).map_err(|_| Error::RoomNotFound)?;
 
-    state.engine.leave_room(session_id, room_id).await?;
+    state.engine.leave_room(auth.session_id, room_id).await?;
     Ok(Json(SuccessResponse::ok()))
 }
 
 /// Get room members.
 pub async fn get_members<S: Storage + Clone + 'static>(
     State(state): State<AppState<S>>,
-    headers: HeaderMap,
+    _auth: AuthUser,
     Path(room_id): Path<String>,
 ) -> Result<Json<MembersListResponse>, Error> {
-    let _session_id = extract_session_id(&headers)?;
     let room_id = RoomId::parse(&room_id).map_err(|_| Error::RoomNotFound)?;
 
     let members = state.engine.get_room_members(room_id).await?;

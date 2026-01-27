@@ -37,6 +37,12 @@ pub enum Error {
     #[error("Account banned")]
     AccountBanned,
 
+    #[error("Invalid token: {reason}")]
+    InvalidToken { reason: String },
+
+    #[error("Token expired")]
+    TokenExpired,
+
     // === Authorization Errors ===
     #[error("Permission denied")]
     PermissionDenied,
@@ -154,6 +160,8 @@ impl Error {
             Error::SessionExpired => "session_expired",
             Error::AccountLocked => "account_locked",
             Error::AccountBanned => "account_banned",
+            Error::InvalidToken { .. } => "invalid_token",
+            Error::TokenExpired => "token_expired",
             Error::PermissionDenied => "permission_denied",
             Error::NotRoomMember => "not_room_member",
             Error::NotMessageAuthor => "not_message_author",
@@ -195,6 +203,7 @@ impl Error {
         match self {
             Error::InvalidCredentials => 401,
             Error::SessionNotFound | Error::SessionExpired => 401,
+            Error::InvalidToken { .. } | Error::TokenExpired => 401,
             Error::AccountLocked | Error::AccountBanned => 403,
             Error::PermissionDenied | Error::NotRoomMember | Error::NotMessageAuthor => 403,
             Error::ValidationFailed { .. }

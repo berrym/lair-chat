@@ -71,18 +71,31 @@ Lair Chat is a secure, high-performance chat system built with Rust. It provides
 
 Thin layer that translates between wire protocols and the core engine.
 
-| Adapter | Port | Purpose |
-|---------|------|---------|
-| TCP | 8080 | Persistent connections, real-time messaging |
-| HTTP | 8082 | REST API, stateless requests |
+| Adapter | Port | Primary Purpose |
+|---------|------|-----------------|
+| HTTP | 8082 | **Auth, CRUD, queries** - Login, register, room management, message history |
+| TCP | 8080 | **Real-time only** - Message delivery, presence, typing, live events |
 | WebSocket | 8082 | Real-time for web clients (future) |
 
+> **Protocol Split**: HTTP handles authentication and data operations; TCP handles real-time messaging. See [ADR-013](DECISIONS.md#adr-013-protocol-responsibility-split).
+
 **Responsibilities:**
-- Parse incoming wire format (JSON over TCP, HTTP requests)
-- Translate to core Commands
-- Execute commands via Core Engine
-- Serialize responses back to wire format
-- Push Events to connected clients
+
+*HTTP Adapter:*
+- User authentication (login, register, logout, token refresh)
+- Room CRUD (create, read, update, delete)
+- Message history retrieval
+- User queries and management
+- Invitation management
+- Admin operations
+
+*TCP Adapter:*
+- Token-based authentication (validates JWT from HTTP)
+- Real-time message send/edit/delete
+- Room join/leave for presence
+- Accept/decline invitations (with real-time notification)
+- Typing indicators
+- Push events to connected clients
 
 **See:** [TCP Protocol](../protocols/TCP.md), [HTTP API](../protocols/HTTP.md)
 
@@ -194,14 +207,15 @@ Response to Client
 
 ## Authentication Flow
 
+### HTTP Login (Primary)
+
 ```
 ┌────────┐                  ┌────────┐                  ┌────────┐
-│ Client │                  │ Server │                  │Database│
+│ Client │                  │HTTP API│                  │Database│
 └───┬────┘                  └───┬────┘                  └───┬────┘
     │                           │                           │
-    │──── Login Request ───────▶│                           │
-    │     (identifier, pass)    │                           │
-    │                           │                           │
+    │─ POST /auth/login ───────▶│                           │
+    │  (identifier, password)   │                           │
     │                           │──── Find User ───────────▶│
     │                           │◀─── User + Hash ──────────│
     │                           │                           │
@@ -212,9 +226,29 @@ Response to Client
     │                           │                           │
     │                           │ Generate JWT              │
     │                           │                           │
-    │◀─── Login Response ───────│                           │
-    │     (user, session, jwt)  │                           │
+    │◀── 200 OK ────────────────│                           │
+    │   (user, session, jwt)    │                           │
+```
+
+### TCP Authentication (After HTTP Login)
+
+```
+┌────────┐                  ┌────────┐                  ┌────────┐
+│ Client │                  │TCP Srv │                  │JWTSvc  │
+└───┬────┘                  └───┬────┘                  └───┬────┘
     │                           │                           │
+    │─── TCP Connect ──────────▶│                           │
+    │◀── ServerHello ───────────│                           │
+    │─── ClientHello ──────────▶│                           │
+    │                           │                           │
+    │─── Authenticate(jwt) ────▶│                           │
+    │                           │── Validate Token ────────▶│
+    │                           │◀─ Claims (user_id, etc) ──│
+    │                           │                           │
+    │◀── AuthenticateResponse ──│                           │
+    │    (success, user, session)                           │
+    │                           │                           │
+    │◀══ Real-time Events ═════▶│                           │
 ```
 
 ---
@@ -408,5 +442,10 @@ The architecture is successful when:
 
 ## Version
 
-**Architecture Version**: 1.0  
+**Architecture Version**: 1.1
 **Last Updated**: January 2025
+
+### Changelog
+
+- **1.1**: Protocol responsibility split (ADR-013) - HTTP for auth/CRUD, TCP for real-time
+- **1.0**: Initial architecture

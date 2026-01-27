@@ -2,13 +2,14 @@
 
 use axum::{
     extract::State,
-    http::{header, HeaderMap, StatusCode},
+    http::StatusCode,
     Json,
 };
 use serde::{Deserialize, Serialize};
 
+use crate::adapters::http::middleware::AuthUser;
 use crate::adapters::http::routes::AppState;
-use crate::domain::{Session, SessionId, User};
+use crate::domain::{Session, User};
 use crate::storage::Storage;
 use crate::Error;
 
@@ -106,21 +107,19 @@ pub async fn login<S: Storage + Clone + 'static>(
 /// Logout (invalidate session).
 pub async fn logout<S: Storage + Clone + 'static>(
     State(state): State<AppState<S>>,
-    headers: HeaderMap,
+    auth: AuthUser,
 ) -> Result<Json<SuccessResponse>, Error> {
-    let session_id = extract_session_id(&headers)?;
-    state.engine.logout(session_id).await?;
+    state.engine.logout(auth.session_id).await?;
     Ok(Json(SuccessResponse::ok()))
 }
 
 /// Refresh the JWT token.
 pub async fn refresh_token<S: Storage + Clone + 'static>(
     State(state): State<AppState<S>>,
-    headers: HeaderMap,
+    auth: AuthUser,
 ) -> Result<Json<TokenResponse>, Error> {
-    let session_id = extract_session_id(&headers)?;
-    let (session, _user) = state.engine.validate_session(session_id).await?;
-    let token = state.engine.refresh_token(session_id).await?;
+    let (session, _user) = state.engine.validate_session(auth.session_id).await?;
+    let token = state.engine.refresh_token(auth.session_id).await?;
 
     Ok(Json(TokenResponse {
         token,
@@ -131,33 +130,12 @@ pub async fn refresh_token<S: Storage + Clone + 'static>(
 /// Change password.
 pub async fn change_password<S: Storage + Clone + 'static>(
     State(state): State<AppState<S>>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Json(req): Json<ChangePasswordRequest>,
 ) -> Result<Json<SuccessResponse>, Error> {
-    let session_id = extract_session_id(&headers)?;
     state
         .engine
-        .change_password(session_id, &req.current_password, &req.new_password)
+        .change_password(auth.session_id, &req.current_password, &req.new_password)
         .await?;
     Ok(Json(SuccessResponse::ok()))
-}
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-/// Extract session ID from Authorization header.
-pub fn extract_session_id(headers: &HeaderMap) -> Result<SessionId, Error> {
-    let auth_header = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .ok_or(Error::SessionNotFound)?;
-
-    let token = auth_header
-        .strip_prefix("Bearer ")
-        .ok_or(Error::SessionNotFound)?;
-
-    // For now, the token IS the session ID
-    // In production, this would be JWT decoding
-    SessionId::parse(token).map_err(|_| Error::SessionNotFound)
 }

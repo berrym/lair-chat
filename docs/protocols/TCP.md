@@ -2,7 +2,7 @@
 
 This document specifies the Lair Chat TCP wire protocol. Any client in any programming language can implement this protocol to connect to a Lair Chat server.
 
-**Protocol Version**: 1.0
+**Protocol Version**: 1.1
 
 ---
 
@@ -14,7 +14,45 @@ The TCP protocol provides:
 - End-to-end encryption (optional)
 - Low latency communication
 
-### Connection Flow
+> **Note**: As of v1.1, TCP focuses on real-time operations only. Authentication and CRUD operations should use the HTTP API. See [ADR-013](../architecture/DECISIONS.md#adr-013-protocol-responsibility-split) for rationale.
+
+### Protocol Responsibilities
+
+| TCP (Real-time) | HTTP (Auth & CRUD) |
+|-----------------|-------------------|
+| Token auth (`Authenticate`) | Login, Register, Logout |
+| Send/Edit/Delete messages | Message history retrieval |
+| Join/Leave rooms | Room CRUD operations |
+| Accept/Decline invitations | Create invitations, list invitations |
+| Typing indicators | User queries |
+| Real-time events | Admin operations |
+
+### Connection Flow (Recommended)
+
+```
+┌────────┐              ┌──────────┐              ┌────────┐
+│ Client │              │   HTTP   │              │  TCP   │
+└───┬────┘              └────┬─────┘              └───┬────┘
+    │                        │                        │
+    │─── POST /auth/login ──▶│                        │
+    │◀── JWT Token + User ───│                        │
+    │                        │                        │
+    │─── GET /rooms ────────▶│                        │
+    │◀── Room List ──────────│                        │
+    │                        │                        │
+    │───────────────── TCP Connect ──────────────────▶│
+    │◀──────────────── ServerHello ──────────────────│
+    │───────────────── ClientHello ─────────────────▶│
+    │          [Optional: Key Exchange]               │
+    │───────────────── Authenticate(token) ─────────▶│
+    │◀──────────────── AuthenticateResponse ─────────│
+    │                        │                        │
+    │◀══════════════ Real-time Events ══════════════▶│
+```
+
+### Legacy Connection Flow (Deprecated)
+
+The following flow still works for backward compatibility but is deprecated:
 
 ```
 ┌────────┐                                    ┌────────┐
@@ -22,19 +60,12 @@ The TCP protocol provides:
 └───┬────┘                                    └───┬────┘
     │                                             │
     │─────────── TCP Connect ────────────────────▶│
-    │                                             │
     │◀──────── ServerHello (version, features) ──│
-    │                                             │
     │─────────── ClientHello (version) ─────────▶│
-    │                                             │
     │          [Optional: Key Exchange]           │
-    │                                             │
-    │─────────── Login/Register ────────────────▶│
-    │                                             │
+    │─────────── Login/Register ────────────────▶│  ⚠️ DEPRECATED
     │◀──────── AuthSuccess (session, user) ──────│
-    │                                             │
     │◀═══════ Bidirectional Messages ═══════════▶│
-    │                                             │
 ```
 
 ---
@@ -263,9 +294,66 @@ After key exchange, all subsequent messages are encrypted:
 
 ## Authentication
 
-After handshake (and optional encryption), client must authenticate.
+After handshake (and optional encryption), the client must authenticate.
 
-### Login
+### Authenticate (Recommended)
+
+Use a JWT token obtained from the HTTP API to authenticate the TCP connection.
+
+```json
+{
+  "type": "authenticate",
+  "request_id": "auth-1",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+**Success response:**
+
+```json
+{
+  "type": "authenticate_response",
+  "request_id": "auth-1",
+  "success": true,
+  "user": {
+    "id": "123e4567-e89b-12d3-a456-426614174000",
+    "username": "alice",
+    "email": "alice@example.com",
+    "role": "user",
+    "created_at": "2025-01-01T00:00:00Z"
+  },
+  "session": {
+    "id": "session-uuid",
+    "expires_at": "2025-01-22T12:00:00Z"
+  }
+}
+```
+
+**Error response:**
+
+```json
+{
+  "type": "authenticate_response",
+  "request_id": "auth-1",
+  "success": false,
+  "error": {
+    "code": "invalid_token",
+    "message": "Token is invalid or expired"
+  }
+}
+```
+
+| Error Code | Meaning |
+|------------|---------|
+| `invalid_token` | Token is malformed or signature invalid |
+| `token_expired` | Token has expired, get a new one via HTTP |
+| `session_revoked` | Session was explicitly logged out |
+
+---
+
+### Login (Deprecated)
+
+> ⚠️ **Deprecated**: Use HTTP `POST /auth/login` to obtain a JWT token, then use `authenticate` above. This command remains for backward compatibility but will log a warning.
 
 ```json
 {
@@ -312,7 +400,9 @@ After handshake (and optional encryption), client must authenticate.
 }
 ```
 
-### Register
+### Register (Deprecated)
+
+> ⚠️ **Deprecated**: Use HTTP `POST /auth/register` instead. This command remains for backward compatibility but will log a warning.
 
 ```json
 {
@@ -464,7 +554,9 @@ Or for direct message:
 }
 ```
 
-### Get Message History
+### Get Message History (Deprecated)
+
+> ⚠️ **Deprecated**: Use HTTP `GET /messages?target_type=room&target_id=...` instead. This command remains for backward compatibility but will log a warning.
 
 ```json
 {
@@ -495,7 +587,9 @@ Or for direct message:
 
 ## Room Operations
 
-### Create Room
+### Create Room (Deprecated)
+
+> ⚠️ **Deprecated**: Use HTTP `POST /rooms` instead. This command remains for backward compatibility but will log a warning.
 
 ```json
 {
@@ -576,7 +670,9 @@ Or for direct message:
 }
 ```
 
-### List Rooms
+### List Rooms (Deprecated)
+
+> ⚠️ **Deprecated**: Use HTTP `GET /rooms` instead. This command remains for backward compatibility but will log a warning.
 
 ```json
 {
@@ -611,7 +707,9 @@ Or for direct message:
 }
 ```
 
-### Get Room
+### Get Room (Deprecated)
+
+> ⚠️ **Deprecated**: Use HTTP `GET /rooms/{room_id}` instead. This command remains for backward compatibility but will log a warning.
 
 ```json
 {
@@ -639,7 +737,9 @@ Or for direct message:
 
 ## Invitations
 
-### Invite to Room
+### Invite to Room (Deprecated)
+
+> ⚠️ **Deprecated**: Use HTTP `POST /invitations` instead. This command remains for backward compatibility but will log a warning.
 
 ```json
 {
@@ -682,7 +782,9 @@ Or for direct message:
 }
 ```
 
-### List Invitations
+### List Invitations (Deprecated)
+
+> ⚠️ **Deprecated**: Use HTTP `GET /invitations` instead. This command remains for backward compatibility but will log a warning.
 
 ```json
 {
@@ -693,9 +795,13 @@ Or for direct message:
 
 ---
 
-## User Operations
+## User Operations (Deprecated)
 
-### Get User
+> ⚠️ **Deprecated**: Use HTTP `/users` endpoints instead. These commands remain for backward compatibility but will log warnings.
+
+### Get User (Deprecated)
+
+Use HTTP `GET /users/{user_id}` instead.
 
 ```json
 {
@@ -705,7 +811,9 @@ Or for direct message:
 }
 ```
 
-### List Users
+### List Users (Deprecated)
+
+Use HTTP `GET /users` instead.
 
 ```json
 {
@@ -720,7 +828,9 @@ Or for direct message:
 }
 ```
 
-### Get Current User
+### Get Current User (Deprecated)
+
+Use HTTP `GET /users/me` instead.
 
 ```json
 {
@@ -958,22 +1068,33 @@ Server closes connections that:
 
 ---
 
-## Complete Session Example
+## Complete Session Example (Recommended)
+
+Using HTTP for auth, TCP for real-time:
 
 ```
+# Step 1: Authenticate via HTTP
+HTTP POST /auth/login {"identifier":"alice","password":"secret123"}
+HTTP Response: {"user":{...},"session":{...},"token":"eyJ..."}
+
+# Step 2: Get room list via HTTP
+HTTP GET /rooms?joined_only=true
+HTTP Response: {"rooms":[...],"has_more":false}
+
+# Step 3: Connect TCP for real-time
 Client: [TCP Connect to server:8080]
 
-Server: {"type":"server_hello","version":"1.0","server_name":"Lair Chat","features":["encryption"],"encryption_required":false}
+Server: {"type":"server_hello","version":"1.1","server_name":"Lair Chat","features":["encryption"],"encryption_required":false}
 
-Client: {"type":"client_hello","version":"1.0","client_name":"My Client","features":[]}
+Client: {"type":"client_hello","version":"1.1","client_name":"My Client","features":[]}
 
-Client: {"type":"login","request_id":"1","identifier":"alice","password":"secret123"}
+Client: {"type":"authenticate","request_id":"1","token":"eyJ..."}
 
-Server: {"type":"login_response","request_id":"1","success":true,"user":{...},"session":{...},"token":"..."}
+Server: {"type":"authenticate_response","request_id":"1","success":true,"user":{...},"session":{...}}
 
-Client: {"type":"list_rooms","request_id":"2","filter":{"joined_only":true},"limit":20,"offset":0}
+Client: {"type":"join_room","request_id":"2","room_id":"..."}
 
-Server: {"type":"list_rooms_response","request_id":"2","success":true,"rooms":[...],"has_more":false}
+Server: {"type":"join_room_response","request_id":"2","success":true,"room":{...},"membership":{...}}
 
 Client: {"type":"send_message","request_id":"3","target":{"type":"room","room_id":"..."},"content":"Hello!"}
 
@@ -982,6 +1103,42 @@ Server: {"type":"send_message_response","request_id":"3","success":true,"message
 Server: {"type":"message_received","message":{...}}  // Also received by others
 
 Server: {"type":"user_typing","user_id":"...","target":{"type":"room","room_id":"..."}}
+
+Client: {"type":"ping"}
+
+Server: {"type":"pong","server_time":"2025-01-21T12:00:00Z"}
+
+Client: {"type":"logout","request_id":"4"}
+
+Server: {"type":"logout_response","request_id":"4","success":true}
+
+Server: [Connection closed]
+```
+
+## Complete Session Example (Legacy - Deprecated)
+
+Using TCP for everything (backward compatible):
+
+```
+Client: [TCP Connect to server:8080]
+
+Server: {"type":"server_hello","version":"1.1","server_name":"Lair Chat","features":["encryption"],"encryption_required":false}
+
+Client: {"type":"client_hello","version":"1.1","client_name":"My Client","features":[]}
+
+Client: {"type":"login","request_id":"1","identifier":"alice","password":"secret123"}  ⚠️ DEPRECATED
+
+Server: {"type":"login_response","request_id":"1","success":true,"user":{...},"session":{...},"token":"..."}
+
+Client: {"type":"list_rooms","request_id":"2","filter":{"joined_only":true},"limit":20,"offset":0}  ⚠️ DEPRECATED
+
+Server: {"type":"list_rooms_response","request_id":"2","success":true,"rooms":[...],"has_more":false}
+
+Client: {"type":"send_message","request_id":"3","target":{"type":"room","room_id":"..."},"content":"Hello!"}
+
+Server: {"type":"send_message_response","request_id":"3","success":true,"message":{...}}
+
+Server: {"type":"message_received","message":{...}}
 
 Client: {"type":"ping"}
 
@@ -1021,4 +1178,5 @@ Server: [Connection closed]
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.1 | 2025-01 | Protocol responsibility split (ADR-013): Added `authenticate` command, deprecated auth/CRUD commands |
 | 1.0 | 2025-01 | Initial specification |

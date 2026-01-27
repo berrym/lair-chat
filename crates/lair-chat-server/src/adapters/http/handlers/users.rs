@@ -2,17 +2,15 @@
 
 use axum::{
     extract::{Path, Query, State},
-    http::HeaderMap,
     Json,
 };
 use serde::{Deserialize, Serialize};
 
+use crate::adapters::http::middleware::AuthUser;
 use crate::adapters::http::routes::AppState;
 use crate::domain::{Pagination, User, UserId};
 use crate::storage::Storage;
 use crate::Error;
-
-use super::auth::extract_session_id;
 
 // ============================================================================
 // Request/Response Types
@@ -63,20 +61,18 @@ pub struct UserWithStatus {
 /// Get the current authenticated user.
 pub async fn get_current_user<S: Storage + Clone + 'static>(
     State(state): State<AppState<S>>,
-    headers: HeaderMap,
+    auth: AuthUser,
 ) -> Result<Json<UserResponse>, Error> {
-    let session_id = extract_session_id(&headers)?;
-    let user = state.engine.get_current_user(session_id).await?;
+    let user = state.engine.get_current_user(auth.session_id).await?;
     Ok(Json(UserResponse { user }))
 }
 
 /// Update the current user's profile.
 pub async fn update_profile<S: Storage + Clone + 'static>(
     State(_state): State<AppState<S>>,
-    headers: HeaderMap,
+    _auth: AuthUser,
     Json(_req): Json<UpdateProfileRequest>,
 ) -> Result<Json<UserResponse>, Error> {
-    let _session_id = extract_session_id(&headers)?;
     // TODO: Implement profile update
     Err(Error::Internal("Not implemented".into()))
 }
@@ -84,10 +80,9 @@ pub async fn update_profile<S: Storage + Clone + 'static>(
 /// Get a user by ID.
 pub async fn get_user<S: Storage + Clone + 'static>(
     State(state): State<AppState<S>>,
-    headers: HeaderMap,
+    _auth: AuthUser,
     Path(user_id): Path<String>,
 ) -> Result<Json<UserWithStatus>, Error> {
-    let _session_id = extract_session_id(&headers)?;
     let user_id = UserId::parse(&user_id).map_err(|_| Error::UserNotFound)?;
 
     let user = state
@@ -105,11 +100,9 @@ pub async fn get_user<S: Storage + Clone + 'static>(
 /// List users with filtering.
 pub async fn list_users<S: Storage + Clone + 'static>(
     State(state): State<AppState<S>>,
-    headers: HeaderMap,
+    _auth: AuthUser,
     Query(query): Query<ListUsersQuery>,
 ) -> Result<Json<UsersListResponse>, Error> {
-    let _session_id = extract_session_id(&headers)?;
-
     let pagination = Pagination {
         limit: query.limit.min(100),
         offset: query.offset,

@@ -42,12 +42,22 @@ pub enum ClientMessage {
     },
 
     // Authentication
+    /// Authenticate using a JWT token obtained from HTTP API.
+    /// This is the recommended method (see ADR-013).
+    Authenticate {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        request_id: Option<String>,
+        /// JWT token from HTTP POST /auth/login or /auth/register
+        token: String,
+    },
+    /// DEPRECATED: Use HTTP POST /auth/login + Authenticate instead.
     Login {
         #[serde(skip_serializing_if = "Option::is_none")]
         request_id: Option<String>,
         identifier: String,
         password: String,
     },
+    /// DEPRECATED: Use HTTP POST /auth/register + Authenticate instead.
     Register {
         #[serde(skip_serializing_if = "Option::is_none")]
         request_id: Option<String>,
@@ -202,6 +212,19 @@ pub enum ServerMessage {
     },
 
     // Authentication responses
+    /// Response to Authenticate command (JWT token validation).
+    AuthenticateResponse {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        request_id: Option<String>,
+        success: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        user: Option<User>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        session: Option<Session>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<ErrorInfo>,
+    },
+    /// DEPRECATED: Response to legacy Login command.
     LoginResponse {
         #[serde(skip_serializing_if = "Option::is_none")]
         request_id: Option<String>,
@@ -215,6 +238,7 @@ pub enum ServerMessage {
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<ErrorInfo>,
     },
+    /// DEPRECATED: Response to legacy Register command.
     RegisterResponse {
         #[serde(skip_serializing_if = "Option::is_none")]
         request_id: Option<String>,
@@ -611,7 +635,17 @@ pub struct ErrorInfo {
 // ============================================================================
 
 impl ClientMessage {
+    /// Create an authenticate message (recommended - uses JWT from HTTP API).
+    pub fn authenticate(token: impl Into<String>) -> Self {
+        Self::Authenticate {
+            request_id: Some(Uuid::new_v4().to_string()),
+            token: token.into(),
+        }
+    }
+
     /// Create a login message.
+    /// DEPRECATED: Use HTTP POST /auth/login + authenticate() instead.
+    #[allow(dead_code)]
     pub fn login(identifier: impl Into<String>, password: impl Into<String>) -> Self {
         Self::Login {
             request_id: Some(Uuid::new_v4().to_string()),
@@ -621,6 +655,8 @@ impl ClientMessage {
     }
 
     /// Create a register message.
+    /// DEPRECATED: Use HTTP POST /auth/register + authenticate() instead.
+    #[allow(dead_code)]
     pub fn register(
         username: impl Into<String>,
         email: impl Into<String>,
@@ -677,7 +713,8 @@ impl ServerMessage {
     /// Get the request ID if present.
     pub fn request_id(&self) -> Option<&str> {
         match self {
-            ServerMessage::LoginResponse { request_id, .. }
+            ServerMessage::AuthenticateResponse { request_id, .. }
+            | ServerMessage::LoginResponse { request_id, .. }
             | ServerMessage::RegisterResponse { request_id, .. }
             | ServerMessage::LogoutResponse { request_id, .. }
             | ServerMessage::SendMessageResponse { request_id, .. }

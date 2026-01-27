@@ -294,11 +294,20 @@ pub enum ClientMessage {
     },
 
     // Authentication
+    /// Authenticate using a JWT token obtained from the HTTP API.
+    /// This is the recommended authentication method (see ADR-013).
+    Authenticate {
+        request_id: Option<String>,
+        /// JWT token from HTTP POST /auth/login or /auth/register
+        token: String,
+    },
+    /// DEPRECATED: Use HTTP POST /auth/login to get a JWT, then Authenticate.
     Login {
         request_id: Option<String>,
         identifier: String,
         password: String,
     },
+    /// DEPRECATED: Use HTTP POST /auth/register to get a JWT, then Authenticate.
     Register {
         request_id: Option<String>,
         username: String,
@@ -309,7 +318,7 @@ pub enum ClientMessage {
         request_id: Option<String>,
     },
 
-    // Messaging
+    // Messaging (real-time operations - NOT deprecated)
     SendMessage {
         request_id: Option<String>,
         target: MessageTarget,
@@ -324,6 +333,7 @@ pub enum ClientMessage {
         request_id: Option<String>,
         message_id: String,
     },
+    /// DEPRECATED: Use HTTP GET /messages instead.
     GetMessages {
         request_id: Option<String>,
         target: MessageTarget,
@@ -333,6 +343,7 @@ pub enum ClientMessage {
     },
 
     // Rooms
+    /// DEPRECATED: Use HTTP POST /rooms instead.
     CreateRoom {
         request_id: Option<String>,
         name: String,
@@ -340,10 +351,12 @@ pub enum ClientMessage {
         #[serde(default)]
         settings: Option<RoomSettingsRequest>,
     },
+    /// DEPRECATED: Use HTTP GET /rooms/{room_id} instead.
     GetRoom {
         request_id: Option<String>,
         room_id: String,
     },
+    /// DEPRECATED: Use HTTP GET /rooms instead.
     ListRooms {
         request_id: Option<String>,
         #[serde(default)]
@@ -353,39 +366,47 @@ pub enum ClientMessage {
         #[serde(default)]
         offset: u32,
     },
+    /// Join room (real-time presence - NOT deprecated).
     JoinRoom {
         request_id: Option<String>,
         room_id: String,
     },
+    /// Leave room (real-time presence - NOT deprecated).
     LeaveRoom {
         request_id: Option<String>,
         room_id: String,
     },
 
     // Invitations
+    /// DEPRECATED: Use HTTP POST /invitations instead.
     InviteToRoom {
         request_id: Option<String>,
         room_id: String,
         user_id: String,
         message: Option<String>,
     },
+    /// Accept invitation (real-time presence - NOT deprecated).
     AcceptInvitation {
         request_id: Option<String>,
         invitation_id: String,
     },
+    /// Decline invitation (real-time presence - NOT deprecated).
     DeclineInvitation {
         request_id: Option<String>,
         invitation_id: String,
     },
+    /// DEPRECATED: Use HTTP GET /invitations instead.
     ListInvitations {
         request_id: Option<String>,
     },
 
     // Users
+    /// DEPRECATED: Use HTTP GET /users/{user_id} instead.
     GetUser {
         request_id: Option<String>,
         user_id: String,
     },
+    /// DEPRECATED: Use HTTP GET /users instead.
     ListUsers {
         request_id: Option<String>,
         #[serde(default)]
@@ -395,6 +416,7 @@ pub enum ClientMessage {
         #[serde(default)]
         offset: u32,
     },
+    /// DEPRECATED: Use HTTP GET /users/me instead.
     GetCurrentUser {
         request_id: Option<String>,
     },
@@ -470,6 +492,18 @@ pub enum ServerMessage {
     },
 
     // Authentication responses
+    /// Response to Authenticate command (JWT token validation).
+    AuthenticateResponse {
+        request_id: Option<String>,
+        success: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        user: Option<User>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        session: Option<SessionInfo>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<ErrorInfo>,
+    },
+    /// DEPRECATED: Response to legacy Login command.
     LoginResponse {
         request_id: Option<String>,
         success: bool,
@@ -482,6 +516,7 @@ pub enum ServerMessage {
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<ErrorInfo>,
     },
+    /// DEPRECATED: Response to legacy Register command.
     RegisterResponse {
         request_id: Option<String>,
         success: bool,

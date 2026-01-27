@@ -4,12 +4,12 @@ use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 
 use chrono::{DateTime, Utc};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::protocol::{
-    ClientMessage, Connection, MessageTarget, Room, RoomListItem, ServerMessage, Session, TcpError,
-    User,
+    ClientMessage, Connection, HttpClient, MessageTarget, Room, RoomListItem, ServerMessage,
+    Session, TcpError, User,
 };
 
 /// Type alias for user IDs.
@@ -19,14 +19,21 @@ type UserId = Uuid;
 pub struct App {
     /// Current screen.
     pub screen: Screen,
-    /// Connection to the server.
+    /// TCP connection to the server (for real-time messaging).
     pub connection: Option<Connection>,
-    /// Server address.
+    /// HTTP client for authentication and queries.
+    pub http_client: HttpClient,
+    /// Server address (TCP).
     pub server_addr: SocketAddr,
+    /// HTTP server URL.
+    #[allow(dead_code)]
+    pub http_base_url: String,
     /// Current user (after login).
     pub user: Option<User>,
     /// Current session.
     pub session: Option<Session>,
+    /// JWT token for authentication.
+    pub token: Option<String>,
     /// Rooms the user is a member of (with member counts).
     pub rooms: Vec<RoomListItem>,
     /// Currently selected room (None if viewing DM).
@@ -139,13 +146,26 @@ pub enum Action {
 
 impl App {
     /// Create a new application.
+    ///
+    /// # Arguments
+    /// * `server_addr` - TCP server address for real-time messaging
+    /// * `http_port` - HTTP server port for authentication (defaults to TCP port + 2)
     pub fn new(server_addr: SocketAddr) -> Self {
+        Self::with_http_port(server_addr, server_addr.port() + 2)
+    }
+
+    /// Create a new application with explicit HTTP port.
+    pub fn with_http_port(server_addr: SocketAddr, http_port: u16) -> Self {
+        let http_base_url = format!("http://{}:{}", server_addr.ip(), http_port);
         Self {
             screen: Screen::Login,
             connection: None,
+            http_client: HttpClient::new(&http_base_url),
             server_addr,
+            http_base_url,
             user: None,
             session: None,
+            token: None,
             rooms: Vec::new(),
             current_room: None,
             current_dm_user: None,
@@ -228,18 +248,24 @@ impl App {
         self.connection = None;
         self.status = Some("Reconnecting...".to_string());
 
-        // Attempt to reconnect
+        // Attempt to reconnect TCP
         match Connection::connect(self.server_addr).await {
             Ok(connection) => {
                 self.connection = Some(connection);
-                self.status = Some("Reconnected".to_string());
                 self.error = None;
-                self.add_system_message("Reconnected to server. Please log in again.");
 
-                // Reset to login screen since session is lost
-                self.user = None;
-                self.session = None;
-                self.screen = Screen::Login;
+                // If we have a valid token, try to re-authenticate
+                if let Some(token) = self.token.clone() {
+                    self.add_system_message("Reconnected to server. Re-authenticating...");
+                    self.authenticate_tcp_connection(token).await;
+                } else {
+                    self.status = Some("Reconnected".to_string());
+                    self.add_system_message("Reconnected to server. Please log in again.");
+                    // Reset to login screen since session is lost
+                    self.user = None;
+                    self.session = None;
+                    self.screen = Screen::Login;
+                }
             }
             Err(e) => {
                 self.error = Some(format!("Reconnect failed: {}", e));
@@ -250,11 +276,18 @@ impl App {
 
     /// Disconnect from the server.
     pub async fn disconnect(&mut self) {
+        // Logout via HTTP if we have a token
+        if self.token.is_some() {
+            let _ = self.http_client.logout().await;
+        }
+
         if let Some(conn) = self.connection.take() {
             conn.shutdown().await;
         }
         self.user = None;
         self.session = None;
+        self.token = None;
+        self.http_client.clear_token();
         self.rooms.clear();
         self.current_room = None;
         self.status = None;
@@ -408,38 +441,90 @@ impl App {
         }
     }
 
-    /// Handle login.
+    /// Handle login via HTTP, then authenticate TCP connection.
     async fn handle_login(&mut self, username: String, password: String) {
-        let Some(conn) = &self.connection else {
-            self.error = Some("Not connected".to_string());
-            return;
-        };
+        self.status = Some("Logging in via HTTP...".to_string());
+        self.error = None;
 
-        let msg = ClientMessage::login(&username, &password);
+        // Step 1: HTTP login to get JWT token
+        match self.http_client.login(&username, &password).await {
+            Ok(auth_response) => {
+                info!("HTTP login successful");
 
-        if let Err(e) = conn.send(msg).await {
-            self.error = Some(format!("Failed to send login: {}", e));
-            return;
+                // Store user and session info
+                if let Some(ref user) = auth_response.user {
+                    self.cache_user(user);
+                    self.user = Some(user.clone());
+                }
+                self.session = auth_response.session;
+                self.token = auth_response.token.clone();
+
+                // Step 2: Authenticate TCP connection with the token
+                if let Some(token) = &auth_response.token {
+                    self.authenticate_tcp_connection(token.clone()).await;
+                } else {
+                    self.error = Some("No token received from server".to_string());
+                    self.status = None;
+                }
+            }
+            Err(e) => {
+                self.error = Some(format!("Login failed: {}", e));
+                self.status = None;
+            }
         }
-
-        self.status = Some("Logging in...".to_string());
     }
 
-    /// Handle registration.
+    /// Handle registration via HTTP, then authenticate TCP connection.
     async fn handle_register(&mut self, username: String, email: String, password: String) {
+        self.status = Some("Registering via HTTP...".to_string());
+        self.error = None;
+
+        // Step 1: HTTP register to get JWT token
+        match self.http_client.register(&username, &email, &password).await {
+            Ok(auth_response) => {
+                info!("HTTP registration successful");
+
+                // Store user and session info
+                if let Some(ref user) = auth_response.user {
+                    self.cache_user(user);
+                    self.user = Some(user.clone());
+                }
+                self.session = auth_response.session;
+                self.token = auth_response.token.clone();
+
+                // Step 2: Authenticate TCP connection with the token
+                if let Some(token) = &auth_response.token {
+                    self.authenticate_tcp_connection(token.clone()).await;
+                } else {
+                    self.error = Some("No token received from server".to_string());
+                    self.status = None;
+                }
+            }
+            Err(e) => {
+                self.error = Some(format!("Registration failed: {}", e));
+                self.status = None;
+            }
+        }
+    }
+
+    /// Authenticate the TCP connection using a JWT token.
+    async fn authenticate_tcp_connection(&mut self, token: String) {
         let Some(conn) = &self.connection else {
-            self.error = Some("Not connected".to_string());
+            self.error = Some("Not connected to server".to_string());
             return;
         };
 
-        let msg = ClientMessage::register(&username, &email, &password);
+        self.status = Some("Authenticating TCP connection...".to_string());
+
+        let msg = ClientMessage::authenticate(&token);
 
         if let Err(e) = conn.send(msg).await {
-            self.error = Some(format!("Failed to send register: {}", e));
+            self.error = Some(format!("Failed to authenticate TCP: {}", e));
+            self.status = None;
             return;
         }
 
-        self.status = Some("Registering...".to_string());
+        // Response will be handled in handle_server_message
     }
 
     /// Handle sending a message.
@@ -579,6 +664,57 @@ impl App {
         debug!("Handling server message: {:?}", msg);
 
         match msg {
+            // New: Response to JWT-based authentication
+            ServerMessage::AuthenticateResponse {
+                success,
+                user,
+                session,
+                error,
+                ..
+            } => {
+                if success {
+                    self.error = None;
+                    // Update user/session if provided (may already be set from HTTP response)
+                    if let Some(ref u) = user {
+                        self.cache_user(u);
+                        self.user = Some(u.clone());
+                    }
+                    if session.is_some() {
+                        self.session = session;
+                    }
+                    self.screen = Screen::Chat;
+                    self.status = Some(format!(
+                        "Logged in as {}",
+                        self.user
+                            .as_ref()
+                            .map(|u| &u.username)
+                            .unwrap_or(&"?".to_string())
+                    ));
+                    self.add_system_message("Welcome to Lair Chat!");
+                    self.add_system_message("");
+                    self.add_system_message("Quick start:");
+                    self.add_system_message("  r      - Open rooms list to join or create a room");
+                    self.add_system_message("  Tab    - Switch to Users panel, select user + Enter to DM");
+                    self.add_system_message("  i      - Start typing a message");
+                    self.add_system_message("  ?/F1   - Show full help");
+                    self.add_system_message("");
+                    // Request room list and user list after authentication
+                    self.request_room_list().await;
+                    self.request_user_list().await;
+                } else {
+                    let err_msg = error
+                        .map(|e| e.message)
+                        .unwrap_or_else(|| "Authentication failed".to_string());
+                    self.error = Some(err_msg);
+                    self.status = None;
+                    // Clear user/session since auth failed
+                    self.user = None;
+                    self.session = None;
+                    self.token = None;
+                }
+            }
+
+            // Legacy: Response to direct TCP login (deprecated)
             ServerMessage::LoginResponse {
                 success,
                 user,
@@ -586,6 +722,7 @@ impl App {
                 error,
                 ..
             } => {
+                warn!("Received deprecated LoginResponse - client should use HTTP + Authenticate");
                 if success {
                     // Clear any previous errors
                     self.error = None;
@@ -623,6 +760,7 @@ impl App {
                 }
             }
 
+            // Legacy: Response to direct TCP register (deprecated)
             ServerMessage::RegisterResponse {
                 success,
                 user,
@@ -630,6 +768,7 @@ impl App {
                 error,
                 ..
             } => {
+                warn!("Received deprecated RegisterResponse - client should use HTTP + Authenticate");
                 if success {
                     // Clear any previous errors
                     self.error = None;

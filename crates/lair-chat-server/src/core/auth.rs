@@ -4,7 +4,7 @@
 //! - User registration with password hashing
 //! - Login with credential verification
 //! - Password changes
-//! - Token generation and refresh
+//! - JWT token generation and validation
 
 use std::sync::Arc;
 
@@ -13,6 +13,7 @@ use argon2::{
     Argon2,
 };
 
+use super::jwt::JwtService;
 use crate::domain::{
     Email, Pagination, Protocol, Role, Session, SessionId, User, UserId, Username,
 };
@@ -26,12 +27,21 @@ use crate::{Error, Result};
 /// Service for authentication operations.
 pub struct AuthService<S: Storage> {
     storage: Arc<S>,
+    jwt_service: JwtService,
 }
 
 impl<S: Storage + 'static> AuthService<S> {
-    /// Create a new authentication service.
-    pub fn new(storage: Arc<S>) -> Self {
-        Self { storage }
+    /// Create a new authentication service with JWT support.
+    pub fn new(storage: Arc<S>, jwt_secret: &str) -> Self {
+        Self {
+            storage,
+            jwt_service: JwtService::new(jwt_secret),
+        }
+    }
+
+    /// Get a reference to the JWT service for token validation.
+    pub fn jwt_service(&self) -> &JwtService {
+        &self.jwt_service
     }
 
     /// Register a new user account.
@@ -85,8 +95,8 @@ impl<S: Storage + 'static> AuthService<S> {
         let session = Session::new(user.id, Protocol::Http);
         SessionRepository::create(&*self.storage, &session).await?;
 
-        // Generate token
-        let token = self.generate_token(&session)?;
+        // Generate JWT token
+        let token = self.generate_token(&user, &session)?;
 
         Ok((user, session, token))
     }
@@ -117,8 +127,8 @@ impl<S: Storage + 'static> AuthService<S> {
         let session = Session::new(user.id, Protocol::Http);
         SessionRepository::create(&*self.storage, &session).await?;
 
-        // Generate token
-        let token = self.generate_token(&session)?;
+        // Generate JWT token
+        let token = self.generate_token(&user, &session)?;
 
         Ok((user, session, token))
     }
@@ -133,7 +143,12 @@ impl<S: Storage + 'static> AuthService<S> {
             return Err(Error::SessionExpired);
         }
 
-        self.generate_token(&session)
+        // Get the user for the JWT claims
+        let user = UserRepository::find_by_id(&*self.storage, session.user_id)
+            .await?
+            .ok_or(Error::UserNotFound)?;
+
+        self.generate_token(&user, &session)
     }
 
     /// Change a user's password.
@@ -214,13 +229,41 @@ impl<S: Storage + 'static> AuthService<S> {
         Ok(())
     }
 
-    /// Generate a JWT token for a session.
+    /// Generate a JWT token for a user session.
+    fn generate_token(&self, user: &User, session: &Session) -> Result<String> {
+        self.jwt_service.generate(user, session)
+    }
+
+    /// Validate a JWT token and return the claims.
     ///
-    /// Note: This is a placeholder. In production, use proper JWT with
-    /// cryptographic signing.
-    fn generate_token(&self, session: &Session) -> Result<String> {
-        // For now, just use the session ID as the token
-        // In production, this would be a signed JWT
-        Ok(session.id.to_string())
+    /// This can be used by other services (like TCP) to validate tokens.
+    pub fn validate_token(
+        &self,
+        token: &str,
+    ) -> Result<(UserId, SessionId, Role)> {
+        self.jwt_service.validate_and_extract(token)
+    }
+
+    /// Validate a token and verify the session is still active in the database.
+    ///
+    /// This performs full validation: JWT signature + session exists + session not expired.
+    pub async fn validate_token_full(&self, token: &str) -> Result<(User, Session)> {
+        let (user_id, session_id, _role) = self.jwt_service.validate_and_extract(token)?;
+
+        // Verify session exists and is valid
+        let session = SessionRepository::find_by_id(&*self.storage, session_id)
+            .await?
+            .ok_or(Error::SessionNotFound)?;
+
+        if session.is_expired() {
+            return Err(Error::SessionExpired);
+        }
+
+        // Verify user exists
+        let user = UserRepository::find_by_id(&*self.storage, user_id)
+            .await?
+            .ok_or(Error::UserNotFound)?;
+
+        Ok((user, session))
     }
 }

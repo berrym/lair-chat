@@ -67,7 +67,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize core engine
     info!("Initializing chat engine...");
-    let engine = Arc::new(ChatEngine::new(Arc::new(storage)));
+    let engine = Arc::new(ChatEngine::new(Arc::new(storage), &config.jwt_secret));
 
     // Start protocol adapters
     info!("Starting protocol adapters...");

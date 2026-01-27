@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use axum::{
+    middleware,
     routing::{delete, get, patch, post},
     Router,
 };
@@ -11,6 +12,7 @@ use crate::core::engine::ChatEngine;
 use crate::storage::Storage;
 
 use super::handlers;
+use super::middleware::{jwt_service_layer, rate_limit_middleware, RateLimiter};
 
 /// Application state shared across handlers.
 #[derive(Clone)]
@@ -20,24 +22,45 @@ pub struct AppState<S: Storage + Clone> {
 
 /// Create the main router with all routes.
 pub fn create_router<S: Storage + Clone + 'static>(engine: Arc<ChatEngine<S>>) -> Router {
-    let state = AppState { engine };
+    let state = AppState {
+        engine: engine.clone(),
+    };
+
+    // Get JWT service from engine for middleware
+    let jwt_service = Arc::new(engine.jwt_service().clone());
+
+    // Create rate limiters
+    let auth_limiter = Arc::new(RateLimiter::auth());
+    let general_limiter = Arc::new(RateLimiter::general());
 
     Router::new()
-        // Health endpoints (no auth required)
+        // Health endpoints (no auth required, no rate limit)
         .route("/health", get(handlers::health::health_check))
         .route("/ready", get(handlers::health::readiness_check))
-        // Auth endpoints
-        .nest("/api/v1/auth", auth_routes())
-        // User endpoints
+        // Auth endpoints (auth rate limit, no JWT required for login/register)
+        .nest(
+            "/api/v1/auth",
+            auth_routes().layer(middleware::from_fn({
+                let limiter = auth_limiter.clone();
+                move |req, next| rate_limit_middleware(limiter.clone(), req, next)
+            })),
+        )
+        // Protected endpoints (general rate limit, JWT required)
         .nest("/api/v1/users", user_routes())
-        // Room endpoints
         .nest("/api/v1/rooms", room_routes())
-        // Message endpoints
         .nest("/api/v1/messages", message_routes())
-        // Invitation endpoints
         .nest("/api/v1/invitations", invitation_routes())
-        // Admin endpoints
         .nest("/api/v1/admin", admin_routes())
+        // Apply JWT service layer to all routes (extractors use it)
+        .layer(middleware::from_fn({
+            let jwt = jwt_service.clone();
+            move |req, next| jwt_service_layer(jwt.clone(), req, next)
+        }))
+        // Apply general rate limit to protected endpoints
+        .layer(middleware::from_fn({
+            let limiter = general_limiter.clone();
+            move |req, next| rate_limit_middleware(limiter.clone(), req, next)
+        }))
         .with_state(state)
 }
 

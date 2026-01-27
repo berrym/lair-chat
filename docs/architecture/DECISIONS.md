@@ -551,3 +551,90 @@ These decisions collectively define a system that is:
 - **Honest**: Version reflects reality, not aspiration
 
 Each decision reinforces the others. Together, they create an architecture that is maintainable, understandable, and built to last.
+
+---
+
+## ADR-013: Protocol Responsibility Split
+
+### Status
+Accepted
+
+### Context
+The system has two protocols (TCP and HTTP) with significant overlap:
+- Both handle authentication (login, register)
+- Both handle CRUD operations (rooms, messages, users)
+- Both handle queries (list rooms, get messages)
+
+This causes:
+- Duplicate code and inconsistent behavior
+- Security gaps (TCP has custom encryption, HTTP lacks rate limiting)
+- Unclear API guidance for client developers
+
+### Decision
+Split protocol responsibilities by protocol strengths:
+
+**HTTP REST API**: Authentication, CRUD, queries, administration
+- Standard TLS for transport security
+- JWT tokens for stateless auth
+- Rate limiting, CORS, standard HTTP security
+- Easy integration with web/mobile clients
+- Primary for: register, login, logout, token refresh, password change
+- Primary for: room CRUD, user queries, message history, invitations
+
+**TCP Real-time**: Real-time messaging and presence only
+- Token-based auth (validates JWT obtained from HTTP)
+- AES-256-GCM for optional application-layer encryption
+- Low-latency bidirectional communication
+- Server-pushed events
+- Primary for: send/edit/delete messages, join/leave rooms, typing, presence
+
+### New Connection Flow
+
+```
+┌────────┐              ┌──────────┐              ┌────────┐
+│ Client │              │   HTTP   │              │  TCP   │
+└───┬────┘              └────┬─────┘              └───┬────┘
+    │                        │                        │
+    │─── POST /auth/login ──▶│                        │
+    │◀── JWT Token + User ───│                        │
+    │                        │                        │
+    │─── GET /rooms ────────▶│                        │
+    │◀── Room List ──────────│                        │
+    │                        │                        │
+    │───────────────── TCP Connect ──────────────────▶│
+    │◀──────────────── ServerHello ──────────────────│
+    │───────────────── ClientHello ─────────────────▶│
+    │───────────────── Authenticate(token) ─────────▶│
+    │◀──────────────── AuthenticateResponse ─────────│
+    │                        │                        │
+    │◀══════════════ Real-time Events ══════════════▶│
+```
+
+### Deprecated TCP Commands (backward compatible)
+
+The following TCP commands are deprecated in favor of HTTP:
+- `Login`, `Register` → Use HTTP `/auth/login`, `/auth/register`
+- `GetMessages` → Use HTTP `/messages`
+- `GetUser`, `ListUsers`, `GetCurrentUser` → Use HTTP `/users`
+- `ListRooms`, `GetRoom`, `CreateRoom` → Use HTTP `/rooms`
+- `ListInvitations`, `InviteToRoom` → Use HTTP `/invitations`
+
+These commands will continue to work but log deprecation warnings.
+
+### Consequences
+
+**Positive:**
+- Clear separation of concerns
+- Proper security on each protocol
+- Simpler TCP protocol (focused on real-time)
+- Standard tooling for HTTP testing
+- Better scalability (HTTP is stateless)
+
+**Negative:**
+- Client uses both protocols
+- Initial connection requires HTTP then TCP
+- Migration period with deprecated messages
+- Slightly more complex client implementation
+
+### Rationale
+Each protocol excels at different things. HTTP is designed for request/response with rich middleware ecosystem (rate limiting, CORS, auth). TCP excels at low-latency bidirectional communication. By assigning each protocol its strengths, we get the best of both worlds and eliminate duplication.
