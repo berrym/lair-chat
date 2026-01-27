@@ -70,7 +70,7 @@ signal-hook = "0.3"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
-tempfile = "3.20"
+tempfile = "3.24"
 axum-test = "18"
 pretty_assertions = "1.4"
 fake = "4"

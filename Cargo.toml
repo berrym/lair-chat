@@ -32,7 +32,7 @@ tracing = "0.1"
 
 # Testing
 pretty_assertions = "1.4"
-tempfile = "3.9"
+tempfile = "3.24"
 
 # NOTE: The legacy code has been archived to archive/legacy-src/
 # The original Cargo.toml configuration is preserved in archive/legacy-Cargo.toml
