@@ -364,7 +364,7 @@ impl<S: Storage + 'static> CommandHandler<S> {
                             room.id,
                         )
                         .await
-                        .unwrap_or(0) as u32;
+                        .unwrap_or(0);
                         items.push(RoomListItem {
                             room,
                             member_count,
@@ -413,7 +413,7 @@ impl<S: Storage + 'static> CommandHandler<S> {
                             room.id,
                         )
                         .await
-                        .unwrap_or(0) as u32;
+                        .unwrap_or(0);
                         // Check if current user is a member
                         let is_member = if let Some(uid) = user_id {
                             MembershipRepository::is_member(
