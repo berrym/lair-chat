@@ -521,7 +521,6 @@ impl App {
         if let Err(e) = conn.send(msg).await {
             self.error = Some(format!("Failed to authenticate TCP: {}", e));
             self.status = None;
-            return;
         }
 
         // Response will be handled in handle_server_message

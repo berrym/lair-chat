@@ -69,17 +69,17 @@ impl RoomsScreen {
                         if item.is_member {
                             // Already a member - just switch to this room
                             debug!("Switching to room: {} ({})", item.room.name, item.room.id);
-                            return (Some(Action::SwitchToRoom(item.room.clone())), None);
+                            (Some(Action::SwitchToRoom(item.room.clone())), None)
                         } else {
                             // Not a member - need to join
                             debug!("Joining room: {} ({})", item.room.name, item.room.id);
-                            return (Some(Action::JoinRoom(item.room.id)), Some(format!("Joining {}", item.room.name)));
+                            (Some(Action::JoinRoom(item.room.id)), Some(format!("Joining {}", item.room.name)))
                         }
                     } else {
-                        return (None, Some(format!("No room at index {} (len={})", idx, rooms.len())));
+                        (None, Some(format!("No room at index {} (len={})", idx, rooms.len())))
                     }
                 } else {
-                    return (None, Some("No room selected".to_string()));
+                    (None, Some("No room selected".to_string()))
                 }
             }
             KeyCode::Char('c') | KeyCode::Char('n') => {
