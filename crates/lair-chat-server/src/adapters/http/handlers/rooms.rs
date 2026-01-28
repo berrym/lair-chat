@@ -136,7 +136,7 @@ pub async fn create_room<S: Storage + Clone + 'static>(
 /// Get a room by ID.
 pub async fn get_room<S: Storage + Clone + 'static>(
     State(state): State<AppState<S>>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Path(room_id): Path<String>,
 ) -> Result<Json<RoomWithMembershipResponse>, Error> {
     let room_id = RoomId::parse(&room_id).map_err(|_| Error::RoomNotFound)?;
@@ -150,9 +150,22 @@ pub async fn get_room<S: Storage + Clone + 'static>(
     let members = state.engine.get_room_members(room_id).await.ok();
     let member_count = members.as_ref().map(|m| m.len() as u32).unwrap_or(0);
 
+    // Get user from session to check membership
+    let membership = if let Ok((_, user)) = state.engine.validate_session(auth.session_id).await {
+        state
+            .engine
+            .storage_clone()
+            .get_membership(room_id, user.id)
+            .await
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+
     Ok(Json(RoomWithMembershipResponse {
         room,
-        membership: None, // TODO: Check if current user is member
+        membership,
         member_count,
     }))
 }

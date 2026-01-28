@@ -199,13 +199,15 @@ impl<S: Storage + 'static> MessagingService<S> {
         target: MessageTarget,
         pagination: Pagination,
     ) -> Result<Vec<Message>> {
-        // Validate permissions based on target
+        // Validate permissions and get messages based on target
         match &target {
             MessageTarget::Room { room_id } => {
                 // Verify user is a member of the room
                 if !MembershipRepository::is_member(&*self.storage, *room_id, user_id).await? {
                     return Err(Error::NotRoomMember);
                 }
+                // Get room messages
+                MessageRepository::find_by_target(&*self.storage, &target, pagination).await
             }
             MessageTarget::DirectMessage { recipient } => {
                 // User is always allowed to see their own DMs
@@ -216,11 +218,16 @@ impl<S: Storage + 'static> MessagingService<S> {
                 {
                     return Err(Error::UserNotFound);
                 }
+                // Get DM messages in both directions (user_id <-> recipient)
+                MessageRepository::find_direct_messages(
+                    &*self.storage,
+                    user_id,
+                    *recipient,
+                    pagination,
+                )
+                .await
             }
         }
-
-        // Get messages
-        MessageRepository::find_by_target(&*self.storage, &target, pagination).await
     }
 
     /// Get messages for a room.

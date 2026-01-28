@@ -4,11 +4,13 @@
 //! Per ADR-013, authentication is handled via HTTP, and the returned JWT token
 //! is then used to authenticate the TCP connection.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{debug, info};
+use uuid::Uuid;
 
-use super::messages::{Session, User};
+use super::messages::{Session, SessionId, User};
 
 /// HTTP client errors.
 #[derive(Debug, Error)]
@@ -52,14 +54,46 @@ struct RegisterRequest {
     password: String,
 }
 
-/// Authentication response from the server.
+/// Authentication response from the server (matches server's AuthResponse format).
+/// Server uses HTTP status codes for success/failure, not a `success` field.
 #[derive(Debug, Deserialize)]
 pub struct AuthResponse {
-    pub success: bool,
-    pub user: Option<User>,
-    pub session: Option<Session>,
-    pub token: Option<String>,
-    pub error: Option<ErrorInfo>,
+    pub user: User,
+    pub session: SessionInfo,
+    pub token: String,
+}
+
+/// Session info as returned by HTTP API (strings instead of typed IDs).
+#[derive(Debug, Clone, Deserialize)]
+pub struct SessionInfo {
+    pub id: String,
+    pub expires_at: String,
+}
+
+impl SessionInfo {
+    /// Convert to the typed Session struct used by the rest of the app.
+    pub fn to_session(&self) -> Result<Session, HttpError> {
+        let id: SessionId = Uuid::parse_str(&self.id).map_err(|e| {
+            HttpError::InvalidResponse(format!("Invalid session ID '{}': {}", self.id, e))
+        })?;
+
+        let expires_at: DateTime<Utc> = DateTime::parse_from_rfc3339(&self.expires_at)
+            .map_err(|e| {
+                HttpError::InvalidResponse(format!(
+                    "Invalid expires_at '{}': {}",
+                    self.expires_at, e
+                ))
+            })?
+            .with_timezone(&Utc);
+
+        Ok(Session { id, expires_at })
+    }
+}
+
+/// Error response from server (for non-2xx responses).
+#[derive(Debug, Deserialize)]
+pub struct ErrorResponse {
+    pub error: ErrorInfo,
 }
 
 /// Error information from server.
@@ -126,11 +160,12 @@ impl HttpClient {
     }
 
     /// Login with username/email and password.
+    /// Returns user info, session, and JWT token on success.
     pub async fn login(
         &mut self,
         identifier: &str,
         password: &str,
-    ) -> Result<AuthResponse, HttpError> {
+    ) -> Result<(User, Session, String), HttpError> {
         let url = format!("{}/api/v1/auth/login", self.base_url);
         debug!("HTTP login to {}", url);
 
@@ -142,36 +177,39 @@ impl HttpClient {
         let response = self.client.post(&url).json(&request).send().await?;
 
         let status = response.status();
-        let auth_response: AuthResponse = response.json().await?;
-
-        if !auth_response.success {
-            let error_msg = auth_response
-                .error
-                .map(|e| e.message)
-                .unwrap_or_else(|| "Login failed".to_string());
-            return Err(HttpError::AuthenticationFailed(error_msg));
+        if !status.is_success() {
+            // Parse error response
+            let error_response: ErrorResponse = response.json().await.map_err(|e| {
+                HttpError::InvalidResponse(format!("Failed to parse error response: {}", e))
+            })?;
+            return Err(HttpError::ServerError {
+                code: error_response.error.code,
+                message: error_response.error.message,
+            });
         }
+
+        let auth_response: AuthResponse = response.json().await.map_err(|e| {
+            HttpError::InvalidResponse(format!("Failed to parse auth response: {}", e))
+        })?;
+
+        // Convert SessionInfo to Session
+        let session = auth_response.session.to_session()?;
 
         // Store the token
-        if let Some(ref token) = auth_response.token {
-            self.token = Some(token.clone());
-            info!("Login successful, token obtained");
-        } else if !status.is_success() {
-            return Err(HttpError::AuthenticationFailed(
-                "No token in response".to_string(),
-            ));
-        }
+        self.token = Some(auth_response.token.clone());
+        info!("Login successful, token obtained");
 
-        Ok(auth_response)
+        Ok((auth_response.user, session, auth_response.token))
     }
 
     /// Register a new account.
+    /// Returns user info, session, and JWT token on success.
     pub async fn register(
         &mut self,
         username: &str,
         email: &str,
         password: &str,
-    ) -> Result<AuthResponse, HttpError> {
+    ) -> Result<(User, Session, String), HttpError> {
         let url = format!("{}/api/v1/auth/register", self.base_url);
         debug!("HTTP register to {}", url);
 
@@ -184,27 +222,29 @@ impl HttpClient {
         let response = self.client.post(&url).json(&request).send().await?;
 
         let status = response.status();
-        let auth_response: AuthResponse = response.json().await?;
-
-        if !auth_response.success {
-            let error_msg = auth_response
-                .error
-                .map(|e| e.message)
-                .unwrap_or_else(|| "Registration failed".to_string());
-            return Err(HttpError::AuthenticationFailed(error_msg));
+        if !status.is_success() {
+            // Parse error response
+            let error_response: ErrorResponse = response.json().await.map_err(|e| {
+                HttpError::InvalidResponse(format!("Failed to parse error response: {}", e))
+            })?;
+            return Err(HttpError::ServerError {
+                code: error_response.error.code,
+                message: error_response.error.message,
+            });
         }
+
+        let auth_response: AuthResponse = response.json().await.map_err(|e| {
+            HttpError::InvalidResponse(format!("Failed to parse auth response: {}", e))
+        })?;
+
+        // Convert SessionInfo to Session
+        let session = auth_response.session.to_session()?;
 
         // Store the token
-        if let Some(ref token) = auth_response.token {
-            self.token = Some(token.clone());
-            info!("Registration successful, token obtained");
-        } else if !status.is_success() {
-            return Err(HttpError::AuthenticationFailed(
-                "No token in response".to_string(),
-            ));
-        }
+        self.token = Some(auth_response.token.clone());
+        info!("Registration successful, token obtained");
 
-        Ok(auth_response)
+        Ok((auth_response.user, session, auth_response.token))
     }
 
     /// Logout (invalidate token).

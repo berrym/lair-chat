@@ -607,6 +607,23 @@ impl<S: Storage + 'static> Connection<S> {
                     .handle_send_message(session_id, &target, &content)
                     .await
             }
+            ClientMessage::EditMessage {
+                request_id: _,
+                message_id,
+                content,
+            } => {
+                self.commands
+                    .handle_edit_message(session_id, &message_id, &content)
+                    .await
+            }
+            ClientMessage::DeleteMessage {
+                request_id: _,
+                message_id,
+            } => {
+                self.commands
+                    .handle_delete_message(session_id, &message_id)
+                    .await
+            }
             // DEPRECATED: Use HTTP GET /messages instead
             ClientMessage::GetMessages {
                 request_id: _,

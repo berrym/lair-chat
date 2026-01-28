@@ -448,24 +448,17 @@ impl App {
 
         // Step 1: HTTP login to get JWT token
         match self.http_client.login(&username, &password).await {
-            Ok(auth_response) => {
+            Ok((user, session, token)) => {
                 info!("HTTP login successful");
 
                 // Store user and session info
-                if let Some(ref user) = auth_response.user {
-                    self.cache_user(user);
-                    self.user = Some(user.clone());
-                }
-                self.session = auth_response.session;
-                self.token = auth_response.token.clone();
+                self.cache_user(&user);
+                self.user = Some(user);
+                self.session = Some(session);
+                self.token = Some(token.clone());
 
                 // Step 2: Authenticate TCP connection with the token
-                if let Some(token) = &auth_response.token {
-                    self.authenticate_tcp_connection(token.clone()).await;
-                } else {
-                    self.error = Some("No token received from server".to_string());
-                    self.status = None;
-                }
+                self.authenticate_tcp_connection(token).await;
             }
             Err(e) => {
                 self.error = Some(format!("Login failed: {}", e));
@@ -485,24 +478,17 @@ impl App {
             .register(&username, &email, &password)
             .await
         {
-            Ok(auth_response) => {
+            Ok((user, session, token)) => {
                 info!("HTTP registration successful");
 
                 // Store user and session info
-                if let Some(ref user) = auth_response.user {
-                    self.cache_user(user);
-                    self.user = Some(user.clone());
-                }
-                self.session = auth_response.session;
-                self.token = auth_response.token.clone();
+                self.cache_user(&user);
+                self.user = Some(user);
+                self.session = Some(session);
+                self.token = Some(token.clone());
 
                 // Step 2: Authenticate TCP connection with the token
-                if let Some(token) = &auth_response.token {
-                    self.authenticate_tcp_connection(token.clone()).await;
-                } else {
-                    self.error = Some("No token received from server".to_string());
-                    self.status = None;
-                }
+                self.authenticate_tcp_connection(token).await;
             }
             Err(e) => {
                 self.error = Some(format!("Registration failed: {}", e));

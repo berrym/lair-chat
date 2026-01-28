@@ -3,7 +3,9 @@
 use std::sync::Arc;
 
 use crate::core::engine::ChatEngine;
-use crate::domain::{InvitationId, MessageTarget, Pagination, RoomId, SessionId, UserId};
+use crate::domain::{
+    InvitationId, MessageId, MessageTarget, Pagination, RoomId, SessionId, UserId,
+};
 use crate::storage::{MembershipRepository, Storage};
 
 use super::protocol::{
@@ -190,6 +192,93 @@ impl<S: Storage + 'static> CommandHandler<S> {
                 success: false,
                 messages: None,
                 has_more: false,
+                error: Some(error_to_info(&e)),
+            },
+        }
+    }
+
+    /// Handle edit message request.
+    pub async fn handle_edit_message(
+        &self,
+        session_id: Option<SessionId>,
+        message_id: &str,
+        content: &str,
+    ) -> ServerMessage {
+        let Some(session_id) = session_id else {
+            return ServerMessage::EditMessageResponse {
+                request_id: None,
+                success: false,
+                message: None,
+                error: Some(ErrorInfo::new("unauthorized", "Not authenticated")),
+            };
+        };
+
+        let message_id = match MessageId::parse(message_id) {
+            Ok(id) => id,
+            Err(_) => {
+                return ServerMessage::EditMessageResponse {
+                    request_id: None,
+                    success: false,
+                    message: None,
+                    error: Some(ErrorInfo::new("invalid_id", "Invalid message ID")),
+                };
+            }
+        };
+
+        match self
+            .engine
+            .edit_message(session_id, message_id, content)
+            .await
+        {
+            Ok(message) => ServerMessage::EditMessageResponse {
+                request_id: None,
+                success: true,
+                message: Some(message),
+                error: None,
+            },
+            Err(e) => ServerMessage::EditMessageResponse {
+                request_id: None,
+                success: false,
+                message: None,
+                error: Some(error_to_info(&e)),
+            },
+        }
+    }
+
+    /// Handle delete message request.
+    pub async fn handle_delete_message(
+        &self,
+        session_id: Option<SessionId>,
+        message_id: &str,
+    ) -> ServerMessage {
+        let Some(session_id) = session_id else {
+            return ServerMessage::DeleteMessageResponse {
+                request_id: None,
+                success: false,
+                error: Some(ErrorInfo::new("unauthorized", "Not authenticated")),
+            };
+        };
+
+        let message_id = match MessageId::parse(message_id) {
+            Ok(id) => id,
+            Err(_) => {
+                return ServerMessage::DeleteMessageResponse {
+                    request_id: None,
+                    success: false,
+                    error: Some(ErrorInfo::new("invalid_id", "Invalid message ID")),
+                };
+            }
+        };
+
+        match self.engine.delete_message(session_id, message_id).await {
+            Ok(()) => ServerMessage::DeleteMessageResponse {
+                request_id: None,
+                success: true,
+                error: None,
+            },
+            Err(e) => ServerMessage::DeleteMessageResponse {
+                request_id: None,
+                success: false,
                 error: Some(error_to_info(&e)),
             },
         }
@@ -457,7 +546,7 @@ impl<S: Storage + 'static> CommandHandler<S> {
     /// Handle get room request.
     pub async fn handle_get_room(
         &self,
-        _session_id: Option<SessionId>,
+        session_id: Option<SessionId>,
         room_id: &str,
     ) -> ServerMessage {
         let room_id = match RoomId::parse(room_id) {
@@ -474,15 +563,39 @@ impl<S: Storage + 'static> CommandHandler<S> {
             }
         };
 
+        // Get user ID from session to check membership
+        let user_id = if let Some(sid) = session_id {
+            self.engine
+                .validate_session(sid)
+                .await
+                .ok()
+                .map(|(_, u)| u.id)
+        } else {
+            None
+        };
+
         match self.engine.get_room(room_id).await {
             Ok(Some(room)) => {
                 let members = self.engine.get_room_members(room_id).await.ok();
                 let member_count = members.as_ref().map(|m| m.len() as u32).unwrap_or(0);
+
+                // Check if current user is a member
+                let membership = if let Some(uid) = user_id {
+                    self.engine
+                        .storage_clone()
+                        .get_membership(room_id, uid)
+                        .await
+                        .ok()
+                        .flatten()
+                } else {
+                    None
+                };
+
                 ServerMessage::GetRoomResponse {
                     request_id: None,
                     success: true,
                     room: Some(room),
-                    membership: None, // TODO: Check if current user is member
+                    membership,
                     member_count,
                     error: None,
                 }
