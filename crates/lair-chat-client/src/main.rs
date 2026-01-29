@@ -23,7 +23,9 @@ mod crypto;
 mod protocol;
 
 use app::{Action, App, Screen};
-use components::{ChatRenderContext, ChatScreen, CommandPalette, LoginScreen, RoomsScreen};
+use components::{
+    render_toasts_default, ChatRenderContext, ChatScreen, CommandPalette, LoginScreen, RoomsScreen,
+};
 
 /// Lair Chat TUI Client
 #[derive(Parser, Debug)]
@@ -143,6 +145,10 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
 
             // Render command palette as overlay (if visible)
             command_palette.render(frame, area);
+
+            // Render toast notifications as overlay
+            let notifications = app.notifications();
+            render_toasts_default(frame, area, &notifications);
         })?;
 
         // Poll for events

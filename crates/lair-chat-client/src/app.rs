@@ -288,6 +288,11 @@ impl App {
             .map(|n| n.message.as_str())
     }
 
+    /// Get all notifications for rendering toasts.
+    pub fn notifications(&self) -> Vec<Notification> {
+        self.notifications.iter().cloned().collect()
+    }
+
     /// Get lists of online and offline users (excluding self).
     pub fn get_user_lists(&self) -> (Vec<String>, Vec<String>) {
         let mut online = Vec::new();
