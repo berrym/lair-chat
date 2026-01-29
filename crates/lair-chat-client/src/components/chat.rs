@@ -704,101 +704,171 @@ impl ChatScreen {
                 }
             };
 
-            // Format message content with timestamp and author
-            let time = msg.timestamp.format("%H:%M");
-            let display_content = if msg.is_system {
-                format!("[{}] {}", time, msg.content)
-            } else {
-                format!("[{}] {}: {}", time, msg.author, msg.content)
-            };
+            // Format timestamp
+            let time = msg.timestamp.format("%H:%M").to_string();
 
-            // Get styling based on message type
-            let (text_style, _bubble_style, right_align) = match msg_style {
-                MessageStyle::Sent => (
-                    Style::default()
-                        .fg(Color::White)
-                        .bg(Color::Rgb(59, 130, 246)) // Blue
-                        .add_modifier(Modifier::BOLD),
-                    Some(Color::Rgb(59, 130, 246)),
-                    true,
-                ),
-                MessageStyle::Received => (
-                    Style::default()
-                        .fg(Color::Rgb(55, 65, 81)) // Dark gray text
-                        .bg(Color::Rgb(229, 231, 235)), // Light gray background
-                    Some(Color::Rgb(229, 231, 235)),
-                    false,
-                ),
-                MessageStyle::System => (
+            // Determine if this is a right-aligned (own) message
+            let is_own_message = username.is_some_and(|u| u == msg.author);
+            let right_align = matches!(msg_style, MessageStyle::Sent | MessageStyle::DmSent);
+
+            // Handle system messages differently
+            if matches!(msg_style, MessageStyle::System | MessageStyle::SystemLeft) {
+                let system_style = if matches!(msg_style, MessageStyle::System) {
                     Style::default()
                         .fg(Color::Rgb(156, 163, 175))
-                        .add_modifier(Modifier::ITALIC),
-                    None,
-                    false,
-                ),
-                MessageStyle::SystemLeft => (Style::default().fg(Color::Cyan), None, false),
-                MessageStyle::DmSent => (
-                    Style::default()
-                        .fg(Color::White)
-                        .bg(Color::Rgb(147, 51, 234)) // Purple
-                        .add_modifier(Modifier::BOLD),
-                    Some(Color::Rgb(147, 51, 234)),
-                    true,
-                ),
-                MessageStyle::DmReceived => (
-                    Style::default()
-                        .fg(Color::Black)
-                        .bg(Color::Rgb(34, 197, 94)) // Green
-                        .add_modifier(Modifier::BOLD),
-                    Some(Color::Rgb(34, 197, 94)),
-                    false,
-                ),
-            };
+                        .add_modifier(Modifier::ITALIC)
+                } else {
+                    Style::default().fg(Color::Cyan)
+                };
 
-            // Wrap text to fit within bubble width
-            let content_width = message_max_width.saturating_sub(4).max(10); // Account for padding
-            let wrapped_lines = wrap_text(&display_content, content_width);
+                let content_width = message_max_width.saturating_sub(4).max(10);
+                let wrapped_lines = wrap_text(&msg.content, content_width);
 
-            for wrapped_line in wrapped_lines {
-                let line = match msg_style {
-                    MessageStyle::System => {
-                        // Centered system message with bullet points
-                        let system_content = format!("• {} •", wrapped_line);
-                        let content_len = system_content.len();
+                for wrapped_line in wrapped_lines {
+                    let line = if matches!(msg_style, MessageStyle::System) {
+                        // Centered system message
+                        let system_content = format!("· {} ·", wrapped_line);
+                        let content_len = system_content.chars().count();
                         let padding = inner_width.saturating_sub(content_len) / 2;
                         Line::from(vec![
                             Span::raw(" ".repeat(padding)),
-                            Span::styled(system_content, text_style),
+                            Span::styled(system_content, system_style),
                         ])
-                    }
-                    MessageStyle::SystemLeft => {
-                        // Left-aligned system message (for help text)
+                    } else {
+                        // Left-aligned system message (help text)
                         Line::from(vec![
                             Span::raw("  "),
-                            Span::styled(wrapped_line.clone(), text_style),
+                            Span::styled(wrapped_line.clone(), system_style),
                         ])
-                    }
-                    _ => {
-                        // Bubble message with padding
-                        let bubble_content = format!("  {}  ", wrapped_line);
-                        let content_len = bubble_content.len();
-
-                        if right_align {
-                            // Right-align sent messages
-                            let padding = inner_width.saturating_sub(content_len);
-                            Line::from(vec![
-                                Span::raw(" ".repeat(padding)),
-                                Span::styled(bubble_content, text_style),
-                            ])
-                        } else {
-                            // Left-align received messages
-                            Line::from(vec![Span::styled(bubble_content, text_style)])
-                        }
-                    }
-                };
-
-                all_lines.push(line);
+                    };
+                    all_lines.push(line);
+                }
+                continue;
             }
+
+            // Styling for user messages
+            let (username_color, border_color, bg_color) = if is_dm_mode {
+                if is_own_message {
+                    (Color::Cyan, Color::Magenta, Color::Rgb(40, 20, 50)) // Purple tint
+                } else {
+                    (Color::Green, Color::Green, Color::Rgb(20, 40, 30)) // Green tint
+                }
+            } else if is_own_message {
+                (Color::Cyan, Color::Blue, Color::Rgb(20, 30, 50)) // Blue tint
+            } else {
+                (Color::Green, Color::Blue, Color::Rgb(20, 30, 50)) // Blue tint
+            };
+
+            let text_style = Style::default().fg(Color::White).bg(bg_color);
+            let border_style = Style::default().fg(border_color).bg(bg_color);
+
+            // Wrap message content
+            let content_width = message_max_width.saturating_sub(6).max(10); // Account for border + padding
+            let wrapped_lines = wrap_text(&msg.content, content_width);
+
+            // Find the longest line to make bubble width consistent
+            let max_line_len = wrapped_lines
+                .iter()
+                .map(|l| l.chars().count())
+                .max()
+                .unwrap_or(0);
+            let bubble_inner_width = max_line_len.max(10);
+
+            // Build header line: "username · HH:MM" or "you · HH:MM"
+            let display_name = if is_own_message {
+                "you".to_string()
+            } else {
+                msg.author.clone()
+            };
+            let header_text = format!("{} · {}", display_name, time);
+            let header_len = header_text.chars().count();
+
+            // Render header
+            let header_line = if right_align {
+                let padding = inner_width.saturating_sub(header_len + 1);
+                Line::from(vec![
+                    Span::raw(" ".repeat(padding)),
+                    Span::styled(display_name.clone(), Style::default().fg(username_color)),
+                    Span::styled(" · ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(time.clone(), Style::default().fg(Color::DarkGray)),
+                ])
+            } else {
+                Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(display_name.clone(), Style::default().fg(username_color)),
+                    Span::styled(" · ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(time.clone(), Style::default().fg(Color::DarkGray)),
+                ])
+            };
+            all_lines.push(header_line);
+
+            // Build bubble top border: ┌───┐
+            let top_border = format!("┌{}┐", "─".repeat(bubble_inner_width + 2));
+            let top_border_len = top_border.chars().count();
+
+            let top_line = if right_align {
+                let padding = inner_width.saturating_sub(top_border_len + 1);
+                Line::from(vec![
+                    Span::raw(" ".repeat(padding)),
+                    Span::styled(top_border, border_style),
+                ])
+            } else {
+                Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(top_border, border_style),
+                ])
+            };
+            all_lines.push(top_line);
+
+            // Render content lines with side borders: │ content │
+            for wrapped_line in &wrapped_lines {
+                let line_len = wrapped_line.chars().count();
+                let line_padding = bubble_inner_width.saturating_sub(line_len);
+                let content = format!("│ {}{} │", wrapped_line, " ".repeat(line_padding));
+                let content_len = content.chars().count();
+
+                let content_line = if right_align {
+                    let padding = inner_width.saturating_sub(content_len + 1);
+                    Line::from(vec![
+                        Span::raw(" ".repeat(padding)),
+                        Span::styled("│ ", border_style),
+                        Span::styled(
+                            format!("{}{}", wrapped_line, " ".repeat(line_padding)),
+                            text_style,
+                        ),
+                        Span::styled(" │", border_style),
+                    ])
+                } else {
+                    Line::from(vec![
+                        Span::raw("  "),
+                        Span::styled("│ ", border_style),
+                        Span::styled(
+                            format!("{}{}", wrapped_line, " ".repeat(line_padding)),
+                            text_style,
+                        ),
+                        Span::styled(" │", border_style),
+                    ])
+                };
+                all_lines.push(content_line);
+            }
+
+            // Build bubble bottom border: └───┘
+            let bottom_border = format!("└{}┘", "─".repeat(bubble_inner_width + 2));
+            let bottom_border_len = bottom_border.chars().count();
+
+            let bottom_line = if right_align {
+                let padding = inner_width.saturating_sub(bottom_border_len + 1);
+                Line::from(vec![
+                    Span::raw(" ".repeat(padding)),
+                    Span::styled(bottom_border, border_style),
+                ])
+            } else {
+                Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(bottom_border, border_style),
+                ])
+            };
+            all_lines.push(bottom_line);
         }
 
         // Calculate scroll - now based on lines, not messages
