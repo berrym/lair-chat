@@ -356,3 +356,362 @@ fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     Rect::new(x, y, width.min(area.width), height.min(area.height))
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    // ========================================================================
+    // Palette State Tests
+    // ========================================================================
+
+    #[test]
+    fn test_command_palette_new() {
+        let palette = CommandPalette::new();
+        assert!(!palette.visible);
+        assert!(palette.input.is_empty());
+        assert!(!palette.filtered.is_empty()); // Should have default commands
+    }
+
+    #[test]
+    fn test_command_palette_default() {
+        let palette = CommandPalette::default();
+        assert!(!palette.visible);
+    }
+
+    #[test]
+    fn test_palette_toggle() {
+        let mut palette = CommandPalette::new();
+        assert!(!palette.visible);
+
+        palette.toggle();
+        assert!(palette.visible);
+        assert!(palette.input.is_empty());
+
+        palette.toggle();
+        assert!(!palette.visible);
+    }
+
+    #[test]
+    fn test_palette_open() {
+        let mut palette = CommandPalette::new();
+        palette.input = "test".to_string();
+
+        palette.open();
+
+        assert!(palette.visible);
+        assert!(palette.input.is_empty()); // Should be cleared
+    }
+
+    #[test]
+    fn test_palette_close() {
+        let mut palette = CommandPalette::new();
+        palette.visible = true;
+        palette.input = "test".to_string();
+
+        palette.close();
+
+        assert!(!palette.visible);
+        assert!(palette.input.is_empty());
+    }
+
+    // ========================================================================
+    // Filtering Tests
+    // ========================================================================
+
+    #[test]
+    fn test_filter_empty_input_shows_all() {
+        let mut palette = CommandPalette::new();
+        palette.input.clear();
+        palette.update_filter();
+
+        // Should show all default commands (5 commands)
+        assert_eq!(palette.filtered.len(), 5);
+    }
+
+    #[test]
+    fn test_filter_narrows_results() {
+        let mut palette = CommandPalette::new();
+        palette.input = "quit".to_string();
+        palette.update_filter();
+
+        // Should find at least the "Quit" command
+        assert!(palette.filtered.iter().any(|(idx, _)| {
+            palette.commands[*idx].name.to_lowercase().contains("quit")
+        }));
+    }
+
+    #[test]
+    fn test_filter_no_match() {
+        let mut palette = CommandPalette::new();
+        palette.input = "zzzzzzzzzzz".to_string();
+        palette.update_filter();
+
+        // Should have no matches
+        assert!(palette.filtered.is_empty());
+    }
+
+    #[test]
+    fn test_filter_selects_first_when_has_results() {
+        let mut palette = CommandPalette::new();
+        palette.input = "room".to_string();
+        palette.update_filter();
+
+        if !palette.filtered.is_empty() {
+            assert_eq!(palette.list_state.selected(), Some(0));
+        }
+    }
+
+    #[test]
+    fn test_filter_no_selection_when_empty() {
+        let mut palette = CommandPalette::new();
+        palette.input = "zzzzzzzzzzz".to_string();
+        palette.update_filter();
+
+        assert_eq!(palette.list_state.selected(), None);
+    }
+
+    // ========================================================================
+    // Navigation Tests
+    // ========================================================================
+
+    #[test]
+    fn test_select_next() {
+        let mut palette = CommandPalette::new();
+        palette.update_filter();
+        palette.list_state.select(Some(0));
+
+        palette.select_next();
+        assert_eq!(palette.list_state.selected(), Some(1));
+    }
+
+    #[test]
+    fn test_select_next_wraps() {
+        let mut palette = CommandPalette::new();
+        palette.update_filter();
+        let last = palette.filtered.len() - 1;
+        palette.list_state.select(Some(last));
+
+        palette.select_next();
+        assert_eq!(palette.list_state.selected(), Some(0)); // Wraps to start
+    }
+
+    #[test]
+    fn test_select_prev() {
+        let mut palette = CommandPalette::new();
+        palette.update_filter();
+        palette.list_state.select(Some(2));
+
+        palette.select_prev();
+        assert_eq!(palette.list_state.selected(), Some(1));
+    }
+
+    #[test]
+    fn test_select_prev_wraps() {
+        let mut palette = CommandPalette::new();
+        palette.update_filter();
+        palette.list_state.select(Some(0));
+
+        palette.select_prev();
+        let expected = palette.filtered.len() - 1;
+        assert_eq!(palette.list_state.selected(), Some(expected)); // Wraps to end
+    }
+
+    #[test]
+    fn test_select_empty_does_nothing() {
+        let mut palette = CommandPalette::new();
+        palette.input = "zzzzzzzzzzz".to_string();
+        palette.update_filter();
+        // filtered is now empty
+
+        palette.select_next();
+        palette.select_prev();
+        // Should not panic
+    }
+
+    // ========================================================================
+    // Key Handling Tests
+    // ========================================================================
+
+    #[test]
+    fn test_key_esc_closes() {
+        let mut palette = CommandPalette::new();
+        palette.visible = true;
+
+        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        let result = palette.handle_key(key);
+
+        assert!(result.is_none());
+        assert!(!palette.visible);
+    }
+
+    #[test]
+    fn test_key_enter_executes_command() {
+        let mut palette = CommandPalette::new();
+        palette.visible = true;
+        palette.update_filter();
+        palette.list_state.select(Some(0));
+
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let result = palette.handle_key(key);
+
+        // Should return an action
+        assert!(result.is_some());
+        assert!(!palette.visible);
+    }
+
+    #[test]
+    fn test_key_down_moves_selection() {
+        let mut palette = CommandPalette::new();
+        palette.visible = true;
+        palette.update_filter();
+        palette.list_state.select(Some(0));
+
+        let key = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        let result = palette.handle_key(key);
+
+        assert!(result.is_none());
+        assert_eq!(palette.list_state.selected(), Some(1));
+    }
+
+    #[test]
+    fn test_key_up_moves_selection() {
+        let mut palette = CommandPalette::new();
+        palette.visible = true;
+        palette.update_filter();
+        palette.list_state.select(Some(2));
+
+        let key = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+        let result = palette.handle_key(key);
+
+        assert!(result.is_none());
+        assert_eq!(palette.list_state.selected(), Some(1));
+    }
+
+    #[test]
+    fn test_key_char_updates_input() {
+        let mut palette = CommandPalette::new();
+        palette.visible = true;
+
+        let key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
+        let result = palette.handle_key(key);
+
+        assert!(result.is_none());
+        assert_eq!(palette.input, "q");
+    }
+
+    #[test]
+    fn test_key_backspace_removes_char() {
+        let mut palette = CommandPalette::new();
+        palette.visible = true;
+        palette.input = "quit".to_string();
+
+        let key = KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE);
+        let result = palette.handle_key(key);
+
+        assert!(result.is_none());
+        assert_eq!(palette.input, "qui");
+    }
+
+    #[test]
+    fn test_key_ctrl_p_closes() {
+        let mut palette = CommandPalette::new();
+        palette.visible = true;
+
+        let key = KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL);
+        let result = palette.handle_key(key);
+
+        assert!(result.is_none());
+        assert!(!palette.visible);
+    }
+
+    #[test]
+    fn test_key_ctrl_n_moves_down() {
+        let mut palette = CommandPalette::new();
+        palette.visible = true;
+        palette.update_filter();
+        palette.list_state.select(Some(0));
+
+        let key = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL);
+        let result = palette.handle_key(key);
+
+        assert!(result.is_none());
+        assert_eq!(palette.list_state.selected(), Some(1));
+    }
+
+    #[test]
+    fn test_key_ctrl_j_moves_down() {
+        let mut palette = CommandPalette::new();
+        palette.visible = true;
+        palette.update_filter();
+        palette.list_state.select(Some(0));
+
+        let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::CONTROL);
+        let result = palette.handle_key(key);
+
+        assert!(result.is_none());
+        assert_eq!(palette.list_state.selected(), Some(1));
+    }
+
+    #[test]
+    fn test_key_ctrl_k_moves_up() {
+        let mut palette = CommandPalette::new();
+        palette.visible = true;
+        palette.update_filter();
+        palette.list_state.select(Some(2));
+
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+        let result = palette.handle_key(key);
+
+        assert!(result.is_none());
+        assert_eq!(palette.list_state.selected(), Some(1));
+    }
+
+    // ========================================================================
+    // PaletteCommand Tests
+    // ========================================================================
+
+    #[test]
+    fn test_palette_command_new() {
+        let cmd = PaletteCommand::new(
+            "test",
+            "Test Command",
+            "A test command",
+            Action::Quit,
+        );
+
+        assert_eq!(cmd.id, "test");
+        assert_eq!(cmd.name, "Test Command");
+        assert_eq!(cmd.description, "A test command");
+    }
+
+    // ========================================================================
+    // Helper Function Tests
+    // ========================================================================
+
+    #[test]
+    fn test_centered_rect() {
+        let area = Rect::new(0, 0, 100, 50);
+        let centered = centered_rect(40, 20, area);
+
+        assert_eq!(centered.width, 40);
+        assert_eq!(centered.height, 20);
+        assert_eq!(centered.x, 30); // (100 - 40) / 2
+        assert_eq!(centered.y, 15); // (50 - 20) / 2
+    }
+
+    #[test]
+    fn test_centered_rect_larger_than_area() {
+        let area = Rect::new(0, 0, 30, 20);
+        let centered = centered_rect(50, 30, area);
+
+        // Should be clamped to area size
+        assert!(centered.width <= area.width);
+        assert!(centered.height <= area.height);
+    }
+}

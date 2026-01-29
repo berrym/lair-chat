@@ -274,3 +274,259 @@ pub fn extract_token_from_header(headers: &axum::http::HeaderMap) -> Option<&str
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.strip_prefix("Bearer "))
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderMap;
+
+    // ========================================================================
+    // AuthUser tests
+    // ========================================================================
+
+    #[test]
+    fn test_auth_user_is_admin() {
+        let auth = AuthUser {
+            user_id: UserId::new(),
+            session_id: SessionId::new(),
+            role: Role::Admin,
+            username: "admin".to_string(),
+        };
+        assert!(auth.is_admin());
+
+        let auth = AuthUser {
+            user_id: UserId::new(),
+            session_id: SessionId::new(),
+            role: Role::User,
+            username: "user".to_string(),
+        };
+        assert!(!auth.is_admin());
+    }
+
+    #[test]
+    fn test_auth_user_is_moderator() {
+        let auth = AuthUser {
+            user_id: UserId::new(),
+            session_id: SessionId::new(),
+            role: Role::Admin,
+            username: "admin".to_string(),
+        };
+        assert!(auth.is_moderator());
+
+        let auth = AuthUser {
+            user_id: UserId::new(),
+            session_id: SessionId::new(),
+            role: Role::Moderator,
+            username: "mod".to_string(),
+        };
+        assert!(auth.is_moderator());
+
+        let auth = AuthUser {
+            user_id: UserId::new(),
+            session_id: SessionId::new(),
+            role: Role::User,
+            username: "user".to_string(),
+        };
+        assert!(!auth.is_moderator());
+    }
+
+    #[test]
+    fn test_auth_user_has_permission() {
+        let admin = AuthUser {
+            user_id: UserId::new(),
+            session_id: SessionId::new(),
+            role: Role::Admin,
+            username: "admin".to_string(),
+        };
+
+        // Admin has all permissions
+        assert!(admin.has_permission(Role::User));
+        assert!(admin.has_permission(Role::Moderator));
+        assert!(admin.has_permission(Role::Admin));
+
+        let user = AuthUser {
+            user_id: UserId::new(),
+            session_id: SessionId::new(),
+            role: Role::User,
+            username: "user".to_string(),
+        };
+
+        // User only has user-level permission
+        assert!(user.has_permission(Role::User));
+        assert!(!user.has_permission(Role::Moderator));
+        assert!(!user.has_permission(Role::Admin));
+    }
+
+    // ========================================================================
+    // AuthError tests
+    // ========================================================================
+
+    #[test]
+    fn test_auth_error_debug() {
+        // Test Debug trait implementation
+        let error = AuthError::MissingToken;
+        let debug_str = format!("{:?}", error);
+        assert!(debug_str.contains("MissingToken"));
+
+        let error = AuthError::InvalidToken("test reason".to_string());
+        let debug_str = format!("{:?}", error);
+        assert!(debug_str.contains("InvalidToken"));
+        assert!(debug_str.contains("test reason"));
+    }
+
+    #[test]
+    fn test_auth_error_into_response_missing_token() {
+        let error = AuthError::MissingToken;
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_auth_error_into_response_invalid_format() {
+        let error = AuthError::InvalidFormat;
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_auth_error_into_response_invalid_token() {
+        let error = AuthError::InvalidToken("bad signature".to_string());
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_auth_error_into_response_token_expired() {
+        let error = AuthError::TokenExpired;
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_auth_error_into_response_invalid_claims() {
+        let error = AuthError::InvalidClaims;
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_auth_error_into_response_permission_denied() {
+        let error = AuthError::PermissionDenied;
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn test_auth_error_into_response_internal_error() {
+        let error = AuthError::InternalError;
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    // ========================================================================
+    // extract_token_from_header tests
+    // ========================================================================
+
+    #[test]
+    fn test_extract_token_from_header_valid() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            "Bearer my_jwt_token_here".parse().unwrap(),
+        );
+
+        let token = extract_token_from_header(&headers);
+        assert_eq!(token, Some("my_jwt_token_here"));
+    }
+
+    #[test]
+    fn test_extract_token_from_header_missing() {
+        let headers = HeaderMap::new();
+        let token = extract_token_from_header(&headers);
+        assert_eq!(token, None);
+    }
+
+    #[test]
+    fn test_extract_token_from_header_wrong_scheme() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            "Basic dXNlcjpwYXNz".parse().unwrap(),
+        );
+
+        let token = extract_token_from_header(&headers);
+        assert_eq!(token, None);
+    }
+
+    #[test]
+    fn test_extract_token_from_header_empty_bearer() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::AUTHORIZATION, "Bearer ".parse().unwrap());
+
+        let token = extract_token_from_header(&headers);
+        assert_eq!(token, Some(""));
+    }
+
+    #[test]
+    fn test_extract_token_from_header_no_space_after_bearer() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::AUTHORIZATION, "Bearertoken".parse().unwrap());
+
+        let token = extract_token_from_header(&headers);
+        assert_eq!(token, None);
+    }
+
+    #[test]
+    fn test_extract_token_from_header_case_sensitive() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::AUTHORIZATION, "bearer token".parse().unwrap());
+
+        // "Bearer" is case sensitive per spec
+        let token = extract_token_from_header(&headers);
+        assert_eq!(token, None);
+    }
+
+    // ========================================================================
+    // OptionalAuthUser tests
+    // ========================================================================
+
+    #[test]
+    fn test_optional_auth_user_clone() {
+        let auth = AuthUser {
+            user_id: UserId::new(),
+            session_id: SessionId::new(),
+            role: Role::User,
+            username: "test".to_string(),
+        };
+        let optional = OptionalAuthUser(Some(auth));
+        let cloned = optional.clone();
+        assert!(cloned.0.is_some());
+    }
+
+    #[test]
+    fn test_optional_auth_user_none() {
+        let optional = OptionalAuthUser(None);
+        assert!(optional.0.is_none());
+    }
+
+    // ========================================================================
+    // AdminUser tests
+    // ========================================================================
+
+    #[test]
+    fn test_admin_user_clone() {
+        let auth = AuthUser {
+            user_id: UserId::new(),
+            session_id: SessionId::new(),
+            role: Role::Admin,
+            username: "admin".to_string(),
+        };
+        let admin = AdminUser(auth);
+        let cloned = admin.clone();
+        assert!(cloned.0.is_admin());
+    }
+}

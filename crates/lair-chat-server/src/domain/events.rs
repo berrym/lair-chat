@@ -717,4 +717,296 @@ mod tests {
         let banned = UserLeftRoomEvent::banned(room_id, user_id, moderator);
         assert!(matches!(banned.reason, LeaveReason::Banned { by } if by == moderator));
     }
+
+    #[test]
+    fn test_event_id_from_uuid() {
+        let uuid = Uuid::new_v4();
+        let id = EventId::from_uuid(uuid);
+        assert_eq!(id.as_uuid(), uuid);
+    }
+
+    #[test]
+    fn test_event_id_default() {
+        let id = EventId::default();
+        assert!(!id.as_uuid().is_nil());
+    }
+
+    #[test]
+    fn test_event_id_from_trait() {
+        let uuid = Uuid::new_v4();
+        let id: EventId = uuid.into();
+        assert_eq!(id.as_uuid(), uuid);
+    }
+
+    #[test]
+    fn test_event_id_parse_invalid() {
+        let result = EventId::parse("not-a-uuid");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_event_id_display() {
+        let id = EventId::new();
+        let display = format!("{}", id);
+        assert!(!display.is_empty());
+        // Should be valid UUID format
+        assert!(EventId::parse(&display).is_ok());
+    }
+
+    #[test]
+    fn test_message_edited_event() {
+        let author = UserId::new();
+        let room_id = RoomId::new();
+        let content = MessageContent::new("Edited").unwrap();
+        let message = Message::to_room(author, room_id, content);
+        let event = MessageEditedEvent::new(message, "Original".to_string());
+
+        assert_eq!(event.previous_content, "Original");
+        assert!(matches!(event.target(), EventTarget::Room(id) if id == room_id));
+    }
+
+    #[test]
+    fn test_message_edited_event_dm_target() {
+        let author = UserId::new();
+        let recipient = UserId::new();
+        let content = MessageContent::new("Edited DM").unwrap();
+        let message = Message::to_user(author, recipient, content);
+        let event = MessageEditedEvent::new(message, "Original DM".to_string());
+
+        match event.target() {
+            EventTarget::DirectMessage { user1, user2 } => {
+                assert_eq!(user1, author);
+                assert_eq!(user2, recipient);
+            }
+            _ => panic!("Expected DirectMessage target"),
+        }
+    }
+
+    #[test]
+    fn test_message_deleted_event() {
+        let message_id = MessageId::new();
+        let room_id = RoomId::new();
+        let deleted_by = UserId::new();
+        let target = MessageTarget::Room { room_id };
+        let event = MessageDeletedEvent::new(message_id, target, deleted_by);
+
+        assert_eq!(event.message_id, message_id);
+        assert_eq!(event.deleted_by, deleted_by);
+        assert!(matches!(event.target(), EventTarget::Room(id) if id == room_id));
+    }
+
+    #[test]
+    fn test_message_deleted_event_dm_target() {
+        let message_id = MessageId::new();
+        let deleted_by = UserId::new();
+        let recipient = UserId::new();
+        let target = MessageTarget::DirectMessage { recipient };
+        let event = MessageDeletedEvent::new(message_id, target, deleted_by);
+
+        match event.target() {
+            EventTarget::DirectMessage { user1, user2 } => {
+                assert_eq!(user1, deleted_by);
+                assert_eq!(user2, recipient);
+            }
+            _ => panic!("Expected DirectMessage target"),
+        }
+    }
+
+    #[test]
+    fn test_user_typing_event_room() {
+        let user_id = UserId::new();
+        let room_id = RoomId::new();
+        let target = MessageTarget::Room { room_id };
+        let event = UserTypingEvent::new(user_id, target);
+
+        assert_eq!(event.user_id, user_id);
+        assert!(matches!(event.target(), EventTarget::Room(id) if id == room_id));
+    }
+
+    #[test]
+    fn test_user_typing_event_dm() {
+        let user_id = UserId::new();
+        let recipient = UserId::new();
+        let target = MessageTarget::DirectMessage { recipient };
+        let event = UserTypingEvent::new(user_id, target);
+
+        match event.target() {
+            EventTarget::DirectMessage { user1, user2 } => {
+                assert_eq!(user1, user_id);
+                assert_eq!(user2, recipient);
+            }
+            _ => panic!("Expected DirectMessage target"),
+        }
+    }
+
+    #[test]
+    fn test_user_online_event() {
+        let user_id = UserId::new();
+        let event = UserOnlineEvent::new(user_id, "testuser".to_string());
+        assert_eq!(event.user_id, user_id);
+        assert_eq!(event.username, "testuser");
+    }
+
+    #[test]
+    fn test_user_offline_event() {
+        let user_id = UserId::new();
+        let event = UserOfflineEvent::new(user_id, "testuser".to_string());
+        assert_eq!(event.user_id, user_id);
+        assert_eq!(event.username, "testuser");
+    }
+
+    #[test]
+    fn test_room_deleted_event() {
+        let room_id = RoomId::new();
+        let deleted_by = UserId::new();
+        let event = RoomDeletedEvent::new(room_id, "testroom".to_string(), deleted_by);
+
+        assert_eq!(event.room_id, room_id);
+        assert_eq!(event.room_name, "testroom");
+        assert_eq!(event.deleted_by, deleted_by);
+    }
+
+    #[test]
+    fn test_session_expiring_event() {
+        use chrono::Utc;
+
+        let session_id = SessionId::new();
+        let expires_at = Utc::now();
+        let event = SessionExpiringEvent::new(session_id, expires_at);
+
+        assert_eq!(event.session_id, session_id);
+        assert_eq!(event.expires_at, expires_at);
+    }
+
+    #[test]
+    fn test_cancel_reason_display() {
+        assert_eq!(CancelReason::CancelledByInviter.to_string(), "cancelled by inviter");
+        assert_eq!(CancelReason::Expired.to_string(), "expired");
+        assert_eq!(CancelReason::RoomDeleted.to_string(), "room deleted");
+    }
+
+    #[test]
+    fn test_notice_severity_display() {
+        assert_eq!(NoticeSeverity::Info.to_string(), "info");
+        assert_eq!(NoticeSeverity::Warning.to_string(), "warning");
+        assert_eq!(NoticeSeverity::Critical.to_string(), "critical");
+    }
+
+    #[test]
+    fn test_event_payload_type_names() {
+        let user_id = UserId::new();
+        let room_id = RoomId::new();
+        let session_id = SessionId::new();
+        let content = MessageContent::new("test").unwrap();
+        let message = Message::to_room(user_id, room_id, content);
+
+        // Test all event types return correct type names
+        let events = [
+            (EventPayload::MessageReceived(MessageReceivedEvent::new(message.clone())), "message_received"),
+            (EventPayload::MessageEdited(MessageEditedEvent::new(message.clone(), "old".to_string())), "message_edited"),
+            (EventPayload::MessageDeleted(MessageDeletedEvent::new(MessageId::new(), MessageTarget::Room { room_id }, user_id)), "message_deleted"),
+            (EventPayload::UserOnline(UserOnlineEvent::new(user_id, "test".to_string())), "user_online"),
+            (EventPayload::UserOffline(UserOfflineEvent::new(user_id, "test".to_string())), "user_offline"),
+            (EventPayload::UserTyping(UserTypingEvent::new(user_id, MessageTarget::Room { room_id })), "user_typing"),
+            (EventPayload::RoomDeleted(RoomDeletedEvent::new(room_id, "room".to_string(), user_id)), "room_deleted"),
+            (EventPayload::ServerNotice(ServerNoticeEvent::info("notice")), "server_notice"),
+            (EventPayload::SessionExpiring(SessionExpiringEvent::new(session_id, chrono::Utc::now())), "session_expiring"),
+        ];
+
+        for (payload, expected_type) in events {
+            assert_eq!(payload.event_type(), expected_type);
+        }
+    }
+
+    #[test]
+    fn test_event_target_variants() {
+        let user_id = UserId::new();
+        let room_id = RoomId::new();
+        let session_id = SessionId::new();
+
+        // Test all EventTarget variants can be created and compared
+        let targets = vec![
+            EventTarget::User(user_id),
+            EventTarget::Room(room_id),
+            EventTarget::DirectMessage { user1: user_id, user2: UserId::new() },
+            EventTarget::UserConnections(user_id),
+            EventTarget::Session(session_id),
+            EventTarget::Broadcast,
+        ];
+
+        // Test that different targets are not equal
+        for i in 0..targets.len() {
+            for j in (i + 1)..targets.len() {
+                assert_ne!(targets[i], targets[j]);
+            }
+        }
+
+        // Test equality for same variant types
+        let target1 = EventTarget::Room(room_id);
+        let target2 = EventTarget::Room(room_id);
+        assert_eq!(target1, target2);
+
+        let target3 = EventTarget::Broadcast;
+        let target4 = EventTarget::Broadcast;
+        assert_eq!(target3, target4);
+    }
+
+    #[test]
+    fn test_room_change_serialization() {
+        let change = RoomChange::Name {
+            old: "old_name".to_string(),
+            new: "new_name".to_string(),
+        };
+        let json = serde_json::to_string(&change).unwrap();
+        assert!(json.contains("\"field\":\"name\""));
+
+        let change = RoomChange::Public { old: false, new: true };
+        let json = serde_json::to_string(&change).unwrap();
+        assert!(json.contains("\"field\":\"public\""));
+
+        let change = RoomChange::Description {
+            old: None,
+            new: Some("New description".to_string()),
+        };
+        let json = serde_json::to_string(&change).unwrap();
+        assert!(json.contains("\"field\":\"description\""));
+
+        let change = RoomChange::MaxMembers { old: Some(10), new: Some(20) };
+        let json = serde_json::to_string(&change).unwrap();
+        assert!(json.contains("\"field\":\"max_members\""));
+
+        let change = RoomChange::Moderated { old: false, new: true };
+        let json = serde_json::to_string(&change).unwrap();
+        assert!(json.contains("\"field\":\"moderated\""));
+    }
+
+    #[test]
+    fn test_leave_reason_serialization() {
+        let reason = LeaveReason::Voluntary;
+        let json = serde_json::to_string(&reason).unwrap();
+        assert!(json.contains("\"type\":\"voluntary\""));
+
+        let reason = LeaveReason::Kicked { by: UserId::new() };
+        let json = serde_json::to_string(&reason).unwrap();
+        assert!(json.contains("\"type\":\"kicked\""));
+
+        let reason = LeaveReason::Banned { by: UserId::new() };
+        let json = serde_json::to_string(&reason).unwrap();
+        assert!(json.contains("\"type\":\"banned\""));
+
+        let reason = LeaveReason::RoomDeleted;
+        let json = serde_json::to_string(&reason).unwrap();
+        assert!(json.contains("\"type\":\"room_deleted\""));
+    }
+
+    #[test]
+    fn test_invitation_cancelled_event() {
+        let invitation_id = InvitationId::new();
+        let invitee = UserId::new();
+        let event = InvitationCancelledEvent::new(invitation_id, invitee, CancelReason::Expired);
+
+        assert_eq!(event.invitation_id, invitation_id);
+        assert_eq!(event.invitee, invitee);
+        assert_eq!(event.reason, CancelReason::Expired);
+    }
 }

@@ -1017,3 +1017,615 @@ impl ChatScreen {
         }
     }
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    // ========================================================================
+    // wrap_text Tests
+    // ========================================================================
+
+    #[test]
+    fn test_wrap_text_empty_string() {
+        let result = wrap_text("", 20);
+        assert_eq!(result, vec![""]);
+    }
+
+    #[test]
+    fn test_wrap_text_zero_width() {
+        let result = wrap_text("hello", 0);
+        assert_eq!(result, vec!["hello"]);
+    }
+
+    #[test]
+    fn test_wrap_text_fits_in_one_line() {
+        let result = wrap_text("hello world", 20);
+        assert_eq!(result, vec!["hello world"]);
+    }
+
+    #[test]
+    fn test_wrap_text_wraps_at_word_boundary() {
+        let result = wrap_text("hello world", 8);
+        assert_eq!(result, vec!["hello", "world"]);
+    }
+
+    #[test]
+    fn test_wrap_text_long_word_breaks() {
+        let result = wrap_text("supercalifragilisticexpialidocious", 10);
+        // Should break the long word into chunks
+        assert!(result.len() > 1);
+        for line in &result {
+            assert!(line.len() <= 10);
+        }
+    }
+
+    #[test]
+    fn test_wrap_text_multiple_lines() {
+        let result = wrap_text("this is a longer text that needs multiple lines", 15);
+        assert!(result.len() >= 3);
+        for line in &result {
+            assert!(line.len() <= 15);
+        }
+    }
+
+    #[test]
+    fn test_wrap_text_preserves_content() {
+        let original = "hello world foo bar";
+        let result = wrap_text(original, 10);
+        let joined = result.join(" ");
+        assert_eq!(joined, original);
+    }
+
+    // ========================================================================
+    // ChatScreen State Tests
+    // ========================================================================
+
+    #[test]
+    fn test_chat_screen_new() {
+        let screen = ChatScreen::new();
+        assert_eq!(screen.mode, ChatMode::Normal);
+        assert!(screen.input.is_empty());
+        assert_eq!(screen.cursor, 0);
+        assert_eq!(screen.scroll, 0);
+        assert_eq!(screen.focus, ChatFocus::Messages);
+    }
+
+    #[test]
+    fn test_chat_screen_default() {
+        let screen = ChatScreen::default();
+        assert_eq!(screen.mode, ChatMode::Normal);
+    }
+
+    // ========================================================================
+    // Cursor Navigation Tests
+    // ========================================================================
+
+    #[test]
+    fn test_cursor_line_col_single_line() {
+        let mut screen = ChatScreen::new();
+        screen.input = "hello".to_string();
+        screen.cursor = 3;
+
+        let (line, col) = screen.cursor_line_col();
+        assert_eq!(line, 0);
+        assert_eq!(col, 3);
+    }
+
+    #[test]
+    fn test_cursor_line_col_multiline() {
+        let mut screen = ChatScreen::new();
+        screen.input = "hello\nworld".to_string();
+        screen.cursor = 8; // 'r' in "world"
+
+        let (line, col) = screen.cursor_line_col();
+        assert_eq!(line, 1);
+        assert_eq!(col, 2);
+    }
+
+    #[test]
+    fn test_cursor_line_col_at_newline() {
+        let mut screen = ChatScreen::new();
+        screen.input = "hello\nworld".to_string();
+        screen.cursor = 6; // Right after newline, at 'w'
+
+        let (line, col) = screen.cursor_line_col();
+        assert_eq!(line, 1);
+        assert_eq!(col, 0);
+    }
+
+    #[test]
+    fn test_cursor_up() {
+        let mut screen = ChatScreen::new();
+        screen.input = "hello\nworld".to_string();
+        screen.cursor = 8; // 'r' in "world"
+
+        screen.cursor_up();
+
+        let (line, _col) = screen.cursor_line_col();
+        assert_eq!(line, 0);
+        // Column should be preserved (2), so cursor at 'l' in "hello"
+    }
+
+    #[test]
+    fn test_cursor_up_at_first_line() {
+        let mut screen = ChatScreen::new();
+        screen.input = "hello".to_string();
+        screen.cursor = 3;
+
+        screen.cursor_up();
+
+        // Should stay on first line
+        let (line, _) = screen.cursor_line_col();
+        assert_eq!(line, 0);
+    }
+
+    #[test]
+    fn test_cursor_down() {
+        let mut screen = ChatScreen::new();
+        screen.input = "hello\nworld".to_string();
+        screen.cursor = 2; // 'l' in "hello"
+
+        screen.cursor_down();
+
+        let (line, _) = screen.cursor_line_col();
+        assert_eq!(line, 1);
+    }
+
+    #[test]
+    fn test_cursor_down_at_last_line() {
+        let mut screen = ChatScreen::new();
+        screen.input = "hello".to_string();
+        screen.cursor = 3;
+
+        screen.cursor_down();
+
+        // Should stay on last line
+        let (line, _) = screen.cursor_line_col();
+        assert_eq!(line, 0);
+    }
+
+    #[test]
+    fn test_cursor_line_start() {
+        let mut screen = ChatScreen::new();
+        screen.input = "hello\nworld".to_string();
+        screen.cursor = 8; // 'r' in "world"
+
+        screen.cursor_line_start();
+
+        let (line, col) = screen.cursor_line_col();
+        assert_eq!(line, 1);
+        assert_eq!(col, 0);
+    }
+
+    #[test]
+    fn test_cursor_line_end() {
+        let mut screen = ChatScreen::new();
+        screen.input = "hello\nworld".to_string();
+        screen.cursor = 6; // 'w' in "world"
+
+        screen.cursor_line_end();
+
+        let (line, col) = screen.cursor_line_col();
+        assert_eq!(line, 1);
+        assert_eq!(col, 5); // End of "world"
+    }
+
+    #[test]
+    fn test_input_line_count() {
+        let mut screen = ChatScreen::new();
+
+        screen.input = "hello".to_string();
+        assert_eq!(screen.input_line_count(), 1);
+
+        screen.input = "hello\nworld".to_string();
+        assert_eq!(screen.input_line_count(), 2);
+
+        screen.input = "a\nb\nc\nd".to_string();
+        assert_eq!(screen.input_line_count(), 4);
+    }
+
+    #[test]
+    fn test_line_start_offset() {
+        let mut screen = ChatScreen::new();
+        screen.input = "hello\nworld\ntest".to_string();
+
+        assert_eq!(screen.line_start_offset(0), 0);
+        assert_eq!(screen.line_start_offset(1), 6); // After "hello\n"
+        assert_eq!(screen.line_start_offset(2), 12); // After "hello\nworld\n"
+    }
+
+    #[test]
+    fn test_line_end_offset() {
+        let mut screen = ChatScreen::new();
+        screen.input = "hello\nworld\ntest".to_string();
+
+        assert_eq!(screen.line_end_offset(0), 5); // Before first \n
+        assert_eq!(screen.line_end_offset(1), 11); // Before second \n
+        assert_eq!(screen.line_end_offset(2), 16); // End of string
+    }
+
+    // ========================================================================
+    // Key Handling Tests - Normal Mode
+    // ========================================================================
+
+    #[test]
+    fn test_handle_key_normal_mode_quit() {
+        let mut screen = ChatScreen::new();
+        let key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
+
+        let action = screen.handle_key(key, 0);
+        assert!(matches!(action, Some(Action::Quit)));
+    }
+
+    #[test]
+    fn test_handle_key_normal_mode_enter_insert() {
+        let mut screen = ChatScreen::new();
+        let key = KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE);
+
+        let _ = screen.handle_key(key, 0);
+        assert_eq!(screen.mode, ChatMode::Insert);
+    }
+
+    #[test]
+    fn test_handle_key_normal_mode_show_rooms() {
+        let mut screen = ChatScreen::new();
+        let key = KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE);
+
+        let action = screen.handle_key(key, 0);
+        assert!(matches!(action, Some(Action::ShowRooms)));
+    }
+
+    #[test]
+    fn test_handle_key_normal_mode_reconnect() {
+        let mut screen = ChatScreen::new();
+        let key = KeyEvent::new(KeyCode::Char('R'), KeyModifiers::NONE);
+
+        let action = screen.handle_key(key, 0);
+        assert!(matches!(action, Some(Action::Reconnect)));
+    }
+
+    #[test]
+    fn test_handle_key_normal_mode_help() {
+        let mut screen = ChatScreen::new();
+        let key = KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE);
+
+        let action = screen.handle_key(key, 0);
+        assert!(matches!(action, Some(Action::ShowHelp)));
+    }
+
+    #[test]
+    fn test_handle_key_normal_mode_scroll_down() {
+        let mut screen = ChatScreen::new();
+        let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+
+        let _ = screen.handle_key(key, 0);
+        assert_eq!(screen.scroll, 1);
+    }
+
+    #[test]
+    fn test_handle_key_normal_mode_scroll_up() {
+        let mut screen = ChatScreen::new();
+        screen.scroll = 5;
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE);
+
+        let _ = screen.handle_key(key, 0);
+        assert_eq!(screen.scroll, 4);
+    }
+
+    #[test]
+    fn test_handle_key_normal_mode_tab_switches_focus() {
+        let mut screen = ChatScreen::new();
+        assert_eq!(screen.focus, ChatFocus::Messages);
+
+        let key = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+        let _ = screen.handle_key(key, 5); // 5 users
+
+        assert_eq!(screen.focus, ChatFocus::Users);
+        assert_eq!(screen.user_list_state.selected(), Some(0));
+    }
+
+    // ========================================================================
+    // Key Handling Tests - Insert Mode
+    // ========================================================================
+
+    #[test]
+    fn test_handle_key_insert_mode_esc_exits() {
+        let mut screen = ChatScreen::new();
+        screen.mode = ChatMode::Insert;
+        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+
+        let _ = screen.handle_key(key, 0);
+        assert_eq!(screen.mode, ChatMode::Normal);
+    }
+
+    #[test]
+    fn test_handle_key_insert_mode_char_input() {
+        let mut screen = ChatScreen::new();
+        screen.mode = ChatMode::Insert;
+        let key = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
+
+        let _ = screen.handle_key(key, 0);
+        assert_eq!(screen.input, "a");
+        assert_eq!(screen.cursor, 1);
+    }
+
+    #[test]
+    fn test_handle_key_insert_mode_backspace() {
+        let mut screen = ChatScreen::new();
+        screen.mode = ChatMode::Insert;
+        screen.input = "hello".to_string();
+        screen.cursor = 5;
+
+        let key = KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE);
+        let _ = screen.handle_key(key, 0);
+
+        assert_eq!(screen.input, "hell");
+        assert_eq!(screen.cursor, 4);
+    }
+
+    #[test]
+    fn test_handle_key_insert_mode_delete() {
+        let mut screen = ChatScreen::new();
+        screen.mode = ChatMode::Insert;
+        screen.input = "hello".to_string();
+        screen.cursor = 2;
+
+        let key = KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE);
+        let _ = screen.handle_key(key, 0);
+
+        assert_eq!(screen.input, "helo");
+    }
+
+    #[test]
+    fn test_handle_key_insert_mode_enter_sends_message() {
+        let mut screen = ChatScreen::new();
+        screen.mode = ChatMode::Insert;
+        screen.input = "hello".to_string();
+        screen.cursor = 5;
+
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let action = screen.handle_key(key, 0);
+
+        assert!(matches!(action, Some(Action::SendMessage(msg)) if msg == "hello"));
+        assert!(screen.input.is_empty());
+        assert_eq!(screen.cursor, 0);
+    }
+
+    #[test]
+    fn test_handle_key_insert_mode_alt_enter_newline() {
+        let mut screen = ChatScreen::new();
+        screen.mode = ChatMode::Insert;
+        screen.input = "hello".to_string();
+        screen.cursor = 5;
+
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT);
+        let _ = screen.handle_key(key, 0);
+
+        assert_eq!(screen.input, "hello\n");
+        assert_eq!(screen.cursor, 6);
+    }
+
+    #[test]
+    fn test_handle_key_insert_mode_ctrl_c_exits() {
+        let mut screen = ChatScreen::new();
+        screen.mode = ChatMode::Insert;
+
+        let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        let _ = screen.handle_key(key, 0);
+
+        assert_eq!(screen.mode, ChatMode::Normal);
+    }
+
+    #[test]
+    fn test_handle_key_insert_mode_ctrl_a_line_start() {
+        let mut screen = ChatScreen::new();
+        screen.mode = ChatMode::Insert;
+        screen.input = "hello".to_string();
+        screen.cursor = 3;
+
+        let key = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL);
+        let _ = screen.handle_key(key, 0);
+
+        assert_eq!(screen.cursor, 0);
+    }
+
+    #[test]
+    fn test_handle_key_insert_mode_ctrl_e_line_end() {
+        let mut screen = ChatScreen::new();
+        screen.mode = ChatMode::Insert;
+        screen.input = "hello".to_string();
+        screen.cursor = 2;
+
+        let key = KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL);
+        let _ = screen.handle_key(key, 0);
+
+        assert_eq!(screen.cursor, 5);
+    }
+
+    #[test]
+    fn test_handle_key_insert_mode_ctrl_u_clear_to_start() {
+        let mut screen = ChatScreen::new();
+        screen.mode = ChatMode::Insert;
+        screen.input = "hello world".to_string();
+        screen.cursor = 6; // At 'w'
+
+        let key = KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL);
+        let _ = screen.handle_key(key, 0);
+
+        assert_eq!(screen.input, "world");
+        assert_eq!(screen.cursor, 0);
+    }
+
+    #[test]
+    fn test_handle_key_insert_mode_ctrl_k_clear_to_end() {
+        let mut screen = ChatScreen::new();
+        screen.mode = ChatMode::Insert;
+        screen.input = "hello world".to_string();
+        screen.cursor = 5; // At space
+
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+        let _ = screen.handle_key(key, 0);
+
+        assert_eq!(screen.input, "hello");
+    }
+
+    // ========================================================================
+    // Command Parsing Tests
+    // ========================================================================
+
+    #[test]
+    fn test_command_quit() {
+        let mut screen = ChatScreen::new();
+        screen.mode = ChatMode::Insert;
+        screen.input = "/quit".to_string();
+        screen.cursor = 5;
+
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let action = screen.handle_key(key, 0);
+
+        assert!(matches!(action, Some(Action::Quit)));
+    }
+
+    #[test]
+    fn test_command_rooms() {
+        let mut screen = ChatScreen::new();
+        screen.mode = ChatMode::Insert;
+        screen.input = "/rooms".to_string();
+        screen.cursor = 6;
+
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let action = screen.handle_key(key, 0);
+
+        assert!(matches!(action, Some(Action::ShowRooms)));
+    }
+
+    #[test]
+    fn test_command_help() {
+        let mut screen = ChatScreen::new();
+        screen.mode = ChatMode::Insert;
+        screen.input = "/help".to_string();
+        screen.cursor = 5;
+
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let action = screen.handle_key(key, 0);
+
+        assert!(matches!(action, Some(Action::ShowHelp)));
+    }
+
+    #[test]
+    fn test_command_dm() {
+        let mut screen = ChatScreen::new();
+        screen.mode = ChatMode::Insert;
+        screen.input = "/dm alice".to_string();
+        screen.cursor = 9;
+
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let action = screen.handle_key(key, 0);
+
+        assert!(matches!(action, Some(Action::StartDM(user)) if user == "alice"));
+    }
+
+    #[test]
+    fn test_command_create_room() {
+        let mut screen = ChatScreen::new();
+        screen.mode = ChatMode::Insert;
+        screen.input = "/create general".to_string();
+        screen.cursor = 15;
+
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let action = screen.handle_key(key, 0);
+
+        assert!(matches!(action, Some(Action::CreateRoom(name)) if name == "general"));
+    }
+
+    // ========================================================================
+    // Users Panel Key Handling Tests
+    // ========================================================================
+
+    #[test]
+    fn test_users_panel_navigation() {
+        let mut screen = ChatScreen::new();
+        screen.focus = ChatFocus::Users;
+        screen.user_list_state.select(Some(0));
+
+        // Move down
+        let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        let _ = screen.handle_key(key, 5);
+        assert_eq!(screen.user_list_state.selected(), Some(1));
+
+        // Move up
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE);
+        let _ = screen.handle_key(key, 5);
+        assert_eq!(screen.user_list_state.selected(), Some(0));
+    }
+
+    #[test]
+    fn test_users_panel_enter_starts_dm() {
+        let mut screen = ChatScreen::new();
+        screen.focus = ChatFocus::Users;
+        screen.user_list_state.select(Some(2));
+
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let action = screen.handle_key(key, 5);
+
+        assert!(matches!(action, Some(Action::StartDMByIndex(2))));
+    }
+
+    #[test]
+    fn test_users_panel_esc_returns_to_messages() {
+        let mut screen = ChatScreen::new();
+        screen.focus = ChatFocus::Users;
+
+        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        let _ = screen.handle_key(key, 5);
+
+        assert_eq!(screen.focus, ChatFocus::Messages);
+    }
+
+    // ========================================================================
+    // delete_word_before_cursor Tests
+    // ========================================================================
+
+    #[test]
+    fn test_delete_word_before_cursor() {
+        let mut screen = ChatScreen::new();
+        screen.input = "hello world".to_string();
+        screen.cursor = 11; // At end
+
+        screen.delete_word_before_cursor();
+
+        assert_eq!(screen.input, "hello ");
+        assert_eq!(screen.cursor, 6);
+    }
+
+    #[test]
+    fn test_delete_word_before_cursor_with_spaces() {
+        let mut screen = ChatScreen::new();
+        screen.input = "hello   world".to_string();
+        screen.cursor = 13; // At end
+
+        screen.delete_word_before_cursor();
+
+        // Should delete "world" and any leading spaces
+        assert!(screen.input.starts_with("hello"));
+    }
+
+    #[test]
+    fn test_delete_word_before_cursor_at_start() {
+        let mut screen = ChatScreen::new();
+        screen.input = "hello".to_string();
+        screen.cursor = 0;
+
+        screen.delete_word_before_cursor();
+
+        // Should do nothing
+        assert_eq!(screen.input, "hello");
+        assert_eq!(screen.cursor, 0);
+    }
+}

@@ -854,3 +854,956 @@ impl<S: Storage + 'static> CommandHandler<S> {
 fn error_to_info(error: &crate::Error) -> ErrorInfo {
     ErrorInfo::new(error.code(), error.to_string())
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::sqlite::SqliteStorage;
+    use crate::core::engine::ChatEngine;
+    use std::sync::Arc as StdArc;
+
+    /// Test JWT secret for tests.
+    const TEST_JWT_SECRET: &str = "test-jwt-secret-for-unit-tests-only";
+
+    /// Create a test engine with in-memory SQLite database.
+    async fn create_test_engine() -> StdArc<ChatEngine<SqliteStorage>> {
+        let storage = SqliteStorage::in_memory().await.unwrap();
+        let engine = ChatEngine::new(StdArc::new(storage), TEST_JWT_SECRET);
+        StdArc::new(engine)
+    }
+
+    /// Create a command handler for testing.
+    async fn create_test_handler() -> CommandHandler<SqliteStorage> {
+        let engine = create_test_engine().await;
+        CommandHandler::new(engine)
+    }
+
+    /// Register a test user and return their session ID (as SessionId) and user ID.
+    async fn register_user(
+        handler: &CommandHandler<SqliteStorage>,
+        username: &str,
+        email: &str,
+        password: &str,
+    ) -> (SessionId, UserId) {
+        let response = handler.handle_register(username, email, password).await;
+        match response {
+            ServerMessage::RegisterResponse {
+                success: true,
+                user: Some(user),
+                session: Some(session),
+                ..
+            } => {
+                // Parse the session ID string back to SessionId
+                let session_id = SessionId::parse(&session.id).unwrap();
+                (session_id, user.id)
+            }
+            other => panic!("Registration failed: {:?}", other),
+        }
+    }
+
+    // ========================================================================
+    // Authentication Tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_handle_register_success() {
+        let handler = create_test_handler().await;
+
+        let response = handler.handle_register("alice", "alice@example.com", "password123").await;
+
+        match response {
+            ServerMessage::RegisterResponse {
+                success,
+                user,
+                session,
+                token,
+                error,
+                ..
+            } => {
+                assert!(success);
+                assert!(user.is_some());
+                assert!(session.is_some());
+                assert!(token.is_some());
+                assert!(error.is_none());
+                assert_eq!(user.unwrap().username.as_str(), "alice");
+            }
+            _ => panic!("Expected RegisterResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_register_duplicate_username() {
+        let handler = create_test_handler().await;
+
+        // Register first user
+        let _ = handler.handle_register("alice", "alice1@example.com", "password123").await;
+
+        // Try to register with same username
+        let response = handler.handle_register("alice", "alice2@example.com", "password123").await;
+
+        match response {
+            ServerMessage::RegisterResponse { success, error, .. } => {
+                assert!(!success);
+                assert!(error.is_some());
+                assert_eq!(error.unwrap().code, "username_taken");
+            }
+            _ => panic!("Expected RegisterResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_register_invalid_email() {
+        let handler = create_test_handler().await;
+
+        let response = handler.handle_register("bob", "not-an-email", "password123").await;
+
+        match response {
+            ServerMessage::RegisterResponse { success, error, .. } => {
+                assert!(!success);
+                assert!(error.is_some());
+            }
+            _ => panic!("Expected RegisterResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_register_weak_password() {
+        let handler = create_test_handler().await;
+
+        let response = handler.handle_register("bob", "bob@example.com", "short").await;
+
+        match response {
+            ServerMessage::RegisterResponse { success, error, .. } => {
+                assert!(!success);
+                assert!(error.is_some());
+                assert_eq!(error.unwrap().code, "password_too_weak");
+            }
+            _ => panic!("Expected RegisterResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_login_success() {
+        let handler = create_test_handler().await;
+
+        // Register first
+        let _ = handler.handle_register("alice", "alice@example.com", "password123").await;
+
+        // Login
+        let response = handler.handle_login("alice", "password123").await;
+
+        match response {
+            ServerMessage::LoginResponse {
+                success,
+                user,
+                session,
+                token,
+                error,
+                ..
+            } => {
+                assert!(success);
+                assert!(user.is_some());
+                assert!(session.is_some());
+                assert!(token.is_some());
+                assert!(error.is_none());
+            }
+            _ => panic!("Expected LoginResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_login_invalid_credentials() {
+        let handler = create_test_handler().await;
+
+        // Register first
+        let _ = handler.handle_register("alice", "alice@example.com", "password123").await;
+
+        // Login with wrong password
+        let response = handler.handle_login("alice", "wrongpassword").await;
+
+        match response {
+            ServerMessage::LoginResponse { success, error, .. } => {
+                assert!(!success);
+                assert!(error.is_some());
+                assert_eq!(error.unwrap().code, "invalid_credentials");
+            }
+            _ => panic!("Expected LoginResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_login_user_not_found() {
+        let handler = create_test_handler().await;
+
+        let response = handler.handle_login("nonexistent", "password123").await;
+
+        match response {
+            ServerMessage::LoginResponse { success, error, .. } => {
+                assert!(!success);
+                assert!(error.is_some());
+            }
+            _ => panic!("Expected LoginResponse"),
+        }
+    }
+
+    // ========================================================================
+    // Room Tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_handle_create_room_success() {
+        let handler = create_test_handler().await;
+        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+
+        let response = handler.handle_create_room(
+            Some(session_id),
+            "general",
+            Some("General chat".to_string()),
+            None,
+        ).await;
+
+        match response {
+            ServerMessage::CreateRoomResponse {
+                success,
+                room,
+                error,
+                ..
+            } => {
+                assert!(success);
+                assert!(room.is_some());
+                assert!(error.is_none());
+                assert_eq!(room.unwrap().name.as_str(), "general");
+            }
+            _ => panic!("Expected CreateRoomResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_create_room_unauthorized() {
+        let handler = create_test_handler().await;
+
+        let response = handler.handle_create_room(
+            None, // No session
+            "general",
+            None,
+            None,
+        ).await;
+
+        match response {
+            ServerMessage::CreateRoomResponse { success, error, .. } => {
+                assert!(!success);
+                assert!(error.is_some());
+                assert_eq!(error.unwrap().code, "unauthorized");
+            }
+            _ => panic!("Expected CreateRoomResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_create_room_duplicate_name() {
+        let handler = create_test_handler().await;
+        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+
+        // Create first room
+        let _ = handler.handle_create_room(Some(session_id), "general", None, None).await;
+
+        // Try to create room with same name
+        let response = handler.handle_create_room(Some(session_id), "general", None, None).await;
+
+        match response {
+            ServerMessage::CreateRoomResponse { success, error, .. } => {
+                assert!(!success);
+                assert!(error.is_some());
+                assert_eq!(error.unwrap().code, "room_name_taken");
+            }
+            _ => panic!("Expected CreateRoomResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_join_room_success() {
+        let handler = create_test_handler().await;
+        let (alice_session, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+        let (bob_session, _) = register_user(&handler, "bob", "bob@example.com", "password123").await;
+
+        // Alice creates a room
+        let create_response = handler.handle_create_room(Some(alice_session), "general", None, None).await;
+        let room_id = match create_response {
+            ServerMessage::CreateRoomResponse { room: Some(room), .. } => room.id.to_string(),
+            _ => panic!("Room creation failed"),
+        };
+
+        // Bob joins the room
+        let response = handler.handle_join_room(Some(bob_session), &room_id).await;
+
+        match response {
+            ServerMessage::JoinRoomResponse {
+                success,
+                room,
+                membership,
+                error,
+                ..
+            } => {
+                assert!(success);
+                assert!(room.is_some());
+                assert!(membership.is_some());
+                assert!(error.is_none());
+            }
+            _ => panic!("Expected JoinRoomResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_join_room_unauthorized() {
+        let handler = create_test_handler().await;
+
+        let response = handler.handle_join_room(None, "some-room-id").await;
+
+        match response {
+            ServerMessage::JoinRoomResponse { success, error, .. } => {
+                assert!(!success);
+                assert!(error.is_some());
+                assert_eq!(error.unwrap().code, "unauthorized");
+            }
+            _ => panic!("Expected JoinRoomResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_join_room_invalid_id() {
+        let handler = create_test_handler().await;
+        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+
+        let response = handler.handle_join_room(Some(session_id), "not-a-uuid").await;
+
+        match response {
+            ServerMessage::JoinRoomResponse { success, error, .. } => {
+                assert!(!success);
+                assert!(error.is_some());
+                assert_eq!(error.unwrap().code, "validation_failed");
+            }
+            _ => panic!("Expected JoinRoomResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_leave_room_success() {
+        let handler = create_test_handler().await;
+        let (alice_session, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+        let (bob_session, _) = register_user(&handler, "bob", "bob@example.com", "password123").await;
+
+        // Alice creates a room
+        let create_response = handler.handle_create_room(Some(alice_session), "general", None, None).await;
+        let room_id = match create_response {
+            ServerMessage::CreateRoomResponse { room: Some(room), .. } => room.id.to_string(),
+            _ => panic!("Room creation failed"),
+        };
+
+        // Bob joins and then leaves
+        let _ = handler.handle_join_room(Some(bob_session), &room_id).await;
+        let response = handler.handle_leave_room(Some(bob_session), &room_id).await;
+
+        match response {
+            ServerMessage::LeaveRoomResponse { success, error, .. } => {
+                assert!(success);
+                assert!(error.is_none());
+            }
+            _ => panic!("Expected LeaveRoomResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_leave_room_unauthorized() {
+        let handler = create_test_handler().await;
+
+        let response = handler.handle_leave_room(None, "some-room-id").await;
+
+        match response {
+            ServerMessage::LeaveRoomResponse { success, error, .. } => {
+                assert!(!success);
+                assert!(error.is_some());
+                assert_eq!(error.unwrap().code, "unauthorized");
+            }
+            _ => panic!("Expected LeaveRoomResponse"),
+        }
+    }
+
+    // ========================================================================
+    // Messaging Tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_handle_send_message_success() {
+        let handler = create_test_handler().await;
+        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+
+        // Create a room first
+        let create_response = handler.handle_create_room(Some(session_id), "general", None, None).await;
+        let room_id = match create_response {
+            ServerMessage::CreateRoomResponse { room: Some(room), .. } => room.id,
+            _ => panic!("Room creation failed"),
+        };
+
+        let target = MessageTarget::Room { room_id };
+        let response = handler.handle_send_message(Some(session_id), &target, "Hello, world!").await;
+
+        match response {
+            ServerMessage::SendMessageResponse {
+                success,
+                message,
+                error,
+                ..
+            } => {
+                assert!(success);
+                assert!(message.is_some());
+                assert!(error.is_none());
+                assert_eq!(message.unwrap().content.as_str(), "Hello, world!");
+            }
+            _ => panic!("Expected SendMessageResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_send_message_unauthorized() {
+        let handler = create_test_handler().await;
+
+        let target = MessageTarget::Room { room_id: RoomId::new() };
+        let response = handler.handle_send_message(None, &target, "Hello").await;
+
+        match response {
+            ServerMessage::SendMessageResponse { success, error, .. } => {
+                assert!(!success);
+                assert!(error.is_some());
+                assert_eq!(error.unwrap().code, "unauthorized");
+            }
+            _ => panic!("Expected SendMessageResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_messages_success() {
+        let handler = create_test_handler().await;
+        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+
+        // Create a room and send a message
+        let create_response = handler.handle_create_room(Some(session_id), "general", None, None).await;
+        let room_id = match create_response {
+            ServerMessage::CreateRoomResponse { room: Some(room), .. } => room.id,
+            _ => panic!("Room creation failed"),
+        };
+
+        let target = MessageTarget::Room { room_id };
+        let _ = handler.handle_send_message(Some(session_id), &target, "Hello!").await;
+
+        // Get messages
+        let response = handler.handle_get_messages(Some(session_id), &target, 50, None).await;
+
+        match response {
+            ServerMessage::GetMessagesResponse {
+                success,
+                messages,
+                error,
+                ..
+            } => {
+                assert!(success);
+                assert!(messages.is_some());
+                assert!(error.is_none());
+                assert!(!messages.unwrap().is_empty());
+            }
+            _ => panic!("Expected GetMessagesResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_messages_unauthorized() {
+        let handler = create_test_handler().await;
+
+        let target = MessageTarget::Room { room_id: RoomId::new() };
+        let response = handler.handle_get_messages(None, &target, 50, None).await;
+
+        match response {
+            ServerMessage::GetMessagesResponse { success, error, .. } => {
+                assert!(!success);
+                assert!(error.is_some());
+                assert_eq!(error.unwrap().code, "unauthorized");
+            }
+            _ => panic!("Expected GetMessagesResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_edit_message_success() {
+        let handler = create_test_handler().await;
+        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+
+        // Create a room and send a message
+        let create_response = handler.handle_create_room(Some(session_id), "general", None, None).await;
+        let room_id = match create_response {
+            ServerMessage::CreateRoomResponse { room: Some(room), .. } => room.id,
+            _ => panic!("Room creation failed"),
+        };
+
+        let target = MessageTarget::Room { room_id };
+        let send_response = handler.handle_send_message(Some(session_id), &target, "Hello!").await;
+        let message_id = match send_response {
+            ServerMessage::SendMessageResponse { message: Some(msg), .. } => msg.id.to_string(),
+            _ => panic!("Send message failed"),
+        };
+
+        // Edit the message
+        let response = handler.handle_edit_message(Some(session_id), &message_id, "Hello, edited!").await;
+
+        match response {
+            ServerMessage::EditMessageResponse {
+                success,
+                message,
+                error,
+                ..
+            } => {
+                assert!(success);
+                assert!(message.is_some());
+                assert!(error.is_none());
+                assert_eq!(message.unwrap().content.as_str(), "Hello, edited!");
+            }
+            _ => panic!("Expected EditMessageResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_edit_message_unauthorized() {
+        let handler = create_test_handler().await;
+
+        let response = handler.handle_edit_message(None, "some-id", "Hello").await;
+
+        match response {
+            ServerMessage::EditMessageResponse { success, error, .. } => {
+                assert!(!success);
+                assert!(error.is_some());
+                assert_eq!(error.unwrap().code, "unauthorized");
+            }
+            _ => panic!("Expected EditMessageResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_edit_message_invalid_id() {
+        let handler = create_test_handler().await;
+        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+
+        let response = handler.handle_edit_message(Some(session_id), "not-a-uuid", "Hello").await;
+
+        match response {
+            ServerMessage::EditMessageResponse { success, error, .. } => {
+                assert!(!success);
+                assert!(error.is_some());
+                assert_eq!(error.unwrap().code, "invalid_id");
+            }
+            _ => panic!("Expected EditMessageResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_delete_message_success() {
+        let handler = create_test_handler().await;
+        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+
+        // Create a room and send a message
+        let create_response = handler.handle_create_room(Some(session_id), "general", None, None).await;
+        let room_id = match create_response {
+            ServerMessage::CreateRoomResponse { room: Some(room), .. } => room.id,
+            _ => panic!("Room creation failed"),
+        };
+
+        let target = MessageTarget::Room { room_id };
+        let send_response = handler.handle_send_message(Some(session_id), &target, "Hello!").await;
+        let message_id = match send_response {
+            ServerMessage::SendMessageResponse { message: Some(msg), .. } => msg.id.to_string(),
+            _ => panic!("Send message failed"),
+        };
+
+        // Delete the message
+        let response = handler.handle_delete_message(Some(session_id), &message_id).await;
+
+        match response {
+            ServerMessage::DeleteMessageResponse { success, error, .. } => {
+                assert!(success);
+                assert!(error.is_none());
+            }
+            _ => panic!("Expected DeleteMessageResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_delete_message_unauthorized() {
+        let handler = create_test_handler().await;
+
+        let response = handler.handle_delete_message(None, "some-id").await;
+
+        match response {
+            ServerMessage::DeleteMessageResponse { success, error, .. } => {
+                assert!(!success);
+                assert!(error.is_some());
+                assert_eq!(error.unwrap().code, "unauthorized");
+            }
+            _ => panic!("Expected DeleteMessageResponse"),
+        }
+    }
+
+    // ========================================================================
+    // Room Listing Tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_handle_list_rooms_empty() {
+        let handler = create_test_handler().await;
+
+        // List rooms without authentication (public rooms only)
+        let response = handler.handle_list_rooms(None, None, 50, 0).await;
+
+        match response {
+            ServerMessage::ListRoomsResponse {
+                success,
+                rooms,
+                total_count,
+                ..
+            } => {
+                assert!(success);
+                assert!(rooms.is_some());
+                assert_eq!(rooms.unwrap().len(), 0);
+                assert_eq!(total_count, 0);
+            }
+            _ => panic!("Expected ListRoomsResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_list_rooms_with_rooms() {
+        let handler = create_test_handler().await;
+        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+
+        // Create some rooms
+        let _ = handler.handle_create_room(Some(session_id), "general", None, None).await;
+        let _ = handler.handle_create_room(Some(session_id), "random", None, None).await;
+
+        // List all rooms
+        let response = handler.handle_list_rooms(Some(session_id), None, 50, 0).await;
+
+        match response {
+            ServerMessage::ListRoomsResponse {
+                success,
+                rooms,
+                ..
+            } => {
+                assert!(success);
+                assert!(rooms.is_some());
+                assert_eq!(rooms.unwrap().len(), 2);
+            }
+            _ => panic!("Expected ListRoomsResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_list_rooms_joined_only() {
+        let handler = create_test_handler().await;
+        let (alice_session, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+        let (bob_session, _) = register_user(&handler, "bob", "bob@example.com", "password123").await;
+
+        // Alice creates rooms
+        let _ = handler.handle_create_room(Some(alice_session), "general", None, None).await;
+        let _ = handler.handle_create_room(Some(alice_session), "random", None, None).await;
+
+        // Bob lists only joined rooms (should be empty)
+        let filter = RoomFilter { joined_only: true, ..Default::default() };
+        let response = handler.handle_list_rooms(Some(bob_session), Some(filter), 50, 0).await;
+
+        match response {
+            ServerMessage::ListRoomsResponse {
+                success,
+                rooms,
+                ..
+            } => {
+                assert!(success);
+                assert!(rooms.is_some());
+                // Bob hasn't joined any rooms yet
+                assert_eq!(rooms.unwrap().len(), 0);
+            }
+            _ => panic!("Expected ListRoomsResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_list_rooms_joined_only_unauthorized() {
+        let handler = create_test_handler().await;
+
+        let filter = RoomFilter { joined_only: true, ..Default::default() };
+        let response = handler.handle_list_rooms(None, Some(filter), 50, 0).await;
+
+        match response {
+            ServerMessage::ListRoomsResponse { success, error, .. } => {
+                assert!(!success);
+                assert!(error.is_some());
+                assert_eq!(error.unwrap().code, "unauthorized");
+            }
+            _ => panic!("Expected ListRoomsResponse"),
+        }
+    }
+
+    // ========================================================================
+    // User Listing Tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_handle_list_users() {
+        let handler = create_test_handler().await;
+
+        // Register some users
+        let _ = register_user(&handler, "alice", "alice@example.com", "password123").await;
+        let _ = register_user(&handler, "bob", "bob@example.com", "password123").await;
+
+        let response = handler.handle_list_users(None, 50, 0).await;
+
+        match response {
+            ServerMessage::ListUsersResponse {
+                success,
+                users,
+                ..
+            } => {
+                assert!(success);
+                assert!(users.is_some());
+                assert_eq!(users.unwrap().len(), 2);
+            }
+            _ => panic!("Expected ListUsersResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_user_success() {
+        let handler = create_test_handler().await;
+        let (_, alice_id) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+
+        let response = handler.handle_get_user(&alice_id.to_string()).await;
+
+        match response {
+            ServerMessage::GetUserResponse {
+                success,
+                user,
+                error,
+                ..
+            } => {
+                assert!(success);
+                assert!(user.is_some());
+                assert!(error.is_none());
+                assert_eq!(user.unwrap().username.as_str(), "alice");
+            }
+            _ => panic!("Expected GetUserResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_user_not_found() {
+        let handler = create_test_handler().await;
+
+        let fake_id = UserId::new();
+        let response = handler.handle_get_user(&fake_id.to_string()).await;
+
+        match response {
+            ServerMessage::GetUserResponse { success, error, .. } => {
+                assert!(!success);
+                assert!(error.is_some());
+                assert_eq!(error.unwrap().code, "not_found");
+            }
+            _ => panic!("Expected GetUserResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_user_invalid_id() {
+        let handler = create_test_handler().await;
+
+        let response = handler.handle_get_user("not-a-uuid").await;
+
+        match response {
+            ServerMessage::GetUserResponse { success, error, .. } => {
+                assert!(!success);
+                assert!(error.is_some());
+                assert_eq!(error.unwrap().code, "validation_failed");
+            }
+            _ => panic!("Expected GetUserResponse"),
+        }
+    }
+
+    // ========================================================================
+    // Invitation Tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_handle_list_invitations_unauthorized() {
+        let handler = create_test_handler().await;
+
+        let response = handler.handle_list_invitations(None).await;
+
+        match response {
+            ServerMessage::ListInvitationsResponse { success, error, .. } => {
+                assert!(!success);
+                assert!(error.is_some());
+                assert_eq!(error.unwrap().code, "unauthorized");
+            }
+            _ => panic!("Expected ListInvitationsResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_list_invitations_empty() {
+        let handler = create_test_handler().await;
+        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+
+        let response = handler.handle_list_invitations(Some(session_id)).await;
+
+        match response {
+            ServerMessage::ListInvitationsResponse {
+                success,
+                invitations,
+                ..
+            } => {
+                assert!(success);
+                assert!(invitations.is_some());
+                assert!(invitations.unwrap().is_empty());
+            }
+            _ => panic!("Expected ListInvitationsResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_accept_invitation_invalid_id() {
+        let handler = create_test_handler().await;
+        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+
+        let response = handler.handle_accept_invitation(Some(session_id), "not-a-uuid").await;
+
+        match response {
+            ServerMessage::AcceptInvitationResponse { success, error, .. } => {
+                assert!(!success);
+                assert!(error.is_some());
+                assert_eq!(error.unwrap().code, "validation_failed");
+            }
+            _ => panic!("Expected AcceptInvitationResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_decline_invitation_invalid_id() {
+        let handler = create_test_handler().await;
+        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+
+        let response = handler.handle_decline_invitation(Some(session_id), "not-a-uuid").await;
+
+        match response {
+            ServerMessage::DeclineInvitationResponse { success, error, .. } => {
+                assert!(!success);
+                assert!(error.is_some());
+                assert_eq!(error.unwrap().code, "validation_failed");
+            }
+            _ => panic!("Expected DeclineInvitationResponse"),
+        }
+    }
+
+    // ========================================================================
+    // Room Details Tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_handle_get_room_success() {
+        let handler = create_test_handler().await;
+        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+
+        // Create a room
+        let create_response = handler.handle_create_room(Some(session_id), "general", None, None).await;
+        let room_id = match create_response {
+            ServerMessage::CreateRoomResponse { room: Some(room), .. } => room.id.to_string(),
+            _ => panic!("Room creation failed"),
+        };
+
+        // Get room details
+        let response = handler.handle_get_room(Some(session_id), &room_id).await;
+
+        match response {
+            ServerMessage::GetRoomResponse {
+                success,
+                room,
+                member_count,
+                error,
+                ..
+            } => {
+                assert!(success);
+                assert!(room.is_some());
+                assert!(error.is_none());
+                assert_eq!(member_count, 1); // Only the creator
+                assert_eq!(room.unwrap().name.as_str(), "general");
+            }
+            _ => panic!("Expected GetRoomResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_room_not_found() {
+        let handler = create_test_handler().await;
+        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+
+        let fake_id = RoomId::new();
+        let response = handler.handle_get_room(Some(session_id), &fake_id.to_string()).await;
+
+        match response {
+            ServerMessage::GetRoomResponse { success, error, .. } => {
+                assert!(!success);
+                assert!(error.is_some());
+                assert_eq!(error.unwrap().code, "not_found");
+            }
+            _ => panic!("Expected GetRoomResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_room_invalid_id() {
+        let handler = create_test_handler().await;
+
+        let response = handler.handle_get_room(None, "not-a-uuid").await;
+
+        match response {
+            ServerMessage::GetRoomResponse { success, error, .. } => {
+                assert!(!success);
+                assert!(error.is_some());
+                assert_eq!(error.unwrap().code, "validation_failed");
+            }
+            _ => panic!("Expected GetRoomResponse"),
+        }
+    }
+
+    // ========================================================================
+    // Error Conversion Tests
+    // ========================================================================
+
+    #[test]
+    fn test_error_to_info() {
+        let error = crate::Error::InvalidCredentials;
+        let info = error_to_info(&error);
+
+        assert_eq!(info.code, "invalid_credentials");
+        assert!(!info.message.is_empty());
+    }
+
+    #[test]
+    fn test_error_to_info_with_details() {
+        let error = crate::Error::ValidationFailed {
+            field: "email".to_string(),
+            reason: "invalid format".to_string(),
+        };
+        let info = error_to_info(&error);
+
+        assert_eq!(info.code, "validation_failed");
+        assert!(info.message.contains("email"));
+    }
+}

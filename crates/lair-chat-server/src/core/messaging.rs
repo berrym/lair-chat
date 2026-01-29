@@ -249,3 +249,378 @@ impl<S: Storage + 'static> MessagingService<S> {
         MessageRepository::find_direct_messages(&*self.storage, user1, user2, pagination).await
     }
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::room::{RoomMembership, RoomName};
+    use crate::domain::user::{Email, Role, Username};
+    use crate::domain::{Room, RoomSettings, User};
+    use crate::storage::sqlite::SqliteStorage;
+    use crate::storage::{MembershipRepository, RoomRepository, UserRepository};
+
+    async fn create_test_storage() -> Arc<SqliteStorage> {
+        Arc::new(SqliteStorage::in_memory().await.unwrap())
+    }
+
+    async fn create_test_user(storage: &SqliteStorage, username: &str, email: &str) -> User {
+        let username = Username::new(username).unwrap();
+        let email = Email::new(email).unwrap();
+        let user = User::new(username, email, Role::User);
+        UserRepository::create(storage, &user, "hashed_password").await.unwrap();
+        user
+    }
+
+    async fn create_test_room(storage: &SqliteStorage, owner_id: UserId, name: &str) -> Room {
+        let room_name = RoomName::new(name).unwrap();
+        let room = Room::new(room_name, owner_id, RoomSettings::default());
+        RoomRepository::create(storage, &room).await.unwrap();
+
+        // Add owner as member
+        let membership = RoomMembership::as_owner(room.id, owner_id);
+        MembershipRepository::add_member(storage, &membership).await.unwrap();
+
+        room
+    }
+
+    fn create_messaging_service(storage: Arc<SqliteStorage>) -> MessagingService<SqliteStorage> {
+        let events = EventDispatcher::new();
+        MessagingService::new(storage, events)
+    }
+
+    // ========================================================================
+    // Send message tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_send_room_message_success() {
+        let storage = create_test_storage().await;
+        let user = create_test_user(&storage, "sender", "sender@test.com").await;
+        let room = create_test_room(&storage, user.id, "testroom").await;
+        let service = create_messaging_service(storage);
+
+        let target = MessageTarget::Room { room_id: room.id };
+        let result = service.send(user.id, target, "Hello, world!").await;
+
+        assert!(result.is_ok());
+        let message = result.unwrap();
+        assert_eq!(message.content.as_str(), "Hello, world!");
+        assert_eq!(message.author, user.id);
+    }
+
+    #[tokio::test]
+    async fn test_send_dm_success() {
+        let storage = create_test_storage().await;
+        let sender = create_test_user(&storage, "dmsender", "dmsender@test.com").await;
+        let recipient = create_test_user(&storage, "dmrecipient", "dmrecipient@test.com").await;
+        let service = create_messaging_service(storage);
+
+        let target = MessageTarget::DirectMessage {
+            recipient: recipient.id,
+        };
+        let result = service.send(sender.id, target, "Hello DM!").await;
+
+        assert!(result.is_ok());
+        let message = result.unwrap();
+        assert_eq!(message.content.as_str(), "Hello DM!");
+    }
+
+    #[tokio::test]
+    async fn test_send_message_empty_content() {
+        let storage = create_test_storage().await;
+        let user = create_test_user(&storage, "emptyuser", "empty@test.com").await;
+        let room = create_test_room(&storage, user.id, "emptyroom").await;
+        let service = create_messaging_service(storage);
+
+        let target = MessageTarget::Room { room_id: room.id };
+        let result = service.send(user.id, target, "").await;
+
+        assert!(matches!(result, Err(Error::ContentInvalid { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_send_room_message_not_member() {
+        let storage = create_test_storage().await;
+        let owner = create_test_user(&storage, "owner", "owner@test.com").await;
+        let non_member = create_test_user(&storage, "nonmember", "nonmember@test.com").await;
+        let room = create_test_room(&storage, owner.id, "privateroom").await;
+        let service = create_messaging_service(storage);
+
+        let target = MessageTarget::Room { room_id: room.id };
+        let result = service.send(non_member.id, target, "Hello").await;
+
+        assert!(matches!(result, Err(Error::NotRoomMember)));
+    }
+
+    #[tokio::test]
+    async fn test_send_dm_recipient_not_found() {
+        let storage = create_test_storage().await;
+        let sender = create_test_user(&storage, "lonelysender", "lonely@test.com").await;
+        let service = create_messaging_service(storage);
+
+        let target = MessageTarget::DirectMessage {
+            recipient: UserId::new(),
+        };
+        let result = service.send(sender.id, target, "Hello?").await;
+
+        assert!(matches!(result, Err(Error::UserNotFound)));
+    }
+
+    // ========================================================================
+    // Edit message tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_edit_message_success() {
+        let storage = create_test_storage().await;
+        let user = create_test_user(&storage, "editor", "editor@test.com").await;
+        let room = create_test_room(&storage, user.id, "editroom").await;
+        let service = create_messaging_service(storage);
+
+        let target = MessageTarget::Room { room_id: room.id };
+        let message = service.send(user.id, target, "Original content").await.unwrap();
+
+        let result = service.edit(user.id, message.id, "Edited content").await;
+
+        assert!(result.is_ok());
+        let edited = result.unwrap();
+        assert_eq!(edited.content.as_str(), "Edited content");
+        assert!(edited.is_edited);
+    }
+
+    #[tokio::test]
+    async fn test_edit_message_not_author() {
+        let storage = create_test_storage().await;
+        let author = create_test_user(&storage, "msgauthor", "author@test.com").await;
+        let other = create_test_user(&storage, "otheruser", "other@test.com").await;
+        let room = create_test_room(&storage, author.id, "authroom").await;
+        let service = create_messaging_service(storage);
+
+        let target = MessageTarget::Room { room_id: room.id };
+        let message = service.send(author.id, target, "My message").await.unwrap();
+
+        let result = service.edit(other.id, message.id, "Hacked!").await;
+
+        assert!(matches!(result, Err(Error::NotMessageAuthor)));
+    }
+
+    #[tokio::test]
+    async fn test_edit_message_not_found() {
+        let storage = create_test_storage().await;
+        let user = create_test_user(&storage, "editfail", "editfail@test.com").await;
+        let service = create_messaging_service(storage);
+
+        let result = service.edit(user.id, MessageId::new(), "New content").await;
+
+        assert!(matches!(result, Err(Error::MessageNotFound)));
+    }
+
+    #[tokio::test]
+    async fn test_edit_message_empty_content() {
+        let storage = create_test_storage().await;
+        let user = create_test_user(&storage, "emptyeditor", "emptyeditor@test.com").await;
+        let room = create_test_room(&storage, user.id, "emptyeditroom").await;
+        let service = create_messaging_service(storage);
+
+        let target = MessageTarget::Room { room_id: room.id };
+        let message = service.send(user.id, target, "Original").await.unwrap();
+
+        let result = service.edit(user.id, message.id, "").await;
+
+        assert!(matches!(result, Err(Error::ContentInvalid { .. })));
+    }
+
+    // ========================================================================
+    // Delete message tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_delete_message_as_author() {
+        let storage = create_test_storage().await;
+        let user = create_test_user(&storage, "deleter", "deleter@test.com").await;
+        let room = create_test_room(&storage, user.id, "delroom").await;
+        let service = create_messaging_service(storage);
+
+        let target = MessageTarget::Room { room_id: room.id };
+        let message = service.send(user.id, target, "To delete").await.unwrap();
+
+        let result = service.delete(user.id, message.id).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_delete_message_not_author_not_moderator() {
+        let storage = create_test_storage().await;
+        let author = create_test_user(&storage, "delauthor", "delauthor@test.com").await;
+        let other = create_test_user(&storage, "delother", "delother@test.com").await;
+        let room = create_test_room(&storage, author.id, "delroom2").await;
+        let service = create_messaging_service(storage);
+
+        let target = MessageTarget::Room { room_id: room.id };
+        let message = service.send(author.id, target, "Protected").await.unwrap();
+
+        let result = service.delete(other.id, message.id).await;
+
+        assert!(matches!(result, Err(Error::PermissionDenied)));
+    }
+
+    #[tokio::test]
+    async fn test_delete_message_not_found() {
+        let storage = create_test_storage().await;
+        let user = create_test_user(&storage, "delfail", "delfail@test.com").await;
+        let service = create_messaging_service(storage);
+
+        let result = service.delete(user.id, MessageId::new()).await;
+
+        assert!(matches!(result, Err(Error::MessageNotFound)));
+    }
+
+    #[tokio::test]
+    async fn test_delete_dm_not_author() {
+        let storage = create_test_storage().await;
+        let sender = create_test_user(&storage, "dmdelsender", "dmdel@test.com").await;
+        let recipient = create_test_user(&storage, "dmdelrecip", "dmdelrecip@test.com").await;
+        let service = create_messaging_service(storage);
+
+        let target = MessageTarget::DirectMessage {
+            recipient: recipient.id,
+        };
+        let message = service.send(sender.id, target, "Private").await.unwrap();
+
+        // Recipient should not be able to delete sender's message
+        let result = service.delete(recipient.id, message.id).await;
+
+        assert!(matches!(result, Err(Error::PermissionDenied)));
+    }
+
+    // ========================================================================
+    // Get messages tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_get_room_messages_success() {
+        let storage = create_test_storage().await;
+        let user = create_test_user(&storage, "getuser", "getuser@test.com").await;
+        let room = create_test_room(&storage, user.id, "getroom").await;
+        let service = create_messaging_service(storage);
+
+        let target = MessageTarget::Room { room_id: room.id };
+        service.send(user.id, target.clone(), "Message 1").await.unwrap();
+        service.send(user.id, target.clone(), "Message 2").await.unwrap();
+
+        let result = service.get_messages(user.id, target, Pagination::default()).await;
+
+        assert!(result.is_ok());
+        let messages = result.unwrap();
+        assert_eq!(messages.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_get_room_messages_not_member() {
+        let storage = create_test_storage().await;
+        let owner = create_test_user(&storage, "roomowner", "roomowner@test.com").await;
+        let outsider = create_test_user(&storage, "outsider", "outsider@test.com").await;
+        let room = create_test_room(&storage, owner.id, "secretroom").await;
+        let service = create_messaging_service(storage);
+
+        let target = MessageTarget::Room { room_id: room.id };
+        let result = service.get_messages(outsider.id, target, Pagination::default()).await;
+
+        assert!(matches!(result, Err(Error::NotRoomMember)));
+    }
+
+    #[tokio::test]
+    async fn test_get_direct_messages_success() {
+        let storage = create_test_storage().await;
+        let user1 = create_test_user(&storage, "dmuser1", "dmuser1@test.com").await;
+        let user2 = create_test_user(&storage, "dmuser2", "dmuser2@test.com").await;
+        let service = create_messaging_service(storage);
+
+        // User1 sends to User2
+        let target1 = MessageTarget::DirectMessage {
+            recipient: user2.id,
+        };
+        service.send(user1.id, target1, "Hi user2!").await.unwrap();
+
+        // User2 sends to User1
+        let target2 = MessageTarget::DirectMessage {
+            recipient: user1.id,
+        };
+        service.send(user2.id, target2, "Hi user1!").await.unwrap();
+
+        // Get messages from user1's perspective
+        let target = MessageTarget::DirectMessage {
+            recipient: user2.id,
+        };
+        let result = service.get_messages(user1.id, target, Pagination::default()).await;
+
+        assert!(result.is_ok());
+        let messages = result.unwrap();
+        assert_eq!(messages.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_get_dm_recipient_not_found() {
+        let storage = create_test_storage().await;
+        let user = create_test_user(&storage, "lonelyget", "lonelyget@test.com").await;
+        let service = create_messaging_service(storage);
+
+        let target = MessageTarget::DirectMessage {
+            recipient: UserId::new(),
+        };
+        let result = service.get_messages(user.id, target, Pagination::default()).await;
+
+        assert!(matches!(result, Err(Error::UserNotFound)));
+    }
+
+    // ========================================================================
+    // Get room messages (by room_id) tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_get_room_messages_by_room_id() {
+        let storage = create_test_storage().await;
+        let user = create_test_user(&storage, "roommsguser", "roommsg@test.com").await;
+        let room = create_test_room(&storage, user.id, "roommsgroom").await;
+        let service = create_messaging_service(storage);
+
+        let target = MessageTarget::Room { room_id: room.id };
+        service.send(user.id, target, "Test message").await.unwrap();
+
+        let result = service.get_room_messages(room.id, Pagination::default()).await;
+
+        assert!(result.is_ok());
+        let messages = result.unwrap();
+        assert_eq!(messages.len(), 1);
+    }
+
+    // ========================================================================
+    // Get direct messages (between users) tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_get_direct_messages_between_users() {
+        let storage = create_test_storage().await;
+        let user1 = create_test_user(&storage, "direct1", "direct1@test.com").await;
+        let user2 = create_test_user(&storage, "direct2", "direct2@test.com").await;
+        let service = create_messaging_service(storage);
+
+        let target = MessageTarget::DirectMessage {
+            recipient: user2.id,
+        };
+        service.send(user1.id, target, "Direct message").await.unwrap();
+
+        let result = service
+            .get_direct_messages(user1.id, user2.id, Pagination::default())
+            .await;
+
+        assert!(result.is_ok());
+        let messages = result.unwrap();
+        assert_eq!(messages.len(), 1);
+    }
+}

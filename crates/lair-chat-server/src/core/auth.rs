@@ -264,3 +264,432 @@ impl<S: Storage + 'static> AuthService<S> {
         Ok((user, session))
     }
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::sqlite::SqliteStorage;
+
+    const TEST_JWT_SECRET: &str = "test_secret_key_for_jwt_testing_32bytes!";
+
+    async fn create_test_storage() -> Arc<SqliteStorage> {
+        Arc::new(SqliteStorage::in_memory().await.unwrap())
+    }
+
+    fn create_auth_service(storage: Arc<SqliteStorage>) -> AuthService<SqliteStorage> {
+        AuthService::new(storage, TEST_JWT_SECRET)
+    }
+
+    // ========================================================================
+    // Password validation tests
+    // ========================================================================
+
+    #[test]
+    fn test_validate_password_success() {
+        let result = AuthService::<SqliteStorage>::validate_password("validpassword123");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_password_too_short() {
+        let result = AuthService::<SqliteStorage>::validate_password("short");
+        assert!(matches!(result, Err(Error::PasswordTooWeak { .. })));
+    }
+
+    #[test]
+    fn test_validate_password_exactly_8_chars() {
+        let result = AuthService::<SqliteStorage>::validate_password("exactly8");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_password_7_chars() {
+        let result = AuthService::<SqliteStorage>::validate_password("seven77");
+        assert!(matches!(result, Err(Error::PasswordTooWeak { .. })));
+    }
+
+    #[test]
+    fn test_hash_password_success() {
+        let result = AuthService::<SqliteStorage>::hash_password("testpassword");
+        assert!(result.is_ok());
+        let hash = result.unwrap();
+        assert!(!hash.is_empty());
+        assert!(hash.starts_with("$argon2"));
+    }
+
+    #[test]
+    fn test_hash_produces_different_hashes() {
+        let hash1 = AuthService::<SqliteStorage>::hash_password("testpassword").unwrap();
+        let hash2 = AuthService::<SqliteStorage>::hash_password("testpassword").unwrap();
+        // Same password should produce different hashes due to salt
+        assert_ne!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_verify_password_success() {
+        let hash = AuthService::<SqliteStorage>::hash_password("testpassword").unwrap();
+        let result = AuthService::<SqliteStorage>::verify_password("testpassword", &hash);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_verify_password_wrong_password() {
+        let hash = AuthService::<SqliteStorage>::hash_password("testpassword").unwrap();
+        let result = AuthService::<SqliteStorage>::verify_password("wrongpassword", &hash);
+        assert!(matches!(result, Err(Error::InvalidCredentials)));
+    }
+
+    // ========================================================================
+    // Registration tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_register_success() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        let result = auth.register("newuser", "new@example.com", "password123").await;
+
+        assert!(result.is_ok());
+        let (user, session, token) = result.unwrap();
+        assert_eq!(user.username.as_str(), "newuser");
+        assert_eq!(user.email.as_str(), "new@example.com");
+        assert!(!token.is_empty());
+        assert_eq!(session.user_id, user.id);
+    }
+
+    #[tokio::test]
+    async fn test_register_invalid_username_too_short() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        let result = auth.register("ab", "valid@example.com", "password123").await;
+
+        assert!(matches!(result, Err(Error::UsernameInvalid { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_register_invalid_email() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        let result = auth.register("validuser", "notanemail", "password123").await;
+
+        assert!(matches!(result, Err(Error::EmailInvalid { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_register_weak_password() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        let result = auth.register("validuser", "valid@example.com", "short").await;
+
+        assert!(matches!(result, Err(Error::PasswordTooWeak { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_register_username_taken() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        // Register first user
+        auth.register("takenuser", "first@example.com", "password123")
+            .await
+            .unwrap();
+
+        // Try to register with same username
+        let result = auth
+            .register("takenuser", "second@example.com", "password123")
+            .await;
+
+        assert!(matches!(result, Err(Error::UsernameTaken)));
+    }
+
+    #[tokio::test]
+    async fn test_register_email_taken() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        // Register first user
+        auth.register("firstuser", "taken@example.com", "password123")
+            .await
+            .unwrap();
+
+        // Try to register with same email
+        let result = auth
+            .register("seconduser", "taken@example.com", "password123")
+            .await;
+
+        assert!(matches!(result, Err(Error::EmailTaken)));
+    }
+
+    // ========================================================================
+    // Login tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_login_with_username() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        // Register user first
+        let (original_user, _, _) = auth
+            .register("loginuser", "login@example.com", "password123")
+            .await
+            .unwrap();
+
+        // Login with username
+        let result = auth.login("loginuser", "password123").await;
+
+        assert!(result.is_ok());
+        let (user, session, token) = result.unwrap();
+        assert_eq!(user.id, original_user.id);
+        assert!(!token.is_empty());
+        assert_eq!(session.user_id, user.id);
+    }
+
+    #[tokio::test]
+    async fn test_login_with_email() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        // Register user first
+        let (original_user, _, _) = auth
+            .register("emaillogin", "emaillogin@example.com", "password123")
+            .await
+            .unwrap();
+
+        // Login with email
+        let result = auth.login("emaillogin@example.com", "password123").await;
+
+        assert!(result.is_ok());
+        let (user, _, _) = result.unwrap();
+        assert_eq!(user.id, original_user.id);
+    }
+
+    #[tokio::test]
+    async fn test_login_wrong_password() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        // Register user first
+        auth.register("wrongpwuser", "wrongpw@example.com", "password123")
+            .await
+            .unwrap();
+
+        // Login with wrong password
+        let result = auth.login("wrongpwuser", "wrongpassword").await;
+
+        assert!(matches!(result, Err(Error::InvalidCredentials)));
+    }
+
+    #[tokio::test]
+    async fn test_login_user_not_found() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        let result = auth.login("nonexistent", "password123").await;
+
+        assert!(matches!(result, Err(Error::InvalidCredentials)));
+    }
+
+    // ========================================================================
+    // Token validation tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_validate_token_success() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        let (user, _session, token) = auth
+            .register("tokenuser", "token@example.com", "password123")
+            .await
+            .unwrap();
+
+        let result = auth.validate_token(&token);
+
+        assert!(result.is_ok());
+        let (user_id, _session_id, role) = result.unwrap();
+        assert_eq!(user_id, user.id);
+        assert_eq!(role, Role::User);
+    }
+
+    #[tokio::test]
+    async fn test_validate_token_invalid() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        let result = auth.validate_token("invalid_token");
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_validate_token_full_success() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        let (original_user, original_session, token) = auth
+            .register("fulluser", "full@example.com", "password123")
+            .await
+            .unwrap();
+
+        let result = auth.validate_token_full(&token).await;
+
+        assert!(result.is_ok());
+        let (user, session) = result.unwrap();
+        assert_eq!(user.id, original_user.id);
+        assert_eq!(session.id, original_session.id);
+    }
+
+    // ========================================================================
+    // Refresh token tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_refresh_token_success() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        let (_user, session, _token) = auth
+            .register("refreshuser", "refresh@example.com", "password123")
+            .await
+            .unwrap();
+
+        let result = auth.refresh_token(session.id).await;
+
+        assert!(result.is_ok());
+        let new_token = result.unwrap();
+        assert!(!new_token.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_refresh_token_session_not_found() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        let result = auth.refresh_token(SessionId::new()).await;
+
+        assert!(matches!(result, Err(Error::SessionNotFound)));
+    }
+
+    // ========================================================================
+    // Change password tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_change_password_success() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        let (user, _, _) = auth
+            .register("pwchangeuser", "pwchange@example.com", "oldpassword1")
+            .await
+            .unwrap();
+
+        let result = auth
+            .change_password(user.id, "oldpassword1", "newpassword1")
+            .await;
+
+        assert!(result.is_ok());
+
+        // Should be able to login with new password
+        let login_result = auth.login("pwchangeuser", "newpassword1").await;
+        assert!(login_result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_change_password_wrong_current() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        let (user, _, _) = auth
+            .register("wrongcurrent", "wrongcurrent@example.com", "realpassword")
+            .await
+            .unwrap();
+
+        let result = auth
+            .change_password(user.id, "wrongpassword", "newpassword1")
+            .await;
+
+        assert!(matches!(result, Err(Error::IncorrectPassword)));
+    }
+
+    #[tokio::test]
+    async fn test_change_password_weak_new_password() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        let (user, _, _) = auth
+            .register("weaknewpw", "weaknewpw@example.com", "goodpassword")
+            .await
+            .unwrap();
+
+        let result = auth.change_password(user.id, "goodpassword", "short").await;
+
+        assert!(matches!(result, Err(Error::PasswordTooWeak { .. })));
+    }
+
+    // ========================================================================
+    // Get user tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_get_user_success() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        let (original_user, _, _) = auth
+            .register("getuser", "getuser@example.com", "password123")
+            .await
+            .unwrap();
+
+        let result = auth.get_user(original_user.id).await;
+
+        assert!(result.is_ok());
+        let user = result.unwrap();
+        assert!(user.is_some());
+        assert_eq!(user.unwrap().id, original_user.id);
+    }
+
+    #[tokio::test]
+    async fn test_get_user_not_found() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        let result = auth.get_user(UserId::new()).await;
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    // ========================================================================
+    // List users tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_list_users() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        // Register multiple users
+        auth.register("listuser1", "list1@example.com", "password123")
+            .await
+            .unwrap();
+        auth.register("listuser2", "list2@example.com", "password123")
+            .await
+            .unwrap();
+
+        let result = auth.list_users(Pagination::default()).await;
+
+        assert!(result.is_ok());
+        let users = result.unwrap();
+        assert_eq!(users.len(), 2);
+    }
+}

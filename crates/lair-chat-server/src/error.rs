@@ -237,3 +237,196 @@ impl Error {
         }
     }
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ========================================================================
+    // Error Code Tests
+    // ========================================================================
+
+    #[test]
+    fn test_error_codes_authentication() {
+        assert_eq!(Error::InvalidCredentials.code(), "invalid_credentials");
+        assert_eq!(Error::SessionNotFound.code(), "session_not_found");
+        assert_eq!(Error::SessionExpired.code(), "session_expired");
+        assert_eq!(Error::AccountLocked.code(), "account_locked");
+        assert_eq!(Error::AccountBanned.code(), "account_banned");
+        assert_eq!(Error::InvalidToken { reason: "test".to_string() }.code(), "invalid_token");
+        assert_eq!(Error::TokenExpired.code(), "token_expired");
+    }
+
+    #[test]
+    fn test_error_codes_authorization() {
+        assert_eq!(Error::PermissionDenied.code(), "permission_denied");
+        assert_eq!(Error::NotRoomMember.code(), "not_room_member");
+        assert_eq!(Error::NotMessageAuthor.code(), "not_message_author");
+    }
+
+    #[test]
+    fn test_error_codes_validation() {
+        assert_eq!(
+            Error::ValidationFailed {
+                field: "email".to_string(),
+                reason: "invalid".to_string()
+            }.code(),
+            "validation_failed"
+        );
+        assert_eq!(Error::UsernameInvalid { reason: "too short".to_string() }.code(), "username_invalid");
+        assert_eq!(Error::UsernameTaken.code(), "username_taken");
+        assert_eq!(Error::EmailInvalid { reason: "invalid".to_string() }.code(), "email_invalid");
+        assert_eq!(Error::EmailTaken.code(), "email_taken");
+        assert_eq!(Error::PasswordTooWeak { reason: "too short".to_string() }.code(), "password_too_weak");
+        assert_eq!(Error::IncorrectPassword.code(), "incorrect_password");
+        assert_eq!(Error::RoomNameInvalid { reason: "empty".to_string() }.code(), "room_name_invalid");
+        assert_eq!(Error::ContentInvalid { reason: "bad".to_string() }.code(), "content_invalid");
+        assert_eq!(Error::ContentEmpty.code(), "content_empty");
+        assert_eq!(Error::ContentTooLong { max: 1000 }.code(), "content_too_long");
+    }
+
+    #[test]
+    fn test_error_codes_not_found() {
+        assert_eq!(Error::UserNotFound.code(), "user_not_found");
+        assert_eq!(Error::RoomNotFound.code(), "room_not_found");
+        assert_eq!(Error::MessageNotFound.code(), "message_not_found");
+        assert_eq!(Error::InvitationNotFound.code(), "invitation_not_found");
+    }
+
+    #[test]
+    fn test_error_codes_conflict() {
+        assert_eq!(Error::AlreadyMember.code(), "already_member");
+        assert_eq!(Error::NotInvitee.code(), "not_invitee");
+        assert_eq!(Error::RoomNameTaken.code(), "room_name_taken");
+        assert_eq!(Error::AlreadyInvited.code(), "already_invited");
+        assert_eq!(Error::InvitationUsed.code(), "invitation_used");
+    }
+
+    #[test]
+    fn test_error_codes_state() {
+        assert_eq!(Error::RoomFull.code(), "room_full");
+        assert_eq!(Error::RoomPrivate.code(), "room_private");
+        assert_eq!(Error::LastOwner.code(), "last_owner");
+        assert_eq!(Error::MessageDeleted.code(), "message_deleted");
+        assert_eq!(Error::InvitationExpired.code(), "invitation_expired");
+        assert_eq!(Error::UserBlocked.code(), "user_blocked");
+    }
+
+    #[test]
+    fn test_error_codes_rate_limit() {
+        assert_eq!(Error::RateLimited { retry_after: 60 }.code(), "rate_limited");
+    }
+
+    #[test]
+    fn test_error_codes_system() {
+        assert_eq!(Error::Internal("test".to_string()).code(), "internal_error");
+        assert_eq!(Error::Config("test".to_string()).code(), "config_error");
+    }
+
+    // ========================================================================
+    // HTTP Status Code Tests
+    // ========================================================================
+
+    #[test]
+    fn test_status_codes_401_unauthorized() {
+        assert_eq!(Error::InvalidCredentials.status_code(), 401);
+        assert_eq!(Error::SessionNotFound.status_code(), 401);
+        assert_eq!(Error::SessionExpired.status_code(), 401);
+        assert_eq!(Error::InvalidToken { reason: "test".to_string() }.status_code(), 401);
+        assert_eq!(Error::TokenExpired.status_code(), 401);
+    }
+
+    #[test]
+    fn test_status_codes_403_forbidden() {
+        assert_eq!(Error::AccountLocked.status_code(), 403);
+        assert_eq!(Error::AccountBanned.status_code(), 403);
+        assert_eq!(Error::PermissionDenied.status_code(), 403);
+        assert_eq!(Error::NotRoomMember.status_code(), 403);
+        assert_eq!(Error::NotMessageAuthor.status_code(), 403);
+    }
+
+    #[test]
+    fn test_status_codes_400_bad_request() {
+        assert_eq!(
+            Error::ValidationFailed {
+                field: "x".to_string(),
+                reason: "y".to_string()
+            }.status_code(),
+            400
+        );
+        assert_eq!(Error::UsernameInvalid { reason: "x".to_string() }.status_code(), 400);
+        assert_eq!(Error::EmailInvalid { reason: "x".to_string() }.status_code(), 400);
+        assert_eq!(Error::PasswordTooWeak { reason: "x".to_string() }.status_code(), 400);
+        assert_eq!(Error::IncorrectPassword.status_code(), 400);
+        assert_eq!(Error::RoomNameInvalid { reason: "x".to_string() }.status_code(), 400);
+        assert_eq!(Error::ContentInvalid { reason: "x".to_string() }.status_code(), 400);
+        assert_eq!(Error::ContentEmpty.status_code(), 400);
+        assert_eq!(Error::ContentTooLong { max: 100 }.status_code(), 400);
+    }
+
+    #[test]
+    fn test_status_codes_404_not_found() {
+        assert_eq!(Error::UserNotFound.status_code(), 404);
+        assert_eq!(Error::RoomNotFound.status_code(), 404);
+        assert_eq!(Error::MessageNotFound.status_code(), 404);
+        assert_eq!(Error::InvitationNotFound.status_code(), 404);
+    }
+
+    #[test]
+    fn test_status_codes_409_conflict() {
+        assert_eq!(Error::UsernameTaken.status_code(), 409);
+        assert_eq!(Error::EmailTaken.status_code(), 409);
+        assert_eq!(Error::AlreadyMember.status_code(), 409);
+        assert_eq!(Error::NotInvitee.status_code(), 409);
+        assert_eq!(Error::RoomNameTaken.status_code(), 409);
+        assert_eq!(Error::AlreadyInvited.status_code(), 409);
+        assert_eq!(Error::InvitationUsed.status_code(), 409);
+        assert_eq!(Error::RoomFull.status_code(), 409);
+        assert_eq!(Error::RoomPrivate.status_code(), 409);
+        assert_eq!(Error::LastOwner.status_code(), 409);
+        assert_eq!(Error::MessageDeleted.status_code(), 409);
+        assert_eq!(Error::InvitationExpired.status_code(), 409);
+        assert_eq!(Error::UserBlocked.status_code(), 409);
+    }
+
+    #[test]
+    fn test_status_codes_429_rate_limited() {
+        assert_eq!(Error::RateLimited { retry_after: 60 }.status_code(), 429);
+    }
+
+    #[test]
+    fn test_status_codes_500_server_error() {
+        assert_eq!(Error::Internal("test".to_string()).status_code(), 500);
+        assert_eq!(Error::Config("test".to_string()).status_code(), 500);
+    }
+
+    // ========================================================================
+    // Display Tests
+    // ========================================================================
+
+    #[test]
+    fn test_error_display() {
+        assert_eq!(Error::InvalidCredentials.to_string(), "Invalid credentials");
+        assert_eq!(Error::RoomFull.to_string(), "Room is full");
+        assert_eq!(Error::RateLimited { retry_after: 60 }.to_string(), "Rate limited, retry after 60 seconds");
+        assert_eq!(
+            Error::ValidationFailed {
+                field: "email".to_string(),
+                reason: "invalid format".to_string()
+            }.to_string(),
+            "Validation failed: email - invalid format"
+        );
+        assert_eq!(
+            Error::InvalidToken { reason: "expired signature".to_string() }.to_string(),
+            "Invalid token: expired signature"
+        );
+        assert_eq!(
+            Error::ContentTooLong { max: 5000 }.to_string(),
+            "Content too long (max 5000 characters)"
+        );
+    }
+}

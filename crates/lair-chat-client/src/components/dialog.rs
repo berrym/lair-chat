@@ -430,3 +430,417 @@ impl Dialog {
         }
     }
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    // ========================================================================
+    // Dialog State Tests
+    // ========================================================================
+
+    #[test]
+    fn test_dialog_new() {
+        let dialog = Dialog::new();
+        assert!(!dialog.visible);
+        assert!(dialog.title.is_empty());
+        assert!(dialog.message.is_empty());
+        assert_eq!(dialog.kind, DialogKind::Info);
+    }
+
+    #[test]
+    fn test_dialog_default() {
+        let dialog = Dialog::default();
+        assert!(!dialog.visible);
+    }
+
+    #[test]
+    fn test_dialog_show_info() {
+        let mut dialog = Dialog::new();
+        dialog.show_info("Title", "Message");
+
+        assert!(dialog.visible);
+        assert_eq!(dialog.title, "Title");
+        assert_eq!(dialog.message, "Message");
+        assert_eq!(dialog.kind, DialogKind::Info);
+    }
+
+    #[test]
+    fn test_dialog_show_confirm() {
+        let mut dialog = Dialog::new();
+        dialog.show_confirm("Confirm", "Are you sure?");
+
+        assert!(dialog.visible);
+        assert_eq!(dialog.title, "Confirm");
+        assert_eq!(dialog.message, "Are you sure?");
+        assert_eq!(dialog.kind, DialogKind::Confirm);
+        assert_eq!(dialog.selection, ConfirmSelection::Yes);
+    }
+
+    #[test]
+    fn test_dialog_show_input() {
+        let mut dialog = Dialog::new();
+        dialog.show_input("Input", "Enter value:");
+
+        assert!(dialog.visible);
+        assert_eq!(dialog.title, "Input");
+        assert_eq!(dialog.message, "Enter value:");
+        assert_eq!(dialog.kind, DialogKind::Input);
+        assert!(dialog.input.is_empty());
+        assert_eq!(dialog.cursor, 0);
+    }
+
+    #[test]
+    fn test_dialog_show_input_with_default() {
+        let mut dialog = Dialog::new();
+        dialog.show_input_with_default("Input", "Enter value:", "default");
+
+        assert!(dialog.visible);
+        assert_eq!(dialog.input, "default");
+        assert_eq!(dialog.cursor, 7); // At end of "default"
+    }
+
+    #[test]
+    fn test_dialog_close() {
+        let mut dialog = Dialog::new();
+        dialog.show_info("Title", "Message");
+        dialog.close();
+
+        assert!(!dialog.visible);
+        assert!(dialog.input.is_empty());
+        assert_eq!(dialog.cursor, 0);
+    }
+
+    // ========================================================================
+    // ConfirmSelection Tests
+    // ========================================================================
+
+    #[test]
+    fn test_confirm_selection_toggle() {
+        let mut selection = ConfirmSelection::Yes;
+        selection.toggle();
+        assert_eq!(selection, ConfirmSelection::No);
+        selection.toggle();
+        assert_eq!(selection, ConfirmSelection::Yes);
+    }
+
+    // ========================================================================
+    // Info Dialog Key Handling Tests
+    // ========================================================================
+
+    #[test]
+    fn test_info_dialog_enter_closes() {
+        let mut dialog = Dialog::new();
+        dialog.show_info("Title", "Message");
+
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let result = dialog.handle_key(key);
+
+        assert_eq!(result, DialogResult::Confirmed(None));
+        assert!(!dialog.visible);
+    }
+
+    #[test]
+    fn test_info_dialog_esc_closes() {
+        let mut dialog = Dialog::new();
+        dialog.show_info("Title", "Message");
+
+        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        let result = dialog.handle_key(key);
+
+        assert_eq!(result, DialogResult::Confirmed(None));
+        assert!(!dialog.visible);
+    }
+
+    #[test]
+    fn test_info_dialog_space_closes() {
+        let mut dialog = Dialog::new();
+        dialog.show_info("Title", "Message");
+
+        let key = KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE);
+        let result = dialog.handle_key(key);
+
+        assert_eq!(result, DialogResult::Confirmed(None));
+    }
+
+    #[test]
+    fn test_info_dialog_other_key_pending() {
+        let mut dialog = Dialog::new();
+        dialog.show_info("Title", "Message");
+
+        let key = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
+        let result = dialog.handle_key(key);
+
+        assert_eq!(result, DialogResult::Pending);
+        assert!(dialog.visible);
+    }
+
+    // ========================================================================
+    // Confirm Dialog Key Handling Tests
+    // ========================================================================
+
+    #[test]
+    fn test_confirm_dialog_enter_yes() {
+        let mut dialog = Dialog::new();
+        dialog.show_confirm("Confirm", "Sure?");
+
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let result = dialog.handle_key(key);
+
+        // Default selection is Yes
+        assert_eq!(result, DialogResult::Confirmed(None));
+    }
+
+    #[test]
+    fn test_confirm_dialog_enter_no() {
+        let mut dialog = Dialog::new();
+        dialog.show_confirm("Confirm", "Sure?");
+        dialog.selection = ConfirmSelection::No;
+
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let result = dialog.handle_key(key);
+
+        assert_eq!(result, DialogResult::Cancelled);
+    }
+
+    #[test]
+    fn test_confirm_dialog_esc_cancels() {
+        let mut dialog = Dialog::new();
+        dialog.show_confirm("Confirm", "Sure?");
+
+        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        let result = dialog.handle_key(key);
+
+        assert_eq!(result, DialogResult::Cancelled);
+    }
+
+    #[test]
+    fn test_confirm_dialog_y_key_confirms() {
+        let mut dialog = Dialog::new();
+        dialog.show_confirm("Confirm", "Sure?");
+
+        let key = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE);
+        let result = dialog.handle_key(key);
+
+        assert_eq!(result, DialogResult::Confirmed(None));
+    }
+
+    #[test]
+    fn test_confirm_dialog_n_key_cancels() {
+        let mut dialog = Dialog::new();
+        dialog.show_confirm("Confirm", "Sure?");
+
+        let key = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE);
+        let result = dialog.handle_key(key);
+
+        assert_eq!(result, DialogResult::Cancelled);
+    }
+
+    #[test]
+    fn test_confirm_dialog_arrows_toggle() {
+        let mut dialog = Dialog::new();
+        dialog.show_confirm("Confirm", "Sure?");
+        assert_eq!(dialog.selection, ConfirmSelection::Yes);
+
+        let key = KeyEvent::new(KeyCode::Right, KeyModifiers::NONE);
+        let result = dialog.handle_key(key);
+
+        assert_eq!(result, DialogResult::Pending);
+        assert_eq!(dialog.selection, ConfirmSelection::No);
+
+        let key = KeyEvent::new(KeyCode::Left, KeyModifiers::NONE);
+        let _ = dialog.handle_key(key);
+        assert_eq!(dialog.selection, ConfirmSelection::Yes);
+    }
+
+    #[test]
+    fn test_confirm_dialog_tab_toggles() {
+        let mut dialog = Dialog::new();
+        dialog.show_confirm("Confirm", "Sure?");
+
+        let key = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+        let _ = dialog.handle_key(key);
+
+        assert_eq!(dialog.selection, ConfirmSelection::No);
+    }
+
+    // ========================================================================
+    // Input Dialog Key Handling Tests
+    // ========================================================================
+
+    #[test]
+    fn test_input_dialog_char_input() {
+        let mut dialog = Dialog::new();
+        dialog.show_input("Input", "Enter:");
+
+        let key = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
+        let result = dialog.handle_key(key);
+
+        assert_eq!(result, DialogResult::Pending);
+        assert_eq!(dialog.input, "a");
+        assert_eq!(dialog.cursor, 1);
+    }
+
+    #[test]
+    fn test_input_dialog_enter_submits() {
+        let mut dialog = Dialog::new();
+        dialog.show_input("Input", "Enter:");
+        dialog.input = "hello".to_string();
+        dialog.cursor = 5;
+
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let result = dialog.handle_key(key);
+
+        assert_eq!(result, DialogResult::Confirmed(Some("hello".to_string())));
+        assert!(!dialog.visible);
+    }
+
+    #[test]
+    fn test_input_dialog_esc_cancels() {
+        let mut dialog = Dialog::new();
+        dialog.show_input("Input", "Enter:");
+        dialog.input = "hello".to_string();
+
+        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        let result = dialog.handle_key(key);
+
+        assert_eq!(result, DialogResult::Cancelled);
+        assert!(!dialog.visible);
+    }
+
+    #[test]
+    fn test_input_dialog_backspace() {
+        let mut dialog = Dialog::new();
+        dialog.show_input("Input", "Enter:");
+        dialog.input = "hello".to_string();
+        dialog.cursor = 5;
+
+        let key = KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE);
+        let _ = dialog.handle_key(key);
+
+        assert_eq!(dialog.input, "hell");
+        assert_eq!(dialog.cursor, 4);
+    }
+
+    #[test]
+    fn test_input_dialog_delete() {
+        let mut dialog = Dialog::new();
+        dialog.show_input("Input", "Enter:");
+        dialog.input = "hello".to_string();
+        dialog.cursor = 2;
+
+        let key = KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE);
+        let _ = dialog.handle_key(key);
+
+        assert_eq!(dialog.input, "helo");
+    }
+
+    #[test]
+    fn test_input_dialog_left_right() {
+        let mut dialog = Dialog::new();
+        dialog.show_input("Input", "Enter:");
+        dialog.input = "hello".to_string();
+        dialog.cursor = 3;
+
+        let key = KeyEvent::new(KeyCode::Left, KeyModifiers::NONE);
+        let _ = dialog.handle_key(key);
+        assert_eq!(dialog.cursor, 2);
+
+        let key = KeyEvent::new(KeyCode::Right, KeyModifiers::NONE);
+        let _ = dialog.handle_key(key);
+        assert_eq!(dialog.cursor, 3);
+    }
+
+    #[test]
+    fn test_input_dialog_home_end() {
+        let mut dialog = Dialog::new();
+        dialog.show_input("Input", "Enter:");
+        dialog.input = "hello".to_string();
+        dialog.cursor = 3;
+
+        let key = KeyEvent::new(KeyCode::Home, KeyModifiers::NONE);
+        let _ = dialog.handle_key(key);
+        assert_eq!(dialog.cursor, 0);
+
+        let key = KeyEvent::new(KeyCode::End, KeyModifiers::NONE);
+        let _ = dialog.handle_key(key);
+        assert_eq!(dialog.cursor, 5);
+    }
+
+    #[test]
+    fn test_input_dialog_ctrl_a_e() {
+        let mut dialog = Dialog::new();
+        dialog.show_input("Input", "Enter:");
+        dialog.input = "hello".to_string();
+        dialog.cursor = 3;
+
+        let key = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL);
+        let _ = dialog.handle_key(key);
+        assert_eq!(dialog.cursor, 0);
+
+        let key = KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL);
+        let _ = dialog.handle_key(key);
+        assert_eq!(dialog.cursor, 5);
+    }
+
+    #[test]
+    fn test_input_dialog_ctrl_u() {
+        let mut dialog = Dialog::new();
+        dialog.show_input("Input", "Enter:");
+        dialog.input = "hello world".to_string();
+        dialog.cursor = 6;
+
+        let key = KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL);
+        let _ = dialog.handle_key(key);
+
+        assert_eq!(dialog.input, "world");
+        assert_eq!(dialog.cursor, 0);
+    }
+
+    #[test]
+    fn test_input_dialog_ctrl_k() {
+        let mut dialog = Dialog::new();
+        dialog.show_input("Input", "Enter:");
+        dialog.input = "hello world".to_string();
+        dialog.cursor = 5;
+
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+        let _ = dialog.handle_key(key);
+
+        assert_eq!(dialog.input, "hello");
+    }
+
+    #[test]
+    fn test_input_dialog_ctrl_w() {
+        let mut dialog = Dialog::new();
+        dialog.show_input("Input", "Enter:");
+        dialog.input = "hello world".to_string();
+        dialog.cursor = 11;
+
+        let key = KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL);
+        let _ = dialog.handle_key(key);
+
+        // Should delete "world"
+        assert!(dialog.input.len() < 11);
+    }
+
+    // ========================================================================
+    // Hidden Dialog Tests
+    // ========================================================================
+
+    #[test]
+    fn test_hidden_dialog_returns_pending() {
+        let mut dialog = Dialog::new();
+        // Dialog is hidden by default
+
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let result = dialog.handle_key(key);
+
+        assert_eq!(result, DialogResult::Pending);
+    }
+}

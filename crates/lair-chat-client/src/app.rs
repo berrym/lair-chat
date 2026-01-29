@@ -1284,3 +1284,343 @@ impl App {
         }
     }
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+    fn test_server_addr() -> SocketAddr {
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080)
+    }
+
+    // ========================================================================
+    // NotificationLevel Tests
+    // ========================================================================
+
+    #[test]
+    fn test_notification_level_auto_dismiss_durations() {
+        assert_eq!(NotificationLevel::Info.auto_dismiss_duration(), Duration::from_secs(3));
+        assert_eq!(NotificationLevel::Success.auto_dismiss_duration(), Duration::from_secs(4));
+        assert_eq!(NotificationLevel::Warning.auto_dismiss_duration(), Duration::from_secs(6));
+        assert_eq!(NotificationLevel::Error.auto_dismiss_duration(), Duration::from_secs(8));
+    }
+
+    // ========================================================================
+    // ChatMessage Tests
+    // ========================================================================
+
+    #[test]
+    fn test_chat_message_system() {
+        let msg = ChatMessage::system("Welcome to the server");
+
+        assert!(msg.is_system);
+        assert_eq!(msg.author, "System");
+        assert_eq!(msg.content, "Welcome to the server");
+        assert!(msg.id.is_none());
+    }
+
+    #[test]
+    fn test_chat_message_user() {
+        let msg = ChatMessage::user("alice", "Hello, world!");
+
+        assert!(!msg.is_system);
+        assert_eq!(msg.author, "alice");
+        assert_eq!(msg.content, "Hello, world!");
+        assert!(msg.id.is_none());
+    }
+
+    // ========================================================================
+    // App Initialization Tests
+    // ========================================================================
+
+    #[test]
+    fn test_app_with_http_config() {
+        let addr = test_server_addr();
+        let app = App::with_http_config(addr, "http://localhost:8082".to_string(), false);
+
+        assert_eq!(app.screen, Screen::Login);
+        assert!(app.connection.is_none());
+        assert!(app.user.is_none());
+        assert!(app.session.is_none());
+        assert!(app.token.is_none());
+        assert!(app.rooms.is_empty());
+        assert!(app.current_room.is_none());
+        assert!(app.current_dm_user.is_none());
+        assert!(app.messages.is_empty());
+        assert!(app.notifications.is_empty());
+        assert!(!app.should_quit);
+    }
+
+    // ========================================================================
+    // Notification Tests
+    // ========================================================================
+
+    #[test]
+    fn test_set_error() {
+        let addr = test_server_addr();
+        let mut app = App::with_http_config(addr, "http://localhost:8082".to_string(), false);
+
+        app.set_error("Test error");
+
+        assert!(!app.notifications.is_empty());
+        assert_eq!(app.notifications[0].level, NotificationLevel::Error);
+        assert_eq!(app.notifications[0].message, "Test error");
+    }
+
+    #[test]
+    fn test_set_info() {
+        let addr = test_server_addr();
+        let mut app = App::with_http_config(addr, "http://localhost:8082".to_string(), false);
+
+        app.set_info("Test info");
+
+        assert!(!app.notifications.is_empty());
+        assert_eq!(app.notifications[0].level, NotificationLevel::Info);
+        assert_eq!(app.notifications[0].message, "Test info");
+    }
+
+    #[test]
+    fn test_set_success() {
+        let addr = test_server_addr();
+        let mut app = App::with_http_config(addr, "http://localhost:8082".to_string(), false);
+
+        app.set_success("Test success");
+
+        assert!(!app.notifications.is_empty());
+        assert_eq!(app.notifications[0].level, NotificationLevel::Success);
+        assert_eq!(app.notifications[0].message, "Test success");
+    }
+
+    #[test]
+    fn test_clear_notifications() {
+        let addr = test_server_addr();
+        let mut app = App::with_http_config(addr, "http://localhost:8082".to_string(), false);
+
+        app.set_error("Error 1");
+        app.set_info("Info 1");
+        assert_eq!(app.notifications.len(), 2);
+
+        app.clear_notifications();
+        assert!(app.notifications.is_empty());
+    }
+
+    #[test]
+    fn test_error_getter() {
+        let addr = test_server_addr();
+        let mut app = App::with_http_config(addr, "http://localhost:8082".to_string(), false);
+
+        assert!(app.error().is_none());
+
+        app.set_error("Test error");
+        assert_eq!(app.error(), Some("Test error"));
+
+        // Info notifications shouldn't appear in error()
+        app.clear_notifications();
+        app.set_info("Test info");
+        assert!(app.error().is_none());
+    }
+
+    #[test]
+    fn test_notifications_getter() {
+        let addr = test_server_addr();
+        let mut app = App::with_http_config(addr, "http://localhost:8082".to_string(), false);
+
+        app.set_error("Error");
+        app.set_info("Info");
+
+        let notifs = app.notifications();
+        assert_eq!(notifs.len(), 2);
+    }
+
+    // ========================================================================
+    // User List Tests
+    // ========================================================================
+
+    #[test]
+    fn test_get_user_lists_empty() {
+        let addr = test_server_addr();
+        let app = App::with_http_config(addr, "http://localhost:8082".to_string(), false);
+
+        let (online, offline) = app.get_user_lists();
+        assert!(online.is_empty());
+        assert!(offline.is_empty());
+    }
+
+    #[test]
+    fn test_get_user_lists_with_users() {
+        let addr = test_server_addr();
+        let mut app = App::with_http_config(addr, "http://localhost:8082".to_string(), false);
+
+        // Add some users
+        let alice_id = Uuid::new_v4();
+        let bob_id = Uuid::new_v4();
+
+        app.all_users.push(User {
+            id: alice_id,
+            username: "alice".to_string(),
+            email: "alice@example.com".to_string(),
+            role: "user".to_string(),
+            created_at: Utc::now(),
+        });
+        app.all_users.push(User {
+            id: bob_id,
+            username: "bob".to_string(),
+            email: "bob@example.com".to_string(),
+            role: "user".to_string(),
+            created_at: Utc::now(),
+        });
+
+        // Mark Alice as online
+        app.online_user_ids.insert(alice_id);
+
+        let (online, offline) = app.get_user_lists();
+        assert!(online.contains(&"alice".to_string()));
+        assert!(offline.contains(&"bob".to_string()));
+    }
+
+    // ========================================================================
+    // Unread DM Tests
+    // ========================================================================
+
+    #[test]
+    fn test_get_unread_dms_empty() {
+        let addr = test_server_addr();
+        let app = App::with_http_config(addr, "http://localhost:8082".to_string(), false);
+
+        let unread = app.get_unread_dms();
+        assert!(unread.is_empty());
+    }
+
+    #[test]
+    fn test_get_unread_dms_with_counts() {
+        let addr = test_server_addr();
+        let mut app = App::with_http_config(addr, "http://localhost:8082".to_string(), false);
+
+        let alice_id = Uuid::new_v4();
+        app.all_users.push(User {
+            id: alice_id,
+            username: "alice".to_string(),
+            email: "alice@example.com".to_string(),
+            role: "user".to_string(),
+            created_at: Utc::now(),
+        });
+
+        app.unread_dms.insert(alice_id, 5);
+
+        let unread = app.get_unread_dms();
+        assert_eq!(unread.get("alice"), Some(&5));
+    }
+
+    // ========================================================================
+    // System Message Tests
+    // ========================================================================
+
+    #[test]
+    fn test_add_system_message() {
+        let addr = test_server_addr();
+        let mut app = App::with_http_config(addr, "http://localhost:8082".to_string(), false);
+
+        app.add_system_message("Test system message");
+
+        assert_eq!(app.messages.len(), 1);
+        assert!(app.messages[0].is_system);
+        assert_eq!(app.messages[0].content, "Test system message");
+    }
+
+    // ========================================================================
+    // Last Message Content Tests
+    // ========================================================================
+
+    #[test]
+    fn test_last_message_content_empty() {
+        let addr = test_server_addr();
+        let app = App::with_http_config(addr, "http://localhost:8082".to_string(), false);
+
+        assert!(app.last_message_content().is_none());
+    }
+
+    #[test]
+    fn test_last_message_content() {
+        let addr = test_server_addr();
+        let mut app = App::with_http_config(addr, "http://localhost:8082".to_string(), false);
+
+        app.messages.push(ChatMessage::user("alice", "First message"));
+        app.messages.push(ChatMessage::user("bob", "Last message"));
+
+        assert_eq!(app.last_message_content(), Some("Last message"));
+    }
+
+    // ========================================================================
+    // Screen Tests
+    // ========================================================================
+
+    #[test]
+    fn test_screen_enum() {
+        assert_eq!(Screen::Login, Screen::Login);
+        assert_eq!(Screen::Chat, Screen::Chat);
+        assert_eq!(Screen::Rooms, Screen::Rooms);
+        assert_ne!(Screen::Login, Screen::Chat);
+    }
+
+    // ========================================================================
+    // Action Tests
+    // ========================================================================
+
+    #[test]
+    fn test_action_variants() {
+        // Test that all action variants can be constructed
+        let _ = Action::Quit;
+        let _ = Action::Login { username: "test".to_string(), password: "pass".to_string() };
+        let _ = Action::Register { username: "test".to_string(), email: "test@test.com".to_string(), password: "pass".to_string() };
+        let _ = Action::SendMessage("hello".to_string());
+        let _ = Action::ShowRooms;
+        let _ = Action::JoinRoom(Uuid::new_v4());
+        let _ = Action::CreateRoom("room".to_string());
+        let _ = Action::BackToChat;
+        let _ = Action::Reconnect;
+        let _ = Action::StartDM("user".to_string());
+        let _ = Action::StartDMByIndex(0);
+        let _ = Action::ShowHelp;
+        let _ = Action::ClearError;
+        let _ = Action::CopyLastMessage;
+    }
+
+    // ========================================================================
+    // Show Help Tests
+    // ========================================================================
+
+    #[test]
+    fn test_show_help() {
+        let addr = test_server_addr();
+        let mut app = App::with_http_config(addr, "http://localhost:8082".to_string(), false);
+
+        // Add some messages first
+        app.messages.push(ChatMessage::user("alice", "Hello"));
+
+        app.show_help();
+
+        // Messages should have been cleared and help content added
+        assert!(app.messages.iter().any(|m| m.content.contains("Help")));
+    }
+
+    // ========================================================================
+    // Tick Notifications Test
+    // ========================================================================
+
+    #[test]
+    fn test_tick_notifications_keeps_recent() {
+        let addr = test_server_addr();
+        let mut app = App::with_http_config(addr, "http://localhost:8082".to_string(), false);
+
+        app.set_error("Recent error");
+
+        // Tick immediately - notification should still be there
+        app.tick_notifications();
+        assert!(!app.notifications.is_empty());
+    }
+}

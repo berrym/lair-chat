@@ -1030,3 +1030,232 @@ async fn test_encrypted_room_and_messages() {
     server.shutdown().await;
     result.unwrap();
 }
+
+// ============================================================================
+// Message Edit/Delete Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_edit_message() {
+    let (server, port) = create_test_server().await;
+
+    let result = timeout(TEST_TIMEOUT, async {
+        let mut client = TestClient::connect(port).await;
+        client.handshake().await;
+        client
+            .register("editor", "editor@example.com", "SecurePass123!")
+            .await;
+
+        // Create room
+        let create_response = client
+            .request(&json!({
+                "type": "create_room",
+                "name": "Edit Test Room"
+            }))
+            .await;
+
+        let room_id = create_response["room"]["id"].as_str().unwrap();
+
+        // Send message
+        let send_response = client
+            .request(&json!({
+                "type": "send_message",
+                "target": {"type": "room", "room_id": room_id},
+                "content": "Original content"
+            }))
+            .await;
+
+        let message_id = send_response["message"]["id"].as_str().unwrap();
+
+        // Edit message
+        let edit_response = client
+            .request(&json!({
+                "type": "edit_message",
+                "message_id": message_id,
+                "content": "Edited content"
+            }))
+            .await;
+
+        assert_eq!(edit_response["type"], "edit_message_response");
+        assert_eq!(edit_response["success"], true);
+        assert_eq!(edit_response["message"]["content"], "Edited content");
+        assert_eq!(edit_response["message"]["edited"], true);
+    })
+    .await;
+
+    server.shutdown().await;
+    result.unwrap();
+}
+
+#[tokio::test]
+async fn test_delete_message() {
+    let (server, port) = create_test_server().await;
+
+    let result = timeout(TEST_TIMEOUT, async {
+        let mut client = TestClient::connect(port).await;
+        client.handshake().await;
+        client
+            .register("deleter", "deleter@example.com", "SecurePass123!")
+            .await;
+
+        // Create room
+        let create_response = client
+            .request(&json!({
+                "type": "create_room",
+                "name": "Delete Test Room"
+            }))
+            .await;
+
+        let room_id = create_response["room"]["id"].as_str().unwrap();
+
+        // Send message
+        let send_response = client
+            .request(&json!({
+                "type": "send_message",
+                "target": {"type": "room", "room_id": room_id},
+                "content": "To be deleted"
+            }))
+            .await;
+
+        let message_id = send_response["message"]["id"].as_str().unwrap();
+
+        // Delete message
+        let delete_response = client
+            .request(&json!({
+                "type": "delete_message",
+                "message_id": message_id
+            }))
+            .await;
+
+        assert_eq!(delete_response["type"], "delete_message_response");
+        assert_eq!(delete_response["success"], true);
+
+        // Verify message is deleted
+        let get_response = client
+            .request(&json!({
+                "type": "get_messages",
+                "target": {"type": "room", "room_id": room_id},
+                "limit": 50
+            }))
+            .await;
+
+        assert!(get_response["messages"].as_array().unwrap().is_empty());
+    })
+    .await;
+
+    server.shutdown().await;
+    result.unwrap();
+}
+
+// ============================================================================
+// Room Operations Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_leave_room() {
+    let (server, port) = create_test_server().await;
+
+    let result = timeout(TEST_TIMEOUT, async {
+        // Owner creates room
+        let mut owner = TestClient::connect(port).await;
+        owner.handshake().await;
+        owner
+            .register("leaveowner", "leaveowner@example.com", "SecurePass123!")
+            .await;
+
+        let create_response = owner
+            .request(&json!({
+                "type": "create_room",
+                "name": "Leave Test Room",
+                "settings": { "public": true }
+            }))
+            .await;
+
+        let room_id = create_response["room"]["id"].as_str().unwrap();
+
+        // Second user joins
+        let mut joiner = TestClient::connect(port).await;
+        joiner.handshake().await;
+        joiner
+            .register("leaver", "leaver@example.com", "SecurePass123!")
+            .await;
+
+        let join_response = joiner
+            .request(&json!({
+                "type": "join_room",
+                "room_id": room_id
+            }))
+            .await;
+
+        assert_eq!(join_response["success"], true);
+
+        // Second user leaves
+        let leave_response = joiner
+            .request(&json!({
+                "type": "leave_room",
+                "room_id": room_id
+            }))
+            .await;
+
+        assert_eq!(leave_response["type"], "leave_room_response");
+        assert_eq!(leave_response["success"], true);
+    })
+    .await;
+
+    server.shutdown().await;
+    result.unwrap();
+}
+
+#[tokio::test]
+async fn test_direct_message() {
+    let (server, port) = create_test_server().await;
+
+    let result = timeout(TEST_TIMEOUT, async {
+        // First user
+        let mut user1 = TestClient::connect(port).await;
+        user1.handshake().await;
+        let reg1 = user1
+            .register("dmuser1", "dmuser1@example.com", "SecurePass123!")
+            .await;
+        let user1_id = reg1["user"]["id"].as_str().unwrap();
+
+        // Second user
+        let mut user2 = TestClient::connect(port).await;
+        user2.handshake().await;
+        let reg2 = user2
+            .register("dmuser2", "dmuser2@example.com", "SecurePass123!")
+            .await;
+        let user2_id = reg2["user"]["id"].as_str().unwrap();
+
+        // User1 sends DM to User2 (using "dm" type with "recipient" field)
+        let send_response = user1
+            .request(&json!({
+                "type": "send_message",
+                "target": {"type": "dm", "recipient": user2_id},
+                "content": "Hello via DM!"
+            }))
+            .await;
+
+        assert_eq!(send_response["type"], "send_message_response");
+        assert_eq!(send_response["success"], true);
+        assert_eq!(send_response["message"]["content"], "Hello via DM!");
+
+        // User2 retrieves DM history using get_messages with DM target
+        let get_response = user2
+            .request(&json!({
+                "type": "get_messages",
+                "target": {"type": "dm", "recipient": user1_id},
+                "limit": 50
+            }))
+            .await;
+
+        assert_eq!(get_response["type"], "get_messages_response");
+        assert_eq!(get_response["success"], true);
+        assert_eq!(get_response["messages"].as_array().unwrap().len(), 1);
+        assert_eq!(get_response["messages"][0]["content"], "Hello via DM!");
+    })
+    .await;
+
+    server.shutdown().await;
+    result.unwrap();
+}

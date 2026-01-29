@@ -121,3 +121,277 @@ impl<S: Storage + 'static> SessionManager<S> {
         SessionRepository::delete_expired(&*self.storage).await
     }
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::session::Protocol;
+    use crate::domain::user::{Email, Role, Username};
+    use crate::storage::sqlite::SqliteStorage;
+
+    async fn create_test_storage() -> Arc<SqliteStorage> {
+        Arc::new(SqliteStorage::in_memory().await.unwrap())
+    }
+
+    async fn create_test_user(storage: &SqliteStorage) -> User {
+        let username = Username::new("testuser").unwrap();
+        let email = Email::new("test@example.com").unwrap();
+        let user = User::new(username, email, Role::User);
+        UserRepository::create(storage, &user, "hashed_password").await.unwrap();
+        user
+    }
+
+    async fn create_test_session(storage: &SqliteStorage, user_id: UserId) -> Session {
+        let session = Session::new(user_id, Protocol::Tcp);
+        SessionRepository::create(storage, &session).await.unwrap();
+        session
+    }
+
+    #[tokio::test]
+    async fn test_session_manager_new() {
+        let storage = create_test_storage().await;
+        let _manager = SessionManager::new(storage);
+    }
+
+    #[tokio::test]
+    async fn test_validate_success() {
+        let storage = create_test_storage().await;
+        let user = create_test_user(&storage).await;
+        let session = create_test_session(&storage, user.id).await;
+        let manager = SessionManager::new(storage);
+
+        let (validated_session, validated_user) = manager.validate(session.id).await.unwrap();
+
+        assert_eq!(validated_session.id, session.id);
+        assert_eq!(validated_user.id, user.id);
+    }
+
+    #[tokio::test]
+    async fn test_validate_session_not_found() {
+        let storage = create_test_storage().await;
+        let manager = SessionManager::new(storage);
+
+        let result = manager.validate(SessionId::new()).await;
+
+        assert!(matches!(result, Err(Error::SessionNotFound)));
+    }
+
+    #[tokio::test]
+    async fn test_validate_session_expired() {
+        use chrono::{Duration, Utc};
+
+        let storage = create_test_storage().await;
+        let user = create_test_user(&storage).await;
+
+        // Create an expired session manually
+        let mut session = Session::new(user.id, Protocol::Tcp);
+        session.expires_at = Utc::now() - Duration::hours(1);
+        SessionRepository::create(&*storage, &session).await.unwrap();
+
+        let manager = SessionManager::new(storage);
+
+        let result = manager.validate(session.id).await;
+
+        assert!(matches!(result, Err(Error::SessionExpired)));
+    }
+
+    #[tokio::test]
+    async fn test_is_valid_true() {
+        let storage = create_test_storage().await;
+        let user = create_test_user(&storage).await;
+        let session = create_test_session(&storage, user.id).await;
+        let manager = SessionManager::new(storage);
+
+        let is_valid = manager.is_valid(session.id).await.unwrap();
+
+        assert!(is_valid);
+    }
+
+    #[tokio::test]
+    async fn test_is_valid_false_not_found() {
+        let storage = create_test_storage().await;
+        let manager = SessionManager::new(storage);
+
+        let is_valid = manager.is_valid(SessionId::new()).await.unwrap();
+
+        assert!(!is_valid);
+    }
+
+    #[tokio::test]
+    async fn test_logout_success() {
+        let storage = create_test_storage().await;
+        let user = create_test_user(&storage).await;
+        let session = create_test_session(&storage, user.id).await;
+        let manager = SessionManager::new(storage.clone());
+
+        manager.logout(session.id).await.unwrap();
+
+        // Verify session is deleted
+        let found = SessionRepository::find_by_id(&*storage, session.id).await.unwrap();
+        assert!(found.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_logout_session_not_found() {
+        let storage = create_test_storage().await;
+        let manager = SessionManager::new(storage);
+
+        let result = manager.logout(SessionId::new()).await;
+
+        assert!(matches!(result, Err(Error::SessionNotFound)));
+    }
+
+    #[tokio::test]
+    async fn test_touch_success() {
+        let storage = create_test_storage().await;
+        let user = create_test_user(&storage).await;
+        let session = create_test_session(&storage, user.id).await;
+
+        let manager = SessionManager::new(storage.clone());
+
+        // Touch should succeed without error
+        let result = manager.touch(session.id).await;
+        assert!(result.is_ok());
+
+        // Verify session still exists and is valid
+        let updated = SessionRepository::find_by_id(&*storage, session.id)
+            .await
+            .unwrap();
+        assert!(updated.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_touch_session_not_found() {
+        let storage = create_test_storage().await;
+        let manager = SessionManager::new(storage);
+
+        let result = manager.touch(SessionId::new()).await;
+
+        assert!(matches!(result, Err(Error::SessionNotFound)));
+    }
+
+    #[tokio::test]
+    async fn test_refresh_success() {
+        let storage = create_test_storage().await;
+        let user = create_test_user(&storage).await;
+        let session = create_test_session(&storage, user.id).await;
+        let original_expiry = session.expires_at;
+
+        let manager = SessionManager::new(storage);
+        let refreshed = manager.refresh(session.id).await.unwrap();
+
+        assert!(refreshed.expires_at >= original_expiry);
+    }
+
+    #[tokio::test]
+    async fn test_refresh_session_not_found() {
+        let storage = create_test_storage().await;
+        let manager = SessionManager::new(storage);
+
+        let result = manager.refresh(SessionId::new()).await;
+
+        assert!(matches!(result, Err(Error::SessionNotFound)));
+    }
+
+    #[tokio::test]
+    async fn test_refresh_session_expired() {
+        use chrono::{Duration, Utc};
+
+        let storage = create_test_storage().await;
+        let user = create_test_user(&storage).await;
+
+        // Create an expired session manually
+        let mut session = Session::new(user.id, Protocol::Tcp);
+        session.expires_at = Utc::now() - Duration::hours(1);
+        SessionRepository::create(&*storage, &session).await.unwrap();
+
+        let manager = SessionManager::new(storage);
+
+        let result = manager.refresh(session.id).await;
+
+        assert!(matches!(result, Err(Error::SessionExpired)));
+    }
+
+    #[tokio::test]
+    async fn test_list_for_user() {
+        let storage = create_test_storage().await;
+        let user = create_test_user(&storage).await;
+        let _session1 = create_test_session(&storage, user.id).await;
+        let _session2 = create_test_session(&storage, user.id).await;
+        let manager = SessionManager::new(storage);
+
+        let sessions = manager.list_for_user(user.id).await.unwrap();
+
+        assert_eq!(sessions.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_list_for_user_empty() {
+        let storage = create_test_storage().await;
+        let user = create_test_user(&storage).await;
+        let manager = SessionManager::new(storage);
+
+        let sessions = manager.list_for_user(user.id).await.unwrap();
+
+        assert!(sessions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_count_for_user() {
+        let storage = create_test_storage().await;
+        let user = create_test_user(&storage).await;
+        let _session1 = create_test_session(&storage, user.id).await;
+        let _session2 = create_test_session(&storage, user.id).await;
+        let manager = SessionManager::new(storage);
+
+        let count = manager.count_for_user(user.id).await.unwrap();
+
+        assert_eq!(count, 2);
+    }
+
+    #[tokio::test]
+    async fn test_logout_all() {
+        let storage = create_test_storage().await;
+        let user = create_test_user(&storage).await;
+        let _session1 = create_test_session(&storage, user.id).await;
+        let _session2 = create_test_session(&storage, user.id).await;
+        let manager = SessionManager::new(storage.clone());
+
+        let deleted = manager.logout_all(user.id).await.unwrap();
+
+        assert_eq!(deleted, 2);
+
+        // Verify sessions are deleted
+        let sessions = SessionRepository::list_by_user(&*storage, user.id).await.unwrap();
+        assert!(sessions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_expired() {
+        use chrono::{Duration, Utc};
+
+        let storage = create_test_storage().await;
+        let user = create_test_user(&storage).await;
+
+        // Create a valid session
+        let _valid_session = create_test_session(&storage, user.id).await;
+
+        // Create an expired session
+        let mut expired_session = Session::new(user.id, Protocol::Tcp);
+        expired_session.expires_at = Utc::now() - Duration::hours(1);
+        SessionRepository::create(&*storage, &expired_session).await.unwrap();
+
+        let manager = SessionManager::new(storage.clone());
+        let deleted = manager.cleanup_expired().await.unwrap();
+
+        assert_eq!(deleted, 1);
+
+        // Valid session should still exist
+        let sessions = SessionRepository::list_by_user(&*storage, user.id).await.unwrap();
+        assert_eq!(sessions.len(), 1);
+    }
+}

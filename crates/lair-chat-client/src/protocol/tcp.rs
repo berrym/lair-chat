@@ -668,6 +668,68 @@ async fn read_message_with_cipher(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
+    use crate::protocol::messages::MessageTarget;
+
+    // ========================================================================
+    // TcpClient Tests
+    // ========================================================================
+
+    #[test]
+    fn test_tcp_client_new() {
+        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let client = TcpClient::new(addr);
+
+        assert!(!client.is_connected());
+        assert_eq!(client.server_addr, addr);
+        assert!(!client.encryption_enabled);
+    }
+
+    #[test]
+    fn test_tcp_client_with_timeouts() {
+        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let client = TcpClient::new(addr)
+            .with_connect_timeout(Duration::from_secs(5))
+            .with_read_timeout(Duration::from_secs(30));
+
+        assert_eq!(client.connect_timeout, Duration::from_secs(5));
+        assert_eq!(client.read_timeout, Duration::from_secs(30));
+    }
+
+    // ========================================================================
+    // TcpError Tests
+    // ========================================================================
+
+    #[test]
+    fn test_tcp_error_display() {
+        let err = TcpError::ConnectionClosed;
+        assert_eq!(err.to_string(), "Connection closed");
+
+        let err = TcpError::Timeout;
+        assert_eq!(err.to_string(), "Timeout");
+
+        let err = TcpError::NotConnected;
+        assert_eq!(err.to_string(), "Not connected");
+
+        let err = TcpError::MessageTooLarge { size: 2_000_000 };
+        assert!(err.to_string().contains("2000000"));
+
+        let err = TcpError::Protocol("test error".to_string());
+        assert!(err.to_string().contains("test error"));
+
+        let err = TcpError::EncryptionFailed("test".to_string());
+        assert!(err.to_string().contains("Encryption failed"));
+
+        let err = TcpError::DecryptionFailed("test".to_string());
+        assert!(err.to_string().contains("Decryption failed"));
+
+        let err = TcpError::KeyExchangeFailed("test".to_string());
+        assert!(err.to_string().contains("Key exchange failed"));
+    }
+
+    // ========================================================================
+    // ClientMessage Serialization Tests
+    // ========================================================================
 
     #[test]
     fn test_client_message_serialization() {
@@ -678,10 +740,155 @@ mod tests {
     }
 
     #[test]
+    fn test_client_message_register() {
+        let msg = ClientMessage::register("alice", "alice@example.com", "password123");
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"register\""));
+        assert!(json.contains("\"username\":\"alice\""));
+        assert!(json.contains("\"email\":\"alice@example.com\""));
+    }
+
+    #[test]
+    fn test_client_message_client_hello() {
+        let msg = ClientMessage::client_hello();
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"client_hello\""));
+        assert!(json.contains("\"version\":\"1.0\""));
+    }
+
+    #[test]
+    fn test_client_message_client_hello_with_encryption() {
+        let msg = ClientMessage::client_hello_with_encryption();
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"client_hello\""));
+        assert!(json.contains("\"encryption\""));
+    }
+
+    #[test]
+    fn test_client_message_authenticate() {
+        let msg = ClientMessage::authenticate("my-jwt-token");
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"authenticate\""));
+        assert!(json.contains("\"token\":\"my-jwt-token\""));
+    }
+
+    #[test]
+    fn test_client_message_ping() {
+        let msg = ClientMessage::Ping;
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"ping\""));
+    }
+
+    #[test]
+    fn test_client_message_send_message() {
+        let room_id = Uuid::new_v4();
+        let target = MessageTarget::Room { room_id };
+        let msg = ClientMessage::send_message(target, "Hello, world!");
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"send_message\""));
+        assert!(json.contains("\"content\":\"Hello, world!\""));
+    }
+
+    #[test]
+    fn test_client_message_create_room() {
+        let msg = ClientMessage::CreateRoom {
+            request_id: Some("req-123".to_string()),
+            name: "general".to_string(),
+            description: Some("General chat".to_string()),
+            settings: None,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"create_room\""));
+        assert!(json.contains("\"name\":\"general\""));
+    }
+
+    #[test]
+    fn test_client_message_join_room() {
+        let room_id = Uuid::new_v4();
+        let msg = ClientMessage::JoinRoom {
+            request_id: Some("req-456".to_string()),
+            room_id,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"join_room\""));
+        assert!(json.contains(&room_id.to_string()));
+    }
+
+    #[test]
+    fn test_client_message_leave_room() {
+        let room_id = Uuid::new_v4();
+        let msg = ClientMessage::LeaveRoom {
+            request_id: None,
+            room_id,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"leave_room\""));
+    }
+
+    #[test]
+    fn test_client_message_list_rooms() {
+        let msg = ClientMessage::ListRooms {
+            request_id: None,
+            filter: None,
+            limit: Some(50),
+            offset: None,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"list_rooms\""));
+        assert!(json.contains("\"limit\":50"));
+    }
+
+    #[test]
+    fn test_client_message_list_users() {
+        let msg = ClientMessage::ListUsers {
+            request_id: None,
+            filter: None,
+            limit: Some(100),
+            offset: None,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"list_users\""));
+    }
+
+    #[test]
+    fn test_client_message_get_messages() {
+        let room_id = Uuid::new_v4();
+        let msg = ClientMessage::GetMessages {
+            request_id: None,
+            target: MessageTarget::Room { room_id },
+            limit: Some(50),
+            before: None,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"get_messages\""));
+    }
+
+    // ========================================================================
+    // ServerMessage Deserialization Tests
+    // ========================================================================
+
+    #[test]
     fn test_server_message_deserialization() {
         let json = r#"{"type":"server_hello","version":"1.0","server_name":"Test","features":[],"encryption_required":false}"#;
         let msg: ServerMessage = serde_json::from_str(json).unwrap();
         assert!(matches!(msg, ServerMessage::ServerHello { .. }));
+    }
+
+    #[test]
+    fn test_server_hello_with_encryption() {
+        let json = r#"{"type":"server_hello","version":"1.0","server_name":"LairChat","features":["encryption","compression"],"encryption_required":true}"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::ServerHello {
+                features,
+                encryption_required,
+                ..
+            } => {
+                assert!(features.contains(&"encryption".to_string()));
+                assert!(encryption_required);
+            }
+            _ => panic!("Expected ServerHello"),
+        }
     }
 
     #[test]
@@ -723,5 +930,145 @@ mod tests {
             }
             _ => panic!("Expected LoginResponse"),
         }
+    }
+
+    #[test]
+    fn test_authenticate_response_success() {
+        let json = r#"{"type":"authenticate_response","request_id":null,"success":true,"user":{"id":"123e4567-e89b-12d3-a456-426614174000","username":"alice","email":"alice@test.com","role":"user","created_at":"2026-01-01T00:00:00Z"},"session":{"id":"223e4567-e89b-12d3-a456-426614174000","expires_at":"2026-01-02T00:00:00Z"}}"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::AuthenticateResponse { success, user, .. } => {
+                assert!(success);
+                assert!(user.is_some());
+            }
+            _ => panic!("Expected AuthenticateResponse"),
+        }
+    }
+
+    #[test]
+    fn test_authenticate_response_failure() {
+        let json = r#"{"type":"authenticate_response","request_id":null,"success":false,"error":{"code":"invalid_token","message":"Token expired"}}"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::AuthenticateResponse { success, error, .. } => {
+                assert!(!success);
+                assert!(error.is_some());
+                assert_eq!(error.unwrap().code, "invalid_token");
+            }
+            _ => panic!("Expected AuthenticateResponse"),
+        }
+    }
+
+    #[test]
+    fn test_pong_response() {
+        let json = r#"{"type":"pong"}"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        assert!(matches!(msg, ServerMessage::Pong { .. }));
+    }
+
+    #[test]
+    fn test_error_response() {
+        let json = r#"{"type":"error","request_id":"req-123","code":"unauthorized","message":"Not logged in"}"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::Error { code, message, .. } => {
+                assert_eq!(code, "unauthorized");
+                assert_eq!(message, "Not logged in");
+            }
+            _ => panic!("Expected Error"),
+        }
+    }
+
+    #[test]
+    fn test_create_room_response() {
+        let json = r#"{"type":"create_room_response","request_id":"req-123","success":true,"room":{"id":"123e4567-e89b-12d3-a456-426614174000","name":"general","owner":"223e4567-e89b-12d3-a456-426614174000","settings":{"public":true},"created_at":"2026-01-01T00:00:00Z"}}"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::CreateRoomResponse { success, room, .. } => {
+                assert!(success);
+                assert!(room.is_some());
+                assert_eq!(room.unwrap().name, "general");
+            }
+            _ => panic!("Expected CreateRoomResponse"),
+        }
+    }
+
+    #[test]
+    fn test_list_rooms_response() {
+        let json = r#"{"type":"list_rooms_response","request_id":null,"success":true,"rooms":[{"room":{"id":"123e4567-e89b-12d3-a456-426614174000","name":"general","owner":"223e4567-e89b-12d3-a456-426614174000","settings":{"public":true},"created_at":"2026-01-01T00:00:00Z"},"member_count":5,"is_member":true}],"total_count":1}"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::ListRoomsResponse { success, rooms, total_count, .. } => {
+                assert!(success);
+                assert_eq!(rooms.len(), 1);
+                assert_eq!(total_count, Some(1));
+            }
+            _ => panic!("Expected ListRoomsResponse"),
+        }
+    }
+
+    #[test]
+    fn test_message_received_event() {
+        let json = r#"{"type":"message_received","message":{"id":"123e4567-e89b-12d3-a456-426614174000","content":"Hello!","author":"223e4567-e89b-12d3-a456-426614174000","target":{"type":"room","room_id":"323e4567-e89b-12d3-a456-426614174000"},"edited":false,"created_at":"2026-01-01T00:00:00Z"},"author_username":"testuser"}"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::MessageReceived { message, author_username } => {
+                assert_eq!(message.content, "Hello!");
+                assert_eq!(author_username, "testuser");
+            }
+            _ => panic!("Expected MessageReceived"),
+        }
+    }
+
+    #[test]
+    fn test_user_online_event() {
+        let json = r#"{"type":"user_online","user_id":"123e4567-e89b-12d3-a456-426614174000","username":"testuser"}"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::UserOnline { user_id, username } => {
+                assert!(!user_id.is_nil());
+                assert_eq!(username, "testuser");
+            }
+            _ => panic!("Expected UserOnline"),
+        }
+    }
+
+    #[test]
+    fn test_user_offline_event() {
+        let json = r#"{"type":"user_offline","user_id":"123e4567-e89b-12d3-a456-426614174000","username":"testuser"}"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::UserOffline { user_id, username } => {
+                assert!(!user_id.is_nil());
+                assert_eq!(username, "testuser");
+            }
+            _ => panic!("Expected UserOffline"),
+        }
+    }
+
+    #[test]
+    fn test_key_exchange_response() {
+        let json = r#"{"type":"key_exchange_response","public_key":"SGVsbG8gV29ybGQh"}"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::KeyExchangeResponse { public_key } => {
+                assert!(!public_key.is_empty());
+            }
+            _ => panic!("Expected KeyExchangeResponse"),
+        }
+    }
+
+    // ========================================================================
+    // Constants Tests
+    // ========================================================================
+
+    #[test]
+    fn test_protocol_version() {
+        assert_eq!(PROTOCOL_VERSION, "1.0");
+    }
+
+    #[test]
+    fn test_max_message_size() {
+        assert_eq!(MAX_MESSAGE_SIZE, 1_048_576); // 1 MB
     }
 }
