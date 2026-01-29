@@ -493,6 +493,7 @@ impl App {
         self.add_system_message("  q        - Quit application");
         self.add_system_message("  R        - Reconnect to server");
         self.add_system_message("  ?/F1     - Show this help");
+        self.add_system_message("  Ctrl+P   - Open command palette");
         self.add_system_message("");
         self.add_system_message("INPUT (insert mode):");
         self.add_system_message("  Ctrl+V/Y - Paste from clipboard");

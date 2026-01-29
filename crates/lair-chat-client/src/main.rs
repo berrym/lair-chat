@@ -23,7 +23,7 @@ mod crypto;
 mod protocol;
 
 use app::{Action, App, Screen};
-use components::{ChatRenderContext, ChatScreen, LoginScreen, RoomsScreen};
+use components::{ChatRenderContext, ChatScreen, CommandPalette, LoginScreen, RoomsScreen};
 
 /// Lair Chat TUI Client
 #[derive(Parser, Debug)]
@@ -93,6 +93,7 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
     let mut login_screen = LoginScreen::new();
     let mut chat_screen = ChatScreen::new();
     let mut rooms_screen = RoomsScreen::new();
+    let mut command_palette = CommandPalette::new();
 
     // Connect to server
     if let Err(e) = app.connect().await {
@@ -139,6 +140,9 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
                     );
                 }
             }
+
+            // Render command palette as overlay (if visible)
+            command_palette.render(frame, area);
         })?;
 
         // Poll for events
@@ -155,6 +159,30 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
                 {
                     app.handle_action(Action::Quit).await;
                     break;
+                }
+
+                // Handle Ctrl+P to toggle command palette
+                if key.code == KeyCode::Char('p')
+                    && key.modifiers.contains(event::KeyModifiers::CONTROL)
+                {
+                    command_palette.toggle();
+                    continue;
+                }
+
+                // Route to command palette if visible
+                if command_palette.visible {
+                    if let Some(action) = command_palette.handle_key(key) {
+                        // Handle clipboard actions specially
+                        if matches!(action, Action::CopyLastMessage) {
+                            if let Some(content) = app.last_message_content() {
+                                chat_screen.copy_to_clipboard(content);
+                                app.set_info("Copied to clipboard");
+                            }
+                        } else {
+                            app.handle_action(action).await;
+                        }
+                    }
+                    continue;
                 }
 
                 // Route to appropriate screen
