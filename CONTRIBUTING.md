@@ -19,7 +19,7 @@ Thank you for your interest in contributing to Lair Chat! This document provides
 
 ### Prerequisites
 
-- Rust 1.70+ (install via [rustup](https://rustup.rs/))
+- Rust 1.88+ (install via [rustup](https://rustup.rs/))
 - SQLite (usually pre-installed on most systems)
 
 ### Building

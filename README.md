@@ -6,7 +6,7 @@ A secure, high-performance chat system built with Rust, featuring real-time mess
 [![Security Audit](https://github.com/berrym/lair-chat/actions/workflows/security.yml/badge.svg)](https://github.com/berrym/lair-chat/actions/workflows/security.yml)
 [![codecov](https://codecov.io/gh/berrym/lair-chat/graph/badge.svg)](https://codecov.io/gh/berrym/lair-chat)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
+[![Rust](https://img.shields.io/badge/rust-1.88+-orange.svg)](https://www.rust-lang.org)
 
 ## Features
 
@@ -30,12 +30,12 @@ A secure, high-performance chat system built with Rust, featuring real-time mess
 - **Clean architecture** - Domain-driven design with trait-based abstractions
 - **Async throughout** - Built on Tokio for high performance
 - **SQLite storage** - With migration support and connection pooling
-- **Comprehensive tests** - 200+ unit and integration tests with CI/CD
+- **Comprehensive tests** - 570+ unit and integration tests with CI/CD
 
 ## Quick Start
 
 ### Prerequisites
-- **Rust 1.70+** ([rustup.rs](https://rustup.rs/))
+- **Rust 1.88+** ([rustup.rs](https://rustup.rs/))
 
 ### Run the Server
 
@@ -262,7 +262,7 @@ See [docs/protocols/TCP.md](docs/protocols/TCP.md) for the complete wire protoco
 ## Testing
 
 ```bash
-# Run all tests (200+ tests)
+# Run all tests (570+ tests)
 cargo test --workspace
 
 # Run server tests only
