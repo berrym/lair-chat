@@ -139,6 +139,10 @@ pub struct ChatScreen {
     pub user_list_state: ListState,
     /// System clipboard (lazy-initialized).
     clipboard: Option<Clipboard>,
+    /// Whether to auto-scroll to bottom on next render.
+    auto_scroll_pending: bool,
+    /// Track if user was at bottom (for smart scroll on new messages).
+    was_at_bottom: bool,
 }
 
 /// Input mode for chat.
@@ -166,7 +170,24 @@ impl ChatScreen {
             focus: ChatFocus::Messages,
             user_list_state: ListState::default(),
             clipboard: None,
+            auto_scroll_pending: true, // Start scrolled to bottom
+            was_at_bottom: true,
         }
+    }
+
+    /// Scroll to the bottom of the message list.
+    ///
+    /// Call this when switching rooms/DMs to show the most recent messages.
+    pub fn scroll_to_bottom(&mut self) {
+        self.auto_scroll_pending = true;
+    }
+
+    /// Check if the view is currently at the bottom.
+    ///
+    /// Useful for smart scroll: only auto-scroll on new messages if user was at bottom.
+    #[allow(dead_code)]
+    pub fn is_at_bottom(&self) -> bool {
+        self.was_at_bottom
     }
 
     /// Get or initialize the clipboard.
@@ -783,7 +804,17 @@ impl ChatScreen {
         // Calculate scroll - now based on lines, not messages
         let total_lines = all_lines.len();
         let max_scroll = total_lines.saturating_sub(inner_height);
+
+        // Handle auto-scroll to bottom (e.g., when entering a room)
+        if self.auto_scroll_pending {
+            self.scroll = max_scroll;
+            self.auto_scroll_pending = false;
+        }
+
         let scroll = self.scroll.min(max_scroll);
+
+        // Track if we're at the bottom (for smart scroll on new messages)
+        self.was_at_bottom = scroll >= max_scroll.saturating_sub(1);
 
         // Take visible lines
         let visible_lines: Vec<ListItem> = all_lines
@@ -1138,6 +1169,32 @@ mod tests {
     fn test_chat_screen_default() {
         let screen = ChatScreen::default();
         assert_eq!(screen.mode, ChatMode::Normal);
+    }
+
+    #[test]
+    fn test_chat_screen_auto_scroll_pending_on_new() {
+        let screen = ChatScreen::new();
+        // New screen should auto-scroll to bottom on first render
+        assert!(screen.auto_scroll_pending);
+        assert!(screen.was_at_bottom);
+    }
+
+    #[test]
+    fn test_scroll_to_bottom() {
+        let mut screen = ChatScreen::new();
+        screen.auto_scroll_pending = false;
+        screen.scroll_to_bottom();
+        assert!(screen.auto_scroll_pending);
+    }
+
+    #[test]
+    fn test_is_at_bottom() {
+        let mut screen = ChatScreen::new();
+        screen.was_at_bottom = true;
+        assert!(screen.is_at_bottom());
+
+        screen.was_at_bottom = false;
+        assert!(!screen.is_at_bottom());
     }
 
     // ========================================================================

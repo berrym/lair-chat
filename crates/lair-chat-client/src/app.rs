@@ -423,14 +423,19 @@ impl App {
     }
 
     /// Process an action.
-    pub async fn handle_action(&mut self, action: Action) {
+    ///
+    /// Returns `true` if the chat context changed (room/DM switch) and the
+    /// chat view should scroll to the bottom.
+    pub async fn handle_action(&mut self, action: Action) -> bool {
         match action {
             Action::Quit => {
                 self.should_quit = true;
                 self.disconnect().await;
+                false
             }
             Action::Login { username, password } => {
                 self.handle_login(username, password).await;
+                false
             }
             Action::Register {
                 username,
@@ -438,16 +443,21 @@ impl App {
                 password,
             } => {
                 self.handle_register(username, email, password).await;
+                false
             }
             Action::SendMessage(content) => {
                 self.handle_send_message(content).await;
+                false
             }
             Action::ShowRooms => {
                 self.screen = Screen::Rooms;
                 self.request_room_list().await;
+                false
             }
             Action::JoinRoom(room_id) => {
                 self.handle_join_room(room_id).await;
+                // JoinRoom triggers SwitchToRoom via server response, so don't scroll here
+                false
             }
             Action::SwitchToRoom(room) => {
                 self.status = Some(format!("In room: {}", room.name));
@@ -459,18 +469,23 @@ impl App {
                 self.clear_notifications();
                 // Request message history
                 self.request_message_history().await;
+                true // Context changed - scroll to bottom
             }
             Action::CreateRoom(name) => {
                 self.handle_create_room(name).await;
+                false
             }
             Action::BackToChat => {
                 self.screen = Screen::Chat;
+                false
             }
             Action::Reconnect => {
                 self.reconnect().await;
+                false
             }
             Action::StartDM(username) => {
                 self.handle_start_dm(username).await;
+                true // Context changed - scroll to bottom
             }
             Action::StartDMByIndex(idx) => {
                 // Get combined user list (online first, then offline)
@@ -478,16 +493,22 @@ impl App {
                 let combined: Vec<_> = online.iter().chain(offline.iter()).collect();
                 if let Some(username) = combined.get(idx) {
                     self.handle_start_dm((*username).clone()).await;
+                    true // Context changed - scroll to bottom
+                } else {
+                    false
                 }
             }
             Action::ShowHelp => {
                 self.show_help();
+                false
             }
             Action::ClearError => {
                 self.clear_notifications();
+                false
             }
             Action::CopyLastMessage => {
                 // Handled by main loop (requires clipboard from ChatScreen)
+                false
             }
         }
     }

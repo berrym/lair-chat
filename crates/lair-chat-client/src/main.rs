@@ -217,7 +217,10 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
                                 dialog.show_confirm("Quit", "Are you sure you want to quit?");
                             }
                             _ => {
-                                app.handle_action(action).await;
+                                let context_changed = app.handle_action(action).await;
+                                if context_changed {
+                                    chat_screen.scroll_to_bottom();
+                                }
                             }
                         }
                     }
@@ -254,7 +257,10 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
                             dialog.show_confirm("Quit", "Are you sure you want to quit?");
                         }
                         _ => {
-                            app.handle_action(action).await;
+                            let context_changed = app.handle_action(action).await;
+                            if context_changed {
+                                chat_screen.scroll_to_bottom();
+                            }
                         }
                     }
                 }
