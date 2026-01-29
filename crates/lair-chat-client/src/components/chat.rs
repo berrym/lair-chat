@@ -24,6 +24,8 @@ enum MessageStyle {
     Received,
     /// System message (centered, italic).
     System,
+    /// System message (left-aligned, for help text).
+    SystemLeft,
     /// DM sent by current user (right-aligned, purple).
     DmSent,
     /// DM received from others (left-aligned, green).
@@ -96,6 +98,8 @@ pub struct ChatRenderContext<'a> {
     pub online_users: &'a [String],
     /// Offline users (usernames).
     pub offline_users: &'a [String],
+    /// Unread DM counts per username.
+    pub unread_dms: &'a std::collections::HashMap<String, u32>,
 }
 
 /// Which panel is focused in the chat screen.
@@ -577,6 +581,7 @@ impl ChatScreen {
             error,
             online_users,
             offline_users,
+            unread_dms,
         } = ctx;
 
         // Main layout: chat area + users panel (always show users panel)
@@ -642,7 +647,18 @@ impl ChatScreen {
 
             // Determine message style
             let msg_style = if msg.is_system {
-                MessageStyle::System
+                // Use left-aligned for help/welcome text (contains colons, bullets, or multiple lines)
+                if msg.content.contains(':')
+                    || msg.content.contains('•')
+                    || msg.content.contains('-')
+                    || msg.content.starts_with("Welcome")
+                    || msg.content.starts_with("Commands")
+                    || msg.content.starts_with("Keys")
+                {
+                    MessageStyle::SystemLeft
+                } else {
+                    MessageStyle::System
+                }
             } else {
                 let is_own_message = username.is_some_and(|u| u == msg.author);
                 if is_dm_mode {
@@ -667,7 +683,7 @@ impl ChatScreen {
             };
 
             // Get styling based on message type
-            let (text_style, bubble_style, right_align) = match msg_style {
+            let (text_style, _bubble_style, right_align) = match msg_style {
                 MessageStyle::Sent => (
                     Style::default()
                         .fg(Color::White)
@@ -690,6 +706,7 @@ impl ChatScreen {
                     None,
                     false,
                 ),
+                MessageStyle::SystemLeft => (Style::default().fg(Color::Cyan), None, false),
                 MessageStyle::DmSent => (
                     Style::default()
                         .fg(Color::White)
@@ -700,7 +717,7 @@ impl ChatScreen {
                 ),
                 MessageStyle::DmReceived => (
                     Style::default()
-                        .fg(Color::White)
+                        .fg(Color::Black)
                         .bg(Color::Rgb(34, 197, 94)) // Green
                         .add_modifier(Modifier::BOLD),
                     Some(Color::Rgb(34, 197, 94)),
@@ -713,31 +730,41 @@ impl ChatScreen {
             let wrapped_lines = wrap_text(&display_content, content_width);
 
             for wrapped_line in wrapped_lines {
-                let line = if bubble_style.is_some() {
-                    // Bubble message with padding
-                    let bubble_content = format!("  {}  ", wrapped_line);
-                    let content_len = bubble_content.len();
-
-                    if right_align {
-                        // Right-align sent messages
-                        let padding = inner_width.saturating_sub(content_len);
+                let line = match msg_style {
+                    MessageStyle::System => {
+                        // Centered system message with bullet points
+                        let system_content = format!("• {} •", wrapped_line);
+                        let content_len = system_content.len();
+                        let padding = inner_width.saturating_sub(content_len) / 2;
                         Line::from(vec![
                             Span::raw(" ".repeat(padding)),
-                            Span::styled(bubble_content, text_style),
+                            Span::styled(system_content, text_style),
                         ])
-                    } else {
-                        // Left-align received messages
-                        Line::from(vec![Span::styled(bubble_content, text_style)])
                     }
-                } else {
-                    // System message - centered with bullet points
-                    let system_content = format!("• {} •", wrapped_line);
-                    let content_len = system_content.len();
-                    let padding = inner_width.saturating_sub(content_len) / 2;
-                    Line::from(vec![
-                        Span::raw(" ".repeat(padding)),
-                        Span::styled(system_content, text_style),
-                    ])
+                    MessageStyle::SystemLeft => {
+                        // Left-aligned system message (for help text)
+                        Line::from(vec![
+                            Span::raw("  "),
+                            Span::styled(wrapped_line.clone(), text_style),
+                        ])
+                    }
+                    _ => {
+                        // Bubble message with padding
+                        let bubble_content = format!("  {}  ", wrapped_line);
+                        let content_len = bubble_content.len();
+
+                        if right_align {
+                            // Right-align sent messages
+                            let padding = inner_width.saturating_sub(content_len);
+                            Line::from(vec![
+                                Span::raw(" ".repeat(padding)),
+                                Span::styled(bubble_content, text_style),
+                            ])
+                        } else {
+                            // Left-align received messages
+                            Line::from(vec![Span::styled(bubble_content, text_style)])
+                        }
+                    }
                 };
 
                 all_lines.push(line);
@@ -924,7 +951,19 @@ impl ChatScreen {
                     Style::default().fg(Color::Green)
                 };
                 let prefix = if is_selected { "> " } else { "  " };
-                user_items.push(ListItem::new(format!("{}{}", prefix, name)).style(style));
+                // Check for unread DMs
+                let display = if let Some(&count) = unread_dms.get(name) {
+                    Line::from(vec![
+                        Span::styled(format!("{}{} ", prefix, name), style),
+                        Span::styled(
+                            format!("({})", count),
+                            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                        ),
+                    ])
+                } else {
+                    Line::from(Span::styled(format!("{}{}", prefix, name), style))
+                };
+                user_items.push(ListItem::new(display));
                 list_idx += 1;
             }
 
@@ -952,7 +991,19 @@ impl ChatScreen {
                     Style::default().fg(Color::DarkGray)
                 };
                 let prefix = if is_selected { "> " } else { "  " };
-                user_items.push(ListItem::new(format!("{}{}", prefix, name)).style(style));
+                // Check for unread DMs
+                let display = if let Some(&count) = unread_dms.get(name) {
+                    Line::from(vec![
+                        Span::styled(format!("{}{} ", prefix, name), style),
+                        Span::styled(
+                            format!("({})", count),
+                            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                        ),
+                    ])
+                } else {
+                    Line::from(Span::styled(format!("{}{}", prefix, name), style))
+                };
+                user_items.push(ListItem::new(display));
                 list_idx += 1;
             }
 

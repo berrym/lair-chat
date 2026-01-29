@@ -120,6 +120,7 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
                 Screen::Chat => {
                     // Get online and offline user lists
                     let (online_usernames, offline_usernames) = app.get_user_lists();
+                    let unread_dms = app.get_unread_dms();
 
                     let ctx = ChatRenderContext {
                         messages: &app.messages,
@@ -130,6 +131,7 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
                         error: app.error(),
                         online_users: &online_usernames,
                         offline_users: &offline_usernames,
+                        unread_dms: &unread_dms,
                     };
                     chat_screen.render(frame, area, &ctx);
                 }

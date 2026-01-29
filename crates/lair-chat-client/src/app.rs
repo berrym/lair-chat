@@ -92,6 +92,8 @@ pub struct App {
     pub online_user_ids: HashSet<UserId>,
     /// User cache for username lookups (UserId -> username).
     pub user_cache: HashMap<UserId, String>,
+    /// Unread DM counts per user (UserId -> unread count).
+    pub unread_dms: HashMap<UserId, u32>,
 }
 
 /// Screens in the application.
@@ -236,6 +238,7 @@ impl App {
             all_users: Vec::new(),
             online_user_ids: HashSet::new(),
             user_cache: HashMap::new(),
+            unread_dms: HashMap::new(),
         }
     }
 
@@ -307,6 +310,17 @@ impl App {
         }
 
         (online, offline)
+    }
+
+    /// Get unread DM counts by username.
+    pub fn get_unread_dms(&self) -> HashMap<String, u32> {
+        let mut result = HashMap::new();
+        for (user_id, count) in &self.unread_dms {
+            if let Some(user) = self.all_users.iter().find(|u| &u.id == user_id) {
+                result.insert(user.username.clone(), *count);
+            }
+        }
+        result
     }
 
     /// Look up a username by user ID, returning a display string.
@@ -544,6 +558,8 @@ impl App {
             self.current_room = None;
             self.current_dm_user = Some(user.clone());
             self.messages.clear();
+            // Clear unread count for this user
+            self.unread_dms.remove(&user.id);
             self.add_system_message(format!("Direct message with {}", user.username));
             self.screen = Screen::Chat;
 
@@ -1090,10 +1106,13 @@ impl App {
                         is_system: false,
                     });
                 } else if let MessageTarget::DirectMessage { .. } = &message.target {
-                    // Got a DM while not viewing it - show notification with instructions
+                    // Got a DM while not viewing it - increment unread count
+                    *self.unread_dms.entry(message.author).or_insert(0) += 1;
+                    let unread = self.unread_dms.get(&message.author).copied().unwrap_or(0);
+                    // Show notification with unread count
                     self.add_system_message(format!(
-                        "New DM from {} (Tab to Users, select with j/k, Enter to reply)",
-                        author_username
+                        "New DM from {} ({} unread) - Tab to Users, j/k to select, Enter to reply",
+                        author_username, unread
                     ));
                 }
             }
@@ -1132,11 +1151,36 @@ impl App {
                 // Cache this user and mark as online
                 self.user_cache.insert(user_id, username.clone());
                 self.online_user_ids.insert(user_id);
-                self.add_system_message(format!("{} is now online", username));
+
+                // Check if we have unread DMs from this user
+                if let Some(&unread) = self.unread_dms.get(&user_id) {
+                    self.add_system_message(format!(
+                        "{} is now online ({} unread DM{})",
+                        username,
+                        unread,
+                        if unread == 1 { "" } else { "s" }
+                    ));
+                } else {
+                    self.add_system_message(format!("{} is now online", username));
+                }
             }
 
             ServerMessage::UserOffline { user_id, username } => {
-                self.add_system_message(format!("{} went offline", username));
+                // Check if this is our current DM partner
+                let is_dm_partner = self
+                    .current_dm_user
+                    .as_ref()
+                    .is_some_and(|dm| dm.id == user_id);
+
+                if is_dm_partner {
+                    // More prominent notification for DM partner
+                    self.add_system_message(format!(
+                        "⚠ {} went offline - they may not see your messages",
+                        username
+                    ));
+                } else {
+                    self.add_system_message(format!("{} went offline", username));
+                }
                 self.online_user_ids.remove(&user_id);
             }
 
