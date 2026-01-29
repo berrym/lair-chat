@@ -433,7 +433,9 @@ mod tests {
         let (service, storage) = create_test_service().await;
         let owner_id = create_user(&storage, "alice", "alice@example.com").await;
 
-        let room = service.create(owner_id, "general", Some("General chat".to_string()), None).await;
+        let room = service
+            .create(owner_id, "general", Some("General chat".to_string()), None)
+            .await;
 
         assert!(room.is_ok());
         let room = room.unwrap();
@@ -462,7 +464,10 @@ mod tests {
         let owner_id = create_user(&storage, "alice", "alice@example.com").await;
 
         // Create first room
-        let _ = service.create(owner_id, "general", None, None).await.unwrap();
+        let _ = service
+            .create(owner_id, "general", None, None)
+            .await
+            .unwrap();
 
         // Try to create room with same name
         let result = service.create(owner_id, "general", None, None).await;
@@ -480,7 +485,10 @@ mod tests {
             ..Default::default()
         };
 
-        let room = service.create(owner_id, "private-room", None, Some(settings)).await.unwrap();
+        let room = service
+            .create(owner_id, "private-room", None, Some(settings))
+            .await
+            .unwrap();
 
         assert!(!room.is_public());
         assert_eq!(room.settings.max_members, Some(10));
@@ -495,7 +503,10 @@ mod tests {
         let (service, storage) = create_test_service().await;
         let owner_id = create_user(&storage, "alice", "alice@example.com").await;
 
-        let created = service.create(owner_id, "general", None, None).await.unwrap();
+        let created = service
+            .create(owner_id, "general", None, None)
+            .await
+            .unwrap();
         let found = service.get(created.id).await.unwrap();
 
         assert!(found.is_some());
@@ -516,11 +527,20 @@ mod tests {
         let owner_id = create_user(&storage, "alice", "alice@example.com").await;
 
         // Create public room
-        let _ = service.create(owner_id, "public1", None, None).await.unwrap();
+        let _ = service
+            .create(owner_id, "public1", None, None)
+            .await
+            .unwrap();
 
         // Create private room
-        let private_settings = RoomSettings { is_private: true, ..Default::default() };
-        let _ = service.create(owner_id, "private1", None, Some(private_settings)).await.unwrap();
+        let private_settings = RoomSettings {
+            is_private: true,
+            ..Default::default()
+        };
+        let _ = service
+            .create(owner_id, "private1", None, Some(private_settings))
+            .await
+            .unwrap();
 
         let public_rooms = service.list_public(Pagination::default()).await.unwrap();
         assert_eq!(public_rooms.len(), 1);
@@ -537,7 +557,10 @@ mod tests {
         let alice_id = create_user(&storage, "alice", "alice@example.com").await;
         let bob_id = create_user(&storage, "bob", "bob@example.com").await;
 
-        let room = service.create(alice_id, "general", None, None).await.unwrap();
+        let room = service
+            .create(alice_id, "general", None, None)
+            .await
+            .unwrap();
         let membership = service.join(bob_id, room.id).await;
 
         assert!(membership.is_ok());
@@ -553,7 +576,10 @@ mod tests {
         let alice_id = create_user(&storage, "alice", "alice@example.com").await;
         let bob_id = create_user(&storage, "bob", "bob@example.com").await;
 
-        let room = service.create(alice_id, "general", None, None).await.unwrap();
+        let room = service
+            .create(alice_id, "general", None, None)
+            .await
+            .unwrap();
         let _ = service.join(bob_id, room.id).await.unwrap();
 
         // Try to join again
@@ -576,8 +602,14 @@ mod tests {
         let alice_id = create_user(&storage, "alice", "alice@example.com").await;
         let bob_id = create_user(&storage, "bob", "bob@example.com").await;
 
-        let settings = RoomSettings { is_private: true, ..Default::default() };
-        let room = service.create(alice_id, "private", None, Some(settings)).await.unwrap();
+        let settings = RoomSettings {
+            is_private: true,
+            ..Default::default()
+        };
+        let room = service
+            .create(alice_id, "private", None, Some(settings))
+            .await
+            .unwrap();
 
         // Bob tries to join without invitation
         let result = service.join(bob_id, room.id).await;
@@ -590,7 +622,10 @@ mod tests {
         let alice_id = create_user(&storage, "alice", "alice@example.com").await;
         let bob_id = create_user(&storage, "bob", "bob@example.com").await;
 
-        let room = service.create(alice_id, "general", None, None).await.unwrap();
+        let room = service
+            .create(alice_id, "general", None, None)
+            .await
+            .unwrap();
         let _ = service.join(bob_id, room.id).await.unwrap();
 
         let result = service.leave(bob_id, room.id).await;
@@ -603,7 +638,10 @@ mod tests {
         let alice_id = create_user(&storage, "alice", "alice@example.com").await;
         let bob_id = create_user(&storage, "bob", "bob@example.com").await;
 
-        let room = service.create(alice_id, "general", None, None).await.unwrap();
+        let room = service
+            .create(alice_id, "general", None, None)
+            .await
+            .unwrap();
 
         let result = service.leave(bob_id, room.id).await;
         assert!(matches!(result, Err(Error::NotRoomMember)));
@@ -614,7 +652,10 @@ mod tests {
         let (service, storage) = create_test_service().await;
         let alice_id = create_user(&storage, "alice", "alice@example.com").await;
 
-        let room = service.create(alice_id, "general", None, None).await.unwrap();
+        let room = service
+            .create(alice_id, "general", None, None)
+            .await
+            .unwrap();
 
         // Alice is the only owner, can't leave
         let result = service.leave(alice_id, room.id).await;
@@ -630,20 +671,28 @@ mod tests {
         let (service, storage) = create_test_service().await;
         let owner_id = create_user(&storage, "alice", "alice@example.com").await;
 
-        let room = service.create(owner_id, "general", None, None).await.unwrap();
+        let room = service
+            .create(owner_id, "general", None, None)
+            .await
+            .unwrap();
 
-        let updated = service.update(
-            owner_id,
-            room.id,
-            Some("new-general"),
-            Some("Updated description".to_string()),
-            None,
-        ).await;
+        let updated = service
+            .update(
+                owner_id,
+                room.id,
+                Some("new-general"),
+                Some("Updated description".to_string()),
+                None,
+            )
+            .await;
 
         assert!(updated.is_ok());
         let updated = updated.unwrap();
         assert_eq!(updated.name.as_str(), "new-general");
-        assert_eq!(updated.settings.description, Some("Updated description".to_string()));
+        assert_eq!(
+            updated.settings.description,
+            Some("Updated description".to_string())
+        );
     }
 
     #[tokio::test]
@@ -652,11 +701,16 @@ mod tests {
         let alice_id = create_user(&storage, "alice", "alice@example.com").await;
         let bob_id = create_user(&storage, "bob", "bob@example.com").await;
 
-        let room = service.create(alice_id, "general", None, None).await.unwrap();
+        let room = service
+            .create(alice_id, "general", None, None)
+            .await
+            .unwrap();
         let _ = service.join(bob_id, room.id).await.unwrap();
 
         // Bob (not owner/moderator) tries to update
-        let result = service.update(bob_id, room.id, Some("hacked"), None, None).await;
+        let result = service
+            .update(bob_id, room.id, Some("hacked"), None, None)
+            .await;
         assert!(matches!(result, Err(Error::PermissionDenied)));
     }
 
@@ -669,7 +723,10 @@ mod tests {
         let (service, storage) = create_test_service().await;
         let owner_id = create_user(&storage, "alice", "alice@example.com").await;
 
-        let room = service.create(owner_id, "general", None, None).await.unwrap();
+        let room = service
+            .create(owner_id, "general", None, None)
+            .await
+            .unwrap();
 
         let result = service.delete(owner_id, room.id).await;
         assert!(result.is_ok());
@@ -685,7 +742,10 @@ mod tests {
         let alice_id = create_user(&storage, "alice", "alice@example.com").await;
         let bob_id = create_user(&storage, "bob", "bob@example.com").await;
 
-        let room = service.create(alice_id, "general", None, None).await.unwrap();
+        let room = service
+            .create(alice_id, "general", None, None)
+            .await
+            .unwrap();
         let _ = service.join(bob_id, room.id).await.unwrap();
 
         // Bob tries to delete
@@ -703,10 +763,18 @@ mod tests {
         let alice_id = create_user(&storage, "alice", "alice@example.com").await;
         let bob_id = create_user(&storage, "bob", "bob@example.com").await;
 
-        let room = service.create(alice_id, "private-room", None, Some(RoomSettings {
-            is_private: true,
-            ..Default::default()
-        })).await.unwrap();
+        let room = service
+            .create(
+                alice_id,
+                "private-room",
+                None,
+                Some(RoomSettings {
+                    is_private: true,
+                    ..Default::default()
+                }),
+            )
+            .await
+            .unwrap();
 
         let invitation = service.invite(alice_id, room.id, bob_id).await;
 
@@ -723,7 +791,10 @@ mod tests {
         let alice_id = create_user(&storage, "alice", "alice@example.com").await;
         let bob_id = create_user(&storage, "bob", "bob@example.com").await;
 
-        let room = service.create(alice_id, "general", None, None).await.unwrap();
+        let room = service
+            .create(alice_id, "general", None, None)
+            .await
+            .unwrap();
         let _ = service.join(bob_id, room.id).await.unwrap();
 
         // Can't invite someone already in the room
@@ -737,10 +808,18 @@ mod tests {
         let alice_id = create_user(&storage, "alice", "alice@example.com").await;
         let bob_id = create_user(&storage, "bob", "bob@example.com").await;
 
-        let room = service.create(alice_id, "private-room", None, Some(RoomSettings {
-            is_private: true,
-            ..Default::default()
-        })).await.unwrap();
+        let room = service
+            .create(
+                alice_id,
+                "private-room",
+                None,
+                Some(RoomSettings {
+                    is_private: true,
+                    ..Default::default()
+                }),
+            )
+            .await
+            .unwrap();
 
         let _ = service.invite(alice_id, room.id, bob_id).await.unwrap();
 
@@ -758,7 +837,10 @@ mod tests {
         // Note: Using a public room here because the accept_invitation + join interaction
         // has an edge case where accepting the invitation marks it as non-pending before
         // the join() call checks for pending invitations on private rooms.
-        let room = service.create(alice_id, "public-room", None, None).await.unwrap();
+        let room = service
+            .create(alice_id, "public-room", None, None)
+            .await
+            .unwrap();
 
         let invitation = service.invite(alice_id, room.id, bob_id).await.unwrap();
         let membership = service.accept_invitation(bob_id, invitation.id).await;
@@ -775,10 +857,18 @@ mod tests {
         let alice_id = create_user(&storage, "alice", "alice@example.com").await;
         let bob_id = create_user(&storage, "bob", "bob@example.com").await;
 
-        let room = service.create(alice_id, "private-room", None, Some(RoomSettings {
-            is_private: true,
-            ..Default::default()
-        })).await.unwrap();
+        let room = service
+            .create(
+                alice_id,
+                "private-room",
+                None,
+                Some(RoomSettings {
+                    is_private: true,
+                    ..Default::default()
+                }),
+            )
+            .await
+            .unwrap();
 
         let invitation = service.invite(alice_id, room.id, bob_id).await.unwrap();
         let result = service.decline_invitation(bob_id, invitation.id).await;
@@ -792,10 +882,18 @@ mod tests {
         let alice_id = create_user(&storage, "alice", "alice@example.com").await;
         let bob_id = create_user(&storage, "bob", "bob@example.com").await;
 
-        let room = service.create(alice_id, "private-room", None, Some(RoomSettings {
-            is_private: true,
-            ..Default::default()
-        })).await.unwrap();
+        let room = service
+            .create(
+                alice_id,
+                "private-room",
+                None,
+                Some(RoomSettings {
+                    is_private: true,
+                    ..Default::default()
+                }),
+            )
+            .await
+            .unwrap();
 
         let _ = service.invite(alice_id, room.id, bob_id).await.unwrap();
 

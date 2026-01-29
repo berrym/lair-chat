@@ -1210,7 +1210,11 @@ async fn test_list_rooms_with_limit_joined_only() {
     let rooms = body["rooms"].as_array().unwrap();
     // Expected: 2 rooms (respecting limit)
     // Actual: 5 rooms (limit ignored for joined_only)
-    assert_eq!(rooms.len(), 2, "Pagination limit should be applied to joined_only queries");
+    assert_eq!(
+        rooms.len(),
+        2,
+        "Pagination limit should be applied to joined_only queries"
+    );
 }
 
 #[tokio::test]

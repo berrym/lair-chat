@@ -880,7 +880,10 @@ mod tests {
 
     #[test]
     fn test_cancel_reason_display() {
-        assert_eq!(CancelReason::CancelledByInviter.to_string(), "cancelled by inviter");
+        assert_eq!(
+            CancelReason::CancelledByInviter.to_string(),
+            "cancelled by inviter"
+        );
         assert_eq!(CancelReason::Expired.to_string(), "expired");
         assert_eq!(CancelReason::RoomDeleted.to_string(), "room deleted");
     }
@@ -902,15 +905,59 @@ mod tests {
 
         // Test all event types return correct type names
         let events = [
-            (EventPayload::MessageReceived(MessageReceivedEvent::new(message.clone())), "message_received"),
-            (EventPayload::MessageEdited(MessageEditedEvent::new(message.clone(), "old".to_string())), "message_edited"),
-            (EventPayload::MessageDeleted(MessageDeletedEvent::new(MessageId::new(), MessageTarget::Room { room_id }, user_id)), "message_deleted"),
-            (EventPayload::UserOnline(UserOnlineEvent::new(user_id, "test".to_string())), "user_online"),
-            (EventPayload::UserOffline(UserOfflineEvent::new(user_id, "test".to_string())), "user_offline"),
-            (EventPayload::UserTyping(UserTypingEvent::new(user_id, MessageTarget::Room { room_id })), "user_typing"),
-            (EventPayload::RoomDeleted(RoomDeletedEvent::new(room_id, "room".to_string(), user_id)), "room_deleted"),
-            (EventPayload::ServerNotice(ServerNoticeEvent::info("notice")), "server_notice"),
-            (EventPayload::SessionExpiring(SessionExpiringEvent::new(session_id, chrono::Utc::now())), "session_expiring"),
+            (
+                EventPayload::MessageReceived(MessageReceivedEvent::new(message.clone())),
+                "message_received",
+            ),
+            (
+                EventPayload::MessageEdited(MessageEditedEvent::new(
+                    message.clone(),
+                    "old".to_string(),
+                )),
+                "message_edited",
+            ),
+            (
+                EventPayload::MessageDeleted(MessageDeletedEvent::new(
+                    MessageId::new(),
+                    MessageTarget::Room { room_id },
+                    user_id,
+                )),
+                "message_deleted",
+            ),
+            (
+                EventPayload::UserOnline(UserOnlineEvent::new(user_id, "test".to_string())),
+                "user_online",
+            ),
+            (
+                EventPayload::UserOffline(UserOfflineEvent::new(user_id, "test".to_string())),
+                "user_offline",
+            ),
+            (
+                EventPayload::UserTyping(UserTypingEvent::new(
+                    user_id,
+                    MessageTarget::Room { room_id },
+                )),
+                "user_typing",
+            ),
+            (
+                EventPayload::RoomDeleted(RoomDeletedEvent::new(
+                    room_id,
+                    "room".to_string(),
+                    user_id,
+                )),
+                "room_deleted",
+            ),
+            (
+                EventPayload::ServerNotice(ServerNoticeEvent::info("notice")),
+                "server_notice",
+            ),
+            (
+                EventPayload::SessionExpiring(SessionExpiringEvent::new(
+                    session_id,
+                    chrono::Utc::now(),
+                )),
+                "session_expiring",
+            ),
         ];
 
         for (payload, expected_type) in events {
@@ -925,10 +972,13 @@ mod tests {
         let session_id = SessionId::new();
 
         // Test all EventTarget variants can be created and compared
-        let targets = vec![
+        let targets = [
             EventTarget::User(user_id),
             EventTarget::Room(room_id),
-            EventTarget::DirectMessage { user1: user_id, user2: UserId::new() },
+            EventTarget::DirectMessage {
+                user1: user_id,
+                user2: UserId::new(),
+            },
             EventTarget::UserConnections(user_id),
             EventTarget::Session(session_id),
             EventTarget::Broadcast,
@@ -960,7 +1010,10 @@ mod tests {
         let json = serde_json::to_string(&change).unwrap();
         assert!(json.contains("\"field\":\"name\""));
 
-        let change = RoomChange::Public { old: false, new: true };
+        let change = RoomChange::Public {
+            old: false,
+            new: true,
+        };
         let json = serde_json::to_string(&change).unwrap();
         assert!(json.contains("\"field\":\"public\""));
 
@@ -971,11 +1024,17 @@ mod tests {
         let json = serde_json::to_string(&change).unwrap();
         assert!(json.contains("\"field\":\"description\""));
 
-        let change = RoomChange::MaxMembers { old: Some(10), new: Some(20) };
+        let change = RoomChange::MaxMembers {
+            old: Some(10),
+            new: Some(20),
+        };
         let json = serde_json::to_string(&change).unwrap();
         assert!(json.contains("\"field\":\"max_members\""));
 
-        let change = RoomChange::Moderated { old: false, new: true };
+        let change = RoomChange::Moderated {
+            old: false,
+            new: true,
+        };
         let json = serde_json::to_string(&change).unwrap();
         assert!(json.contains("\"field\":\"moderated\""));
     }

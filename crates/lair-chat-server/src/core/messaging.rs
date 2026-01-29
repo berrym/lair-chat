@@ -271,7 +271,9 @@ mod tests {
         let username = Username::new(username).unwrap();
         let email = Email::new(email).unwrap();
         let user = User::new(username, email, Role::User);
-        UserRepository::create(storage, &user, "hashed_password").await.unwrap();
+        UserRepository::create(storage, &user, "hashed_password")
+            .await
+            .unwrap();
         user
     }
 
@@ -282,7 +284,9 @@ mod tests {
 
         // Add owner as member
         let membership = RoomMembership::as_owner(room.id, owner_id);
-        MembershipRepository::add_member(storage, &membership).await.unwrap();
+        MembershipRepository::add_member(storage, &membership)
+            .await
+            .unwrap();
 
         room
     }
@@ -382,7 +386,10 @@ mod tests {
         let service = create_messaging_service(storage);
 
         let target = MessageTarget::Room { room_id: room.id };
-        let message = service.send(user.id, target, "Original content").await.unwrap();
+        let message = service
+            .send(user.id, target, "Original content")
+            .await
+            .unwrap();
 
         let result = service.edit(user.id, message.id, "Edited content").await;
 
@@ -510,10 +517,18 @@ mod tests {
         let service = create_messaging_service(storage);
 
         let target = MessageTarget::Room { room_id: room.id };
-        service.send(user.id, target.clone(), "Message 1").await.unwrap();
-        service.send(user.id, target.clone(), "Message 2").await.unwrap();
+        service
+            .send(user.id, target.clone(), "Message 1")
+            .await
+            .unwrap();
+        service
+            .send(user.id, target.clone(), "Message 2")
+            .await
+            .unwrap();
 
-        let result = service.get_messages(user.id, target, Pagination::default()).await;
+        let result = service
+            .get_messages(user.id, target, Pagination::default())
+            .await;
 
         assert!(result.is_ok());
         let messages = result.unwrap();
@@ -529,7 +544,9 @@ mod tests {
         let service = create_messaging_service(storage);
 
         let target = MessageTarget::Room { room_id: room.id };
-        let result = service.get_messages(outsider.id, target, Pagination::default()).await;
+        let result = service
+            .get_messages(outsider.id, target, Pagination::default())
+            .await;
 
         assert!(matches!(result, Err(Error::NotRoomMember)));
     }
@@ -557,7 +574,9 @@ mod tests {
         let target = MessageTarget::DirectMessage {
             recipient: user2.id,
         };
-        let result = service.get_messages(user1.id, target, Pagination::default()).await;
+        let result = service
+            .get_messages(user1.id, target, Pagination::default())
+            .await;
 
         assert!(result.is_ok());
         let messages = result.unwrap();
@@ -573,7 +592,9 @@ mod tests {
         let target = MessageTarget::DirectMessage {
             recipient: UserId::new(),
         };
-        let result = service.get_messages(user.id, target, Pagination::default()).await;
+        let result = service
+            .get_messages(user.id, target, Pagination::default())
+            .await;
 
         assert!(matches!(result, Err(Error::UserNotFound)));
     }
@@ -592,7 +613,9 @@ mod tests {
         let target = MessageTarget::Room { room_id: room.id };
         service.send(user.id, target, "Test message").await.unwrap();
 
-        let result = service.get_room_messages(room.id, Pagination::default()).await;
+        let result = service
+            .get_room_messages(room.id, Pagination::default())
+            .await;
 
         assert!(result.is_ok());
         let messages = result.unwrap();
@@ -613,7 +636,10 @@ mod tests {
         let target = MessageTarget::DirectMessage {
             recipient: user2.id,
         };
-        service.send(user1.id, target, "Direct message").await.unwrap();
+        service
+            .send(user1.id, target, "Direct message")
+            .await
+            .unwrap();
 
         let result = service
             .get_direct_messages(user1.id, user2.id, Pagination::default())

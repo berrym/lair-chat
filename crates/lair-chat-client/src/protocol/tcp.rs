@@ -668,8 +668,8 @@ async fn read_message_with_cipher(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use uuid::Uuid;
     use crate::protocol::messages::MessageTarget;
+    use uuid::Uuid;
 
     // ========================================================================
     // TcpClient Tests
@@ -998,7 +998,12 @@ mod tests {
         let json = r#"{"type":"list_rooms_response","request_id":null,"success":true,"rooms":[{"room":{"id":"123e4567-e89b-12d3-a456-426614174000","name":"general","owner":"223e4567-e89b-12d3-a456-426614174000","settings":{"public":true},"created_at":"2026-01-01T00:00:00Z"},"member_count":5,"is_member":true}],"total_count":1}"#;
         let msg: ServerMessage = serde_json::from_str(json).unwrap();
         match msg {
-            ServerMessage::ListRoomsResponse { success, rooms, total_count, .. } => {
+            ServerMessage::ListRoomsResponse {
+                success,
+                rooms,
+                total_count,
+                ..
+            } => {
                 assert!(success);
                 assert_eq!(rooms.len(), 1);
                 assert_eq!(total_count, Some(1));
@@ -1012,7 +1017,10 @@ mod tests {
         let json = r#"{"type":"message_received","message":{"id":"123e4567-e89b-12d3-a456-426614174000","content":"Hello!","author":"223e4567-e89b-12d3-a456-426614174000","target":{"type":"room","room_id":"323e4567-e89b-12d3-a456-426614174000"},"edited":false,"created_at":"2026-01-01T00:00:00Z"},"author_username":"testuser"}"#;
         let msg: ServerMessage = serde_json::from_str(json).unwrap();
         match msg {
-            ServerMessage::MessageReceived { message, author_username } => {
+            ServerMessage::MessageReceived {
+                message,
+                author_username,
+            } => {
                 assert_eq!(message.content, "Hello!");
                 assert_eq!(author_username, "testuser");
             }

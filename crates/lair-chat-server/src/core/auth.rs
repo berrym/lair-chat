@@ -352,7 +352,9 @@ mod tests {
         let storage = create_test_storage().await;
         let auth = create_auth_service(storage);
 
-        let result = auth.register("newuser", "new@example.com", "password123").await;
+        let result = auth
+            .register("newuser", "new@example.com", "password123")
+            .await;
 
         assert!(result.is_ok());
         let (user, session, token) = result.unwrap();
@@ -367,7 +369,9 @@ mod tests {
         let storage = create_test_storage().await;
         let auth = create_auth_service(storage);
 
-        let result = auth.register("ab", "valid@example.com", "password123").await;
+        let result = auth
+            .register("ab", "valid@example.com", "password123")
+            .await;
 
         assert!(matches!(result, Err(Error::UsernameInvalid { .. })));
     }
@@ -377,7 +381,9 @@ mod tests {
         let storage = create_test_storage().await;
         let auth = create_auth_service(storage);
 
-        let result = auth.register("validuser", "notanemail", "password123").await;
+        let result = auth
+            .register("validuser", "notanemail", "password123")
+            .await;
 
         assert!(matches!(result, Err(Error::EmailInvalid { .. })));
     }
@@ -387,7 +393,9 @@ mod tests {
         let storage = create_test_storage().await;
         let auth = create_auth_service(storage);
 
-        let result = auth.register("validuser", "valid@example.com", "short").await;
+        let result = auth
+            .register("validuser", "valid@example.com", "short")
+            .await;
 
         assert!(matches!(result, Err(Error::PasswordTooWeak { .. })));
     }

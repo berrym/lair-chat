@@ -441,9 +441,10 @@ mod tests {
         palette.update_filter();
 
         // Should find at least the "Quit" command
-        assert!(palette.filtered.iter().any(|(idx, _)| {
-            palette.commands[*idx].name.to_lowercase().contains("quit")
-        }));
+        assert!(palette
+            .filtered
+            .iter()
+            .any(|(idx, _)| { palette.commands[*idx].name.to_lowercase().contains("quit") }));
     }
 
     #[test]
@@ -678,12 +679,7 @@ mod tests {
 
     #[test]
     fn test_palette_command_new() {
-        let cmd = PaletteCommand::new(
-            "test",
-            "Test Command",
-            "A test command",
-            Action::Quit,
-        );
+        let cmd = PaletteCommand::new("test", "Test Command", "A test command", Action::Quit);
 
         assert_eq!(cmd.id, "test");
         assert_eq!(cmd.name, "Test Command");

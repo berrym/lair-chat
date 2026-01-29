@@ -453,10 +453,7 @@ mod tests {
     #[test]
     fn test_extract_token_from_header_wrong_scheme() {
         let mut headers = HeaderMap::new();
-        headers.insert(
-            header::AUTHORIZATION,
-            "Basic dXNlcjpwYXNz".parse().unwrap(),
-        );
+        headers.insert(header::AUTHORIZATION, "Basic dXNlcjpwYXNz".parse().unwrap());
 
         let token = extract_token_from_header(&headers);
         assert_eq!(token, None);

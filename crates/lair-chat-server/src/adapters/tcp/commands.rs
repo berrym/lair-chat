@@ -862,8 +862,8 @@ fn error_to_info(error: &crate::Error) -> ErrorInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::sqlite::SqliteStorage;
     use crate::core::engine::ChatEngine;
+    use crate::storage::sqlite::SqliteStorage;
     use std::sync::Arc as StdArc;
 
     /// Test JWT secret for tests.
@@ -913,7 +913,9 @@ mod tests {
     async fn test_handle_register_success() {
         let handler = create_test_handler().await;
 
-        let response = handler.handle_register("alice", "alice@example.com", "password123").await;
+        let response = handler
+            .handle_register("alice", "alice@example.com", "password123")
+            .await;
 
         match response {
             ServerMessage::RegisterResponse {
@@ -940,10 +942,14 @@ mod tests {
         let handler = create_test_handler().await;
 
         // Register first user
-        let _ = handler.handle_register("alice", "alice1@example.com", "password123").await;
+        let _ = handler
+            .handle_register("alice", "alice1@example.com", "password123")
+            .await;
 
         // Try to register with same username
-        let response = handler.handle_register("alice", "alice2@example.com", "password123").await;
+        let response = handler
+            .handle_register("alice", "alice2@example.com", "password123")
+            .await;
 
         match response {
             ServerMessage::RegisterResponse { success, error, .. } => {
@@ -959,7 +965,9 @@ mod tests {
     async fn test_handle_register_invalid_email() {
         let handler = create_test_handler().await;
 
-        let response = handler.handle_register("bob", "not-an-email", "password123").await;
+        let response = handler
+            .handle_register("bob", "not-an-email", "password123")
+            .await;
 
         match response {
             ServerMessage::RegisterResponse { success, error, .. } => {
@@ -974,7 +982,9 @@ mod tests {
     async fn test_handle_register_weak_password() {
         let handler = create_test_handler().await;
 
-        let response = handler.handle_register("bob", "bob@example.com", "short").await;
+        let response = handler
+            .handle_register("bob", "bob@example.com", "short")
+            .await;
 
         match response {
             ServerMessage::RegisterResponse { success, error, .. } => {
@@ -991,7 +1001,9 @@ mod tests {
         let handler = create_test_handler().await;
 
         // Register first
-        let _ = handler.handle_register("alice", "alice@example.com", "password123").await;
+        let _ = handler
+            .handle_register("alice", "alice@example.com", "password123")
+            .await;
 
         // Login
         let response = handler.handle_login("alice", "password123").await;
@@ -1020,7 +1032,9 @@ mod tests {
         let handler = create_test_handler().await;
 
         // Register first
-        let _ = handler.handle_register("alice", "alice@example.com", "password123").await;
+        let _ = handler
+            .handle_register("alice", "alice@example.com", "password123")
+            .await;
 
         // Login with wrong password
         let response = handler.handle_login("alice", "wrongpassword").await;
@@ -1057,14 +1071,17 @@ mod tests {
     #[tokio::test]
     async fn test_handle_create_room_success() {
         let handler = create_test_handler().await;
-        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+        let (session_id, _) =
+            register_user(&handler, "alice", "alice@example.com", "password123").await;
 
-        let response = handler.handle_create_room(
-            Some(session_id),
-            "general",
-            Some("General chat".to_string()),
-            None,
-        ).await;
+        let response = handler
+            .handle_create_room(
+                Some(session_id),
+                "general",
+                Some("General chat".to_string()),
+                None,
+            )
+            .await;
 
         match response {
             ServerMessage::CreateRoomResponse {
@@ -1086,12 +1103,12 @@ mod tests {
     async fn test_handle_create_room_unauthorized() {
         let handler = create_test_handler().await;
 
-        let response = handler.handle_create_room(
-            None, // No session
-            "general",
-            None,
-            None,
-        ).await;
+        let response = handler
+            .handle_create_room(
+                None, // No session
+                "general", None, None,
+            )
+            .await;
 
         match response {
             ServerMessage::CreateRoomResponse { success, error, .. } => {
@@ -1106,13 +1123,18 @@ mod tests {
     #[tokio::test]
     async fn test_handle_create_room_duplicate_name() {
         let handler = create_test_handler().await;
-        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+        let (session_id, _) =
+            register_user(&handler, "alice", "alice@example.com", "password123").await;
 
         // Create first room
-        let _ = handler.handle_create_room(Some(session_id), "general", None, None).await;
+        let _ = handler
+            .handle_create_room(Some(session_id), "general", None, None)
+            .await;
 
         // Try to create room with same name
-        let response = handler.handle_create_room(Some(session_id), "general", None, None).await;
+        let response = handler
+            .handle_create_room(Some(session_id), "general", None, None)
+            .await;
 
         match response {
             ServerMessage::CreateRoomResponse { success, error, .. } => {
@@ -1127,13 +1149,19 @@ mod tests {
     #[tokio::test]
     async fn test_handle_join_room_success() {
         let handler = create_test_handler().await;
-        let (alice_session, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
-        let (bob_session, _) = register_user(&handler, "bob", "bob@example.com", "password123").await;
+        let (alice_session, _) =
+            register_user(&handler, "alice", "alice@example.com", "password123").await;
+        let (bob_session, _) =
+            register_user(&handler, "bob", "bob@example.com", "password123").await;
 
         // Alice creates a room
-        let create_response = handler.handle_create_room(Some(alice_session), "general", None, None).await;
+        let create_response = handler
+            .handle_create_room(Some(alice_session), "general", None, None)
+            .await;
         let room_id = match create_response {
-            ServerMessage::CreateRoomResponse { room: Some(room), .. } => room.id.to_string(),
+            ServerMessage::CreateRoomResponse {
+                room: Some(room), ..
+            } => room.id.to_string(),
             _ => panic!("Room creation failed"),
         };
 
@@ -1176,9 +1204,12 @@ mod tests {
     #[tokio::test]
     async fn test_handle_join_room_invalid_id() {
         let handler = create_test_handler().await;
-        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+        let (session_id, _) =
+            register_user(&handler, "alice", "alice@example.com", "password123").await;
 
-        let response = handler.handle_join_room(Some(session_id), "not-a-uuid").await;
+        let response = handler
+            .handle_join_room(Some(session_id), "not-a-uuid")
+            .await;
 
         match response {
             ServerMessage::JoinRoomResponse { success, error, .. } => {
@@ -1193,13 +1224,19 @@ mod tests {
     #[tokio::test]
     async fn test_handle_leave_room_success() {
         let handler = create_test_handler().await;
-        let (alice_session, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
-        let (bob_session, _) = register_user(&handler, "bob", "bob@example.com", "password123").await;
+        let (alice_session, _) =
+            register_user(&handler, "alice", "alice@example.com", "password123").await;
+        let (bob_session, _) =
+            register_user(&handler, "bob", "bob@example.com", "password123").await;
 
         // Alice creates a room
-        let create_response = handler.handle_create_room(Some(alice_session), "general", None, None).await;
+        let create_response = handler
+            .handle_create_room(Some(alice_session), "general", None, None)
+            .await;
         let room_id = match create_response {
-            ServerMessage::CreateRoomResponse { room: Some(room), .. } => room.id.to_string(),
+            ServerMessage::CreateRoomResponse {
+                room: Some(room), ..
+            } => room.id.to_string(),
             _ => panic!("Room creation failed"),
         };
 
@@ -1239,17 +1276,24 @@ mod tests {
     #[tokio::test]
     async fn test_handle_send_message_success() {
         let handler = create_test_handler().await;
-        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+        let (session_id, _) =
+            register_user(&handler, "alice", "alice@example.com", "password123").await;
 
         // Create a room first
-        let create_response = handler.handle_create_room(Some(session_id), "general", None, None).await;
+        let create_response = handler
+            .handle_create_room(Some(session_id), "general", None, None)
+            .await;
         let room_id = match create_response {
-            ServerMessage::CreateRoomResponse { room: Some(room), .. } => room.id,
+            ServerMessage::CreateRoomResponse {
+                room: Some(room), ..
+            } => room.id,
             _ => panic!("Room creation failed"),
         };
 
         let target = MessageTarget::Room { room_id };
-        let response = handler.handle_send_message(Some(session_id), &target, "Hello, world!").await;
+        let response = handler
+            .handle_send_message(Some(session_id), &target, "Hello, world!")
+            .await;
 
         match response {
             ServerMessage::SendMessageResponse {
@@ -1271,7 +1315,9 @@ mod tests {
     async fn test_handle_send_message_unauthorized() {
         let handler = create_test_handler().await;
 
-        let target = MessageTarget::Room { room_id: RoomId::new() };
+        let target = MessageTarget::Room {
+            room_id: RoomId::new(),
+        };
         let response = handler.handle_send_message(None, &target, "Hello").await;
 
         match response {
@@ -1287,20 +1333,29 @@ mod tests {
     #[tokio::test]
     async fn test_handle_get_messages_success() {
         let handler = create_test_handler().await;
-        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+        let (session_id, _) =
+            register_user(&handler, "alice", "alice@example.com", "password123").await;
 
         // Create a room and send a message
-        let create_response = handler.handle_create_room(Some(session_id), "general", None, None).await;
+        let create_response = handler
+            .handle_create_room(Some(session_id), "general", None, None)
+            .await;
         let room_id = match create_response {
-            ServerMessage::CreateRoomResponse { room: Some(room), .. } => room.id,
+            ServerMessage::CreateRoomResponse {
+                room: Some(room), ..
+            } => room.id,
             _ => panic!("Room creation failed"),
         };
 
         let target = MessageTarget::Room { room_id };
-        let _ = handler.handle_send_message(Some(session_id), &target, "Hello!").await;
+        let _ = handler
+            .handle_send_message(Some(session_id), &target, "Hello!")
+            .await;
 
         // Get messages
-        let response = handler.handle_get_messages(Some(session_id), &target, 50, None).await;
+        let response = handler
+            .handle_get_messages(Some(session_id), &target, 50, None)
+            .await;
 
         match response {
             ServerMessage::GetMessagesResponse {
@@ -1322,7 +1377,9 @@ mod tests {
     async fn test_handle_get_messages_unauthorized() {
         let handler = create_test_handler().await;
 
-        let target = MessageTarget::Room { room_id: RoomId::new() };
+        let target = MessageTarget::Room {
+            room_id: RoomId::new(),
+        };
         let response = handler.handle_get_messages(None, &target, 50, None).await;
 
         match response {
@@ -1338,24 +1395,35 @@ mod tests {
     #[tokio::test]
     async fn test_handle_edit_message_success() {
         let handler = create_test_handler().await;
-        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+        let (session_id, _) =
+            register_user(&handler, "alice", "alice@example.com", "password123").await;
 
         // Create a room and send a message
-        let create_response = handler.handle_create_room(Some(session_id), "general", None, None).await;
+        let create_response = handler
+            .handle_create_room(Some(session_id), "general", None, None)
+            .await;
         let room_id = match create_response {
-            ServerMessage::CreateRoomResponse { room: Some(room), .. } => room.id,
+            ServerMessage::CreateRoomResponse {
+                room: Some(room), ..
+            } => room.id,
             _ => panic!("Room creation failed"),
         };
 
         let target = MessageTarget::Room { room_id };
-        let send_response = handler.handle_send_message(Some(session_id), &target, "Hello!").await;
+        let send_response = handler
+            .handle_send_message(Some(session_id), &target, "Hello!")
+            .await;
         let message_id = match send_response {
-            ServerMessage::SendMessageResponse { message: Some(msg), .. } => msg.id.to_string(),
+            ServerMessage::SendMessageResponse {
+                message: Some(msg), ..
+            } => msg.id.to_string(),
             _ => panic!("Send message failed"),
         };
 
         // Edit the message
-        let response = handler.handle_edit_message(Some(session_id), &message_id, "Hello, edited!").await;
+        let response = handler
+            .handle_edit_message(Some(session_id), &message_id, "Hello, edited!")
+            .await;
 
         match response {
             ServerMessage::EditMessageResponse {
@@ -1392,9 +1460,12 @@ mod tests {
     #[tokio::test]
     async fn test_handle_edit_message_invalid_id() {
         let handler = create_test_handler().await;
-        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+        let (session_id, _) =
+            register_user(&handler, "alice", "alice@example.com", "password123").await;
 
-        let response = handler.handle_edit_message(Some(session_id), "not-a-uuid", "Hello").await;
+        let response = handler
+            .handle_edit_message(Some(session_id), "not-a-uuid", "Hello")
+            .await;
 
         match response {
             ServerMessage::EditMessageResponse { success, error, .. } => {
@@ -1409,24 +1480,35 @@ mod tests {
     #[tokio::test]
     async fn test_handle_delete_message_success() {
         let handler = create_test_handler().await;
-        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+        let (session_id, _) =
+            register_user(&handler, "alice", "alice@example.com", "password123").await;
 
         // Create a room and send a message
-        let create_response = handler.handle_create_room(Some(session_id), "general", None, None).await;
+        let create_response = handler
+            .handle_create_room(Some(session_id), "general", None, None)
+            .await;
         let room_id = match create_response {
-            ServerMessage::CreateRoomResponse { room: Some(room), .. } => room.id,
+            ServerMessage::CreateRoomResponse {
+                room: Some(room), ..
+            } => room.id,
             _ => panic!("Room creation failed"),
         };
 
         let target = MessageTarget::Room { room_id };
-        let send_response = handler.handle_send_message(Some(session_id), &target, "Hello!").await;
+        let send_response = handler
+            .handle_send_message(Some(session_id), &target, "Hello!")
+            .await;
         let message_id = match send_response {
-            ServerMessage::SendMessageResponse { message: Some(msg), .. } => msg.id.to_string(),
+            ServerMessage::SendMessageResponse {
+                message: Some(msg), ..
+            } => msg.id.to_string(),
             _ => panic!("Send message failed"),
         };
 
         // Delete the message
-        let response = handler.handle_delete_message(Some(session_id), &message_id).await;
+        let response = handler
+            .handle_delete_message(Some(session_id), &message_id)
+            .await;
 
         match response {
             ServerMessage::DeleteMessageResponse { success, error, .. } => {
@@ -1483,21 +1565,24 @@ mod tests {
     #[tokio::test]
     async fn test_handle_list_rooms_with_rooms() {
         let handler = create_test_handler().await;
-        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+        let (session_id, _) =
+            register_user(&handler, "alice", "alice@example.com", "password123").await;
 
         // Create some rooms
-        let _ = handler.handle_create_room(Some(session_id), "general", None, None).await;
-        let _ = handler.handle_create_room(Some(session_id), "random", None, None).await;
+        let _ = handler
+            .handle_create_room(Some(session_id), "general", None, None)
+            .await;
+        let _ = handler
+            .handle_create_room(Some(session_id), "random", None, None)
+            .await;
 
         // List all rooms
-        let response = handler.handle_list_rooms(Some(session_id), None, 50, 0).await;
+        let response = handler
+            .handle_list_rooms(Some(session_id), None, 50, 0)
+            .await;
 
         match response {
-            ServerMessage::ListRoomsResponse {
-                success,
-                rooms,
-                ..
-            } => {
+            ServerMessage::ListRoomsResponse { success, rooms, .. } => {
                 assert!(success);
                 assert!(rooms.is_some());
                 assert_eq!(rooms.unwrap().len(), 2);
@@ -1509,23 +1594,30 @@ mod tests {
     #[tokio::test]
     async fn test_handle_list_rooms_joined_only() {
         let handler = create_test_handler().await;
-        let (alice_session, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
-        let (bob_session, _) = register_user(&handler, "bob", "bob@example.com", "password123").await;
+        let (alice_session, _) =
+            register_user(&handler, "alice", "alice@example.com", "password123").await;
+        let (bob_session, _) =
+            register_user(&handler, "bob", "bob@example.com", "password123").await;
 
         // Alice creates rooms
-        let _ = handler.handle_create_room(Some(alice_session), "general", None, None).await;
-        let _ = handler.handle_create_room(Some(alice_session), "random", None, None).await;
+        let _ = handler
+            .handle_create_room(Some(alice_session), "general", None, None)
+            .await;
+        let _ = handler
+            .handle_create_room(Some(alice_session), "random", None, None)
+            .await;
 
         // Bob lists only joined rooms (should be empty)
-        let filter = RoomFilter { joined_only: true, ..Default::default() };
-        let response = handler.handle_list_rooms(Some(bob_session), Some(filter), 50, 0).await;
+        let filter = RoomFilter {
+            joined_only: true,
+            ..Default::default()
+        };
+        let response = handler
+            .handle_list_rooms(Some(bob_session), Some(filter), 50, 0)
+            .await;
 
         match response {
-            ServerMessage::ListRoomsResponse {
-                success,
-                rooms,
-                ..
-            } => {
+            ServerMessage::ListRoomsResponse { success, rooms, .. } => {
                 assert!(success);
                 assert!(rooms.is_some());
                 // Bob hasn't joined any rooms yet
@@ -1539,7 +1631,10 @@ mod tests {
     async fn test_handle_list_rooms_joined_only_unauthorized() {
         let handler = create_test_handler().await;
 
-        let filter = RoomFilter { joined_only: true, ..Default::default() };
+        let filter = RoomFilter {
+            joined_only: true,
+            ..Default::default()
+        };
         let response = handler.handle_list_rooms(None, Some(filter), 50, 0).await;
 
         match response {
@@ -1567,11 +1662,7 @@ mod tests {
         let response = handler.handle_list_users(None, 50, 0).await;
 
         match response {
-            ServerMessage::ListUsersResponse {
-                success,
-                users,
-                ..
-            } => {
+            ServerMessage::ListUsersResponse { success, users, .. } => {
                 assert!(success);
                 assert!(users.is_some());
                 assert_eq!(users.unwrap().len(), 2);
@@ -1583,7 +1674,8 @@ mod tests {
     #[tokio::test]
     async fn test_handle_get_user_success() {
         let handler = create_test_handler().await;
-        let (_, alice_id) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+        let (_, alice_id) =
+            register_user(&handler, "alice", "alice@example.com", "password123").await;
 
         let response = handler.handle_get_user(&alice_id.to_string()).await;
 
@@ -1659,7 +1751,8 @@ mod tests {
     #[tokio::test]
     async fn test_handle_list_invitations_empty() {
         let handler = create_test_handler().await;
-        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+        let (session_id, _) =
+            register_user(&handler, "alice", "alice@example.com", "password123").await;
 
         let response = handler.handle_list_invitations(Some(session_id)).await;
 
@@ -1680,9 +1773,12 @@ mod tests {
     #[tokio::test]
     async fn test_handle_accept_invitation_invalid_id() {
         let handler = create_test_handler().await;
-        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+        let (session_id, _) =
+            register_user(&handler, "alice", "alice@example.com", "password123").await;
 
-        let response = handler.handle_accept_invitation(Some(session_id), "not-a-uuid").await;
+        let response = handler
+            .handle_accept_invitation(Some(session_id), "not-a-uuid")
+            .await;
 
         match response {
             ServerMessage::AcceptInvitationResponse { success, error, .. } => {
@@ -1697,9 +1793,12 @@ mod tests {
     #[tokio::test]
     async fn test_handle_decline_invitation_invalid_id() {
         let handler = create_test_handler().await;
-        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+        let (session_id, _) =
+            register_user(&handler, "alice", "alice@example.com", "password123").await;
 
-        let response = handler.handle_decline_invitation(Some(session_id), "not-a-uuid").await;
+        let response = handler
+            .handle_decline_invitation(Some(session_id), "not-a-uuid")
+            .await;
 
         match response {
             ServerMessage::DeclineInvitationResponse { success, error, .. } => {
@@ -1718,12 +1817,17 @@ mod tests {
     #[tokio::test]
     async fn test_handle_get_room_success() {
         let handler = create_test_handler().await;
-        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+        let (session_id, _) =
+            register_user(&handler, "alice", "alice@example.com", "password123").await;
 
         // Create a room
-        let create_response = handler.handle_create_room(Some(session_id), "general", None, None).await;
+        let create_response = handler
+            .handle_create_room(Some(session_id), "general", None, None)
+            .await;
         let room_id = match create_response {
-            ServerMessage::CreateRoomResponse { room: Some(room), .. } => room.id.to_string(),
+            ServerMessage::CreateRoomResponse {
+                room: Some(room), ..
+            } => room.id.to_string(),
             _ => panic!("Room creation failed"),
         };
 
@@ -1751,10 +1855,13 @@ mod tests {
     #[tokio::test]
     async fn test_handle_get_room_not_found() {
         let handler = create_test_handler().await;
-        let (session_id, _) = register_user(&handler, "alice", "alice@example.com", "password123").await;
+        let (session_id, _) =
+            register_user(&handler, "alice", "alice@example.com", "password123").await;
 
         let fake_id = RoomId::new();
-        let response = handler.handle_get_room(Some(session_id), &fake_id.to_string()).await;
+        let response = handler
+            .handle_get_room(Some(session_id), &fake_id.to_string())
+            .await;
 
         match response {
             ServerMessage::GetRoomResponse { success, error, .. } => {

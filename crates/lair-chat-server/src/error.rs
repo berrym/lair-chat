@@ -257,7 +257,13 @@ mod tests {
         assert_eq!(Error::SessionExpired.code(), "session_expired");
         assert_eq!(Error::AccountLocked.code(), "account_locked");
         assert_eq!(Error::AccountBanned.code(), "account_banned");
-        assert_eq!(Error::InvalidToken { reason: "test".to_string() }.code(), "invalid_token");
+        assert_eq!(
+            Error::InvalidToken {
+                reason: "test".to_string()
+            }
+            .code(),
+            "invalid_token"
+        );
         assert_eq!(Error::TokenExpired.code(), "token_expired");
     }
 
@@ -274,19 +280,53 @@ mod tests {
             Error::ValidationFailed {
                 field: "email".to_string(),
                 reason: "invalid".to_string()
-            }.code(),
+            }
+            .code(),
             "validation_failed"
         );
-        assert_eq!(Error::UsernameInvalid { reason: "too short".to_string() }.code(), "username_invalid");
+        assert_eq!(
+            Error::UsernameInvalid {
+                reason: "too short".to_string()
+            }
+            .code(),
+            "username_invalid"
+        );
         assert_eq!(Error::UsernameTaken.code(), "username_taken");
-        assert_eq!(Error::EmailInvalid { reason: "invalid".to_string() }.code(), "email_invalid");
+        assert_eq!(
+            Error::EmailInvalid {
+                reason: "invalid".to_string()
+            }
+            .code(),
+            "email_invalid"
+        );
         assert_eq!(Error::EmailTaken.code(), "email_taken");
-        assert_eq!(Error::PasswordTooWeak { reason: "too short".to_string() }.code(), "password_too_weak");
+        assert_eq!(
+            Error::PasswordTooWeak {
+                reason: "too short".to_string()
+            }
+            .code(),
+            "password_too_weak"
+        );
         assert_eq!(Error::IncorrectPassword.code(), "incorrect_password");
-        assert_eq!(Error::RoomNameInvalid { reason: "empty".to_string() }.code(), "room_name_invalid");
-        assert_eq!(Error::ContentInvalid { reason: "bad".to_string() }.code(), "content_invalid");
+        assert_eq!(
+            Error::RoomNameInvalid {
+                reason: "empty".to_string()
+            }
+            .code(),
+            "room_name_invalid"
+        );
+        assert_eq!(
+            Error::ContentInvalid {
+                reason: "bad".to_string()
+            }
+            .code(),
+            "content_invalid"
+        );
         assert_eq!(Error::ContentEmpty.code(), "content_empty");
-        assert_eq!(Error::ContentTooLong { max: 1000 }.code(), "content_too_long");
+        assert_eq!(
+            Error::ContentTooLong { max: 1000 }.code(),
+            "content_too_long"
+        );
     }
 
     #[test]
@@ -318,7 +358,10 @@ mod tests {
 
     #[test]
     fn test_error_codes_rate_limit() {
-        assert_eq!(Error::RateLimited { retry_after: 60 }.code(), "rate_limited");
+        assert_eq!(
+            Error::RateLimited { retry_after: 60 }.code(),
+            "rate_limited"
+        );
     }
 
     #[test]
@@ -336,7 +379,13 @@ mod tests {
         assert_eq!(Error::InvalidCredentials.status_code(), 401);
         assert_eq!(Error::SessionNotFound.status_code(), 401);
         assert_eq!(Error::SessionExpired.status_code(), 401);
-        assert_eq!(Error::InvalidToken { reason: "test".to_string() }.status_code(), 401);
+        assert_eq!(
+            Error::InvalidToken {
+                reason: "test".to_string()
+            }
+            .status_code(),
+            401
+        );
         assert_eq!(Error::TokenExpired.status_code(), 401);
     }
 
@@ -355,15 +404,46 @@ mod tests {
             Error::ValidationFailed {
                 field: "x".to_string(),
                 reason: "y".to_string()
-            }.status_code(),
+            }
+            .status_code(),
             400
         );
-        assert_eq!(Error::UsernameInvalid { reason: "x".to_string() }.status_code(), 400);
-        assert_eq!(Error::EmailInvalid { reason: "x".to_string() }.status_code(), 400);
-        assert_eq!(Error::PasswordTooWeak { reason: "x".to_string() }.status_code(), 400);
+        assert_eq!(
+            Error::UsernameInvalid {
+                reason: "x".to_string()
+            }
+            .status_code(),
+            400
+        );
+        assert_eq!(
+            Error::EmailInvalid {
+                reason: "x".to_string()
+            }
+            .status_code(),
+            400
+        );
+        assert_eq!(
+            Error::PasswordTooWeak {
+                reason: "x".to_string()
+            }
+            .status_code(),
+            400
+        );
         assert_eq!(Error::IncorrectPassword.status_code(), 400);
-        assert_eq!(Error::RoomNameInvalid { reason: "x".to_string() }.status_code(), 400);
-        assert_eq!(Error::ContentInvalid { reason: "x".to_string() }.status_code(), 400);
+        assert_eq!(
+            Error::RoomNameInvalid {
+                reason: "x".to_string()
+            }
+            .status_code(),
+            400
+        );
+        assert_eq!(
+            Error::ContentInvalid {
+                reason: "x".to_string()
+            }
+            .status_code(),
+            400
+        );
         assert_eq!(Error::ContentEmpty.status_code(), 400);
         assert_eq!(Error::ContentTooLong { max: 100 }.status_code(), 400);
     }
@@ -412,16 +492,23 @@ mod tests {
     fn test_error_display() {
         assert_eq!(Error::InvalidCredentials.to_string(), "Invalid credentials");
         assert_eq!(Error::RoomFull.to_string(), "Room is full");
-        assert_eq!(Error::RateLimited { retry_after: 60 }.to_string(), "Rate limited, retry after 60 seconds");
+        assert_eq!(
+            Error::RateLimited { retry_after: 60 }.to_string(),
+            "Rate limited, retry after 60 seconds"
+        );
         assert_eq!(
             Error::ValidationFailed {
                 field: "email".to_string(),
                 reason: "invalid format".to_string()
-            }.to_string(),
+            }
+            .to_string(),
             "Validation failed: email - invalid format"
         );
         assert_eq!(
-            Error::InvalidToken { reason: "expired signature".to_string() }.to_string(),
+            Error::InvalidToken {
+                reason: "expired signature".to_string()
+            }
+            .to_string(),
             "Invalid token: expired signature"
         );
         assert_eq!(

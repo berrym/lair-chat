@@ -141,7 +141,9 @@ mod tests {
         let username = Username::new("testuser").unwrap();
         let email = Email::new("test@example.com").unwrap();
         let user = User::new(username, email, Role::User);
-        UserRepository::create(storage, &user, "hashed_password").await.unwrap();
+        UserRepository::create(storage, &user, "hashed_password")
+            .await
+            .unwrap();
         user
     }
 
@@ -190,7 +192,9 @@ mod tests {
         // Create an expired session manually
         let mut session = Session::new(user.id, Protocol::Tcp);
         session.expires_at = Utc::now() - Duration::hours(1);
-        SessionRepository::create(&*storage, &session).await.unwrap();
+        SessionRepository::create(&*storage, &session)
+            .await
+            .unwrap();
 
         let manager = SessionManager::new(storage);
 
@@ -231,7 +235,9 @@ mod tests {
         manager.logout(session.id).await.unwrap();
 
         // Verify session is deleted
-        let found = SessionRepository::find_by_id(&*storage, session.id).await.unwrap();
+        let found = SessionRepository::find_by_id(&*storage, session.id)
+            .await
+            .unwrap();
         assert!(found.is_none());
     }
 
@@ -307,7 +313,9 @@ mod tests {
         // Create an expired session manually
         let mut session = Session::new(user.id, Protocol::Tcp);
         session.expires_at = Utc::now() - Duration::hours(1);
-        SessionRepository::create(&*storage, &session).await.unwrap();
+        SessionRepository::create(&*storage, &session)
+            .await
+            .unwrap();
 
         let manager = SessionManager::new(storage);
 
@@ -366,7 +374,9 @@ mod tests {
         assert_eq!(deleted, 2);
 
         // Verify sessions are deleted
-        let sessions = SessionRepository::list_by_user(&*storage, user.id).await.unwrap();
+        let sessions = SessionRepository::list_by_user(&*storage, user.id)
+            .await
+            .unwrap();
         assert!(sessions.is_empty());
     }
 
@@ -383,7 +393,9 @@ mod tests {
         // Create an expired session
         let mut expired_session = Session::new(user.id, Protocol::Tcp);
         expired_session.expires_at = Utc::now() - Duration::hours(1);
-        SessionRepository::create(&*storage, &expired_session).await.unwrap();
+        SessionRepository::create(&*storage, &expired_session)
+            .await
+            .unwrap();
 
         let manager = SessionManager::new(storage.clone());
         let deleted = manager.cleanup_expired().await.unwrap();
@@ -391,7 +403,9 @@ mod tests {
         assert_eq!(deleted, 1);
 
         // Valid session should still exist
-        let sessions = SessionRepository::list_by_user(&*storage, user.id).await.unwrap();
+        let sessions = SessionRepository::list_by_user(&*storage, user.id)
+            .await
+            .unwrap();
         assert_eq!(sessions.len(), 1);
     }
 }

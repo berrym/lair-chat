@@ -1304,10 +1304,22 @@ mod tests {
 
     #[test]
     fn test_notification_level_auto_dismiss_durations() {
-        assert_eq!(NotificationLevel::Info.auto_dismiss_duration(), Duration::from_secs(3));
-        assert_eq!(NotificationLevel::Success.auto_dismiss_duration(), Duration::from_secs(4));
-        assert_eq!(NotificationLevel::Warning.auto_dismiss_duration(), Duration::from_secs(6));
-        assert_eq!(NotificationLevel::Error.auto_dismiss_duration(), Duration::from_secs(8));
+        assert_eq!(
+            NotificationLevel::Info.auto_dismiss_duration(),
+            Duration::from_secs(3)
+        );
+        assert_eq!(
+            NotificationLevel::Success.auto_dismiss_duration(),
+            Duration::from_secs(4)
+        );
+        assert_eq!(
+            NotificationLevel::Warning.auto_dismiss_duration(),
+            Duration::from_secs(6)
+        );
+        assert_eq!(
+            NotificationLevel::Error.auto_dismiss_duration(),
+            Duration::from_secs(8)
+        );
     }
 
     // ========================================================================
@@ -1549,7 +1561,8 @@ mod tests {
         let addr = test_server_addr();
         let mut app = App::with_http_config(addr, "http://localhost:8082".to_string(), false);
 
-        app.messages.push(ChatMessage::user("alice", "First message"));
+        app.messages
+            .push(ChatMessage::user("alice", "First message"));
         app.messages.push(ChatMessage::user("bob", "Last message"));
 
         assert_eq!(app.last_message_content(), Some("Last message"));
@@ -1575,8 +1588,15 @@ mod tests {
     fn test_action_variants() {
         // Test that all action variants can be constructed
         let _ = Action::Quit;
-        let _ = Action::Login { username: "test".to_string(), password: "pass".to_string() };
-        let _ = Action::Register { username: "test".to_string(), email: "test@test.com".to_string(), password: "pass".to_string() };
+        let _ = Action::Login {
+            username: "test".to_string(),
+            password: "pass".to_string(),
+        };
+        let _ = Action::Register {
+            username: "test".to_string(),
+            email: "test@test.com".to_string(),
+            password: "pass".to_string(),
+        };
         let _ = Action::SendMessage("hello".to_string());
         let _ = Action::ShowRooms;
         let _ = Action::JoinRoom(Uuid::new_v4());
