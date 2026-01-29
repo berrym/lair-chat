@@ -1,11 +1,49 @@
 //! Application state and logic.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::SocketAddr;
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
+
+/// Notification severity level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotificationLevel {
+    /// Informational message.
+    Info,
+    /// Success message.
+    Success,
+    /// Warning message.
+    #[allow(dead_code)]
+    Warning,
+    /// Error message.
+    Error,
+}
+
+impl NotificationLevel {
+    /// Get the auto-dismiss duration for this level.
+    pub fn auto_dismiss_duration(&self) -> Duration {
+        match self {
+            NotificationLevel::Info => Duration::from_secs(3),
+            NotificationLevel::Success => Duration::from_secs(4),
+            NotificationLevel::Warning => Duration::from_secs(6),
+            NotificationLevel::Error => Duration::from_secs(8),
+        }
+    }
+}
+
+/// A notification message to display to the user.
+#[derive(Debug, Clone)]
+pub struct Notification {
+    /// The message to display.
+    pub message: String,
+    /// Severity level.
+    pub level: NotificationLevel,
+    /// When this notification was created.
+    pub created_at: Instant,
+}
 
 use crate::protocol::{
     ClientMessage, Connection, HttpClient, HttpClientConfig, MessageTarget, Room, RoomListItem,
@@ -44,8 +82,8 @@ pub struct App {
     pub messages: Vec<ChatMessage>,
     /// Status message.
     pub status: Option<String>,
-    /// Error message.
-    pub error: Option<String>,
+    /// Notification queue (auto-dismissing messages).
+    pub notifications: VecDeque<Notification>,
     /// Should quit.
     pub should_quit: bool,
     /// All known users (excluding self).
@@ -191,12 +229,61 @@ impl App {
             current_dm_user: None,
             messages: Vec::new(),
             status: None,
-            error: None,
+            notifications: VecDeque::new(),
             should_quit: false,
             all_users: Vec::new(),
             online_user_ids: HashSet::new(),
             user_cache: HashMap::new(),
         }
+    }
+
+    /// Add an error notification.
+    pub fn set_error(&mut self, message: impl Into<String>) {
+        self.notifications.push_back(Notification {
+            message: message.into(),
+            level: NotificationLevel::Error,
+            created_at: Instant::now(),
+        });
+    }
+
+    /// Add an info notification.
+    #[allow(dead_code)]
+    pub fn set_info(&mut self, message: impl Into<String>) {
+        self.notifications.push_back(Notification {
+            message: message.into(),
+            level: NotificationLevel::Info,
+            created_at: Instant::now(),
+        });
+    }
+
+    /// Add a success notification.
+    #[allow(dead_code)]
+    pub fn set_success(&mut self, message: impl Into<String>) {
+        self.notifications.push_back(Notification {
+            message: message.into(),
+            level: NotificationLevel::Success,
+            created_at: Instant::now(),
+        });
+    }
+
+    /// Clear all notifications.
+    pub fn clear_notifications(&mut self) {
+        self.notifications.clear();
+    }
+
+    /// Remove expired notifications (call periodically).
+    pub fn tick_notifications(&mut self) {
+        let now = Instant::now();
+        self.notifications
+            .retain(|n| now.duration_since(n.created_at) < n.level.auto_dismiss_duration());
+    }
+
+    /// Get the current error message (for backward compatibility).
+    pub fn error(&self) -> Option<&str> {
+        self.notifications
+            .iter()
+            .find(|n| n.level == NotificationLevel::Error)
+            .map(|n| n.message.as_str())
     }
 
     /// Get lists of online and offline users (excluding self).
@@ -252,7 +339,7 @@ impl App {
     pub async fn connect(&mut self) -> Result<(), TcpError> {
         info!("Connecting to {}", self.server_addr);
         self.status = Some("Connecting...".to_string());
-        self.error = None;
+        self.clear_notifications();
 
         let connection = Connection::connect(self.server_addr).await?;
         self.connection = Some(connection);
@@ -272,7 +359,7 @@ impl App {
         match Connection::connect(self.server_addr).await {
             Ok(connection) => {
                 self.connection = Some(connection);
-                self.error = None;
+                self.clear_notifications();
 
                 // If we have a valid token, try to re-authenticate
                 if let Some(token) = self.token.clone() {
@@ -288,7 +375,7 @@ impl App {
                 }
             }
             Err(e) => {
-                self.error = Some(format!("Reconnect failed: {}", e));
+                self.set_error(format!("Reconnect failed: {}", e));
                 self.status = Some("Disconnected".to_string());
             }
         }
@@ -348,7 +435,7 @@ impl App {
                 self.current_dm_user = None;
                 self.messages.clear();
                 self.screen = Screen::Chat;
-                self.error = None;
+                self.clear_notifications();
                 // Request message history
                 self.request_message_history().await;
             }
@@ -376,7 +463,7 @@ impl App {
                 self.show_help();
             }
             Action::ClearError => {
-                self.error = None;
+                self.clear_notifications();
             }
         }
     }
@@ -416,7 +503,7 @@ impl App {
         // Don't DM yourself
         if let Some(user) = &self.user {
             if user.username.eq_ignore_ascii_case(&username) {
-                self.error = Some("Cannot send DM to yourself".to_string());
+                self.set_error("Cannot send DM to yourself");
                 return;
             }
         }
@@ -439,7 +526,7 @@ impl App {
             // Request DM history
             self.request_dm_history(user.id).await;
         } else {
-            self.error = Some(format!("User '{}' not found", username));
+            self.set_error(format!("User '{}' not found", username));
         }
     }
 
@@ -457,14 +544,14 @@ impl App {
         };
 
         if let Err(e) = conn.send(msg).await {
-            self.error = Some(format!("Failed to request DM history: {}", e));
+            self.set_error(format!("Failed to request DM history: {}", e));
         }
     }
 
     /// Handle login via HTTP, then authenticate TCP connection.
     async fn handle_login(&mut self, username: String, password: String) {
         self.status = Some("Logging in via HTTP...".to_string());
-        self.error = None;
+        self.clear_notifications();
 
         // Step 1: HTTP login to get JWT token
         match self.http_client.login(&username, &password).await {
@@ -481,7 +568,7 @@ impl App {
                 self.authenticate_tcp_connection(token).await;
             }
             Err(e) => {
-                self.error = Some(format!("Login failed: {}", e));
+                self.set_error(format!("Login failed: {}", e));
                 self.status = None;
             }
         }
@@ -490,7 +577,7 @@ impl App {
     /// Handle registration via HTTP, then authenticate TCP connection.
     async fn handle_register(&mut self, username: String, email: String, password: String) {
         self.status = Some("Registering via HTTP...".to_string());
-        self.error = None;
+        self.clear_notifications();
 
         // Step 1: HTTP register to get JWT token
         match self
@@ -511,7 +598,7 @@ impl App {
                 self.authenticate_tcp_connection(token).await;
             }
             Err(e) => {
-                self.error = Some(format!("Registration failed: {}", e));
+                self.set_error(format!("Registration failed: {}", e));
                 self.status = None;
             }
         }
@@ -520,7 +607,7 @@ impl App {
     /// Authenticate the TCP connection using a JWT token.
     async fn authenticate_tcp_connection(&mut self, token: String) {
         let Some(conn) = &self.connection else {
-            self.error = Some("Not connected to server".to_string());
+            self.set_error("Not connected to server");
             return;
         };
 
@@ -529,7 +616,7 @@ impl App {
         let msg = ClientMessage::authenticate(&token);
 
         if let Err(e) = conn.send(msg).await {
-            self.error = Some(format!("Failed to authenticate TCP: {}", e));
+            self.set_error(format!("Failed to authenticate TCP: {}", e));
             self.status = None;
         }
 
@@ -543,7 +630,7 @@ impl App {
         }
 
         let Some(conn) = &self.connection else {
-            self.error = Some("Not connected".to_string());
+            self.set_error("Not connected");
             return;
         };
 
@@ -555,14 +642,14 @@ impl App {
                 recipient: dm_user.id,
             }
         } else {
-            self.error = Some("No room or DM selected".to_string());
+            self.set_error("No room or DM selected");
             return;
         };
 
         let msg = ClientMessage::send_message(target, &content);
 
         if let Err(e) = conn.send(msg).await {
-            self.error = Some(format!("Failed to send message: {}", e));
+            self.set_error(format!("Failed to send message: {}", e));
             return;
         }
 
@@ -587,7 +674,7 @@ impl App {
         };
 
         if let Err(e) = conn.send(msg).await {
-            self.error = Some(format!("Failed to request rooms: {}", e));
+            self.set_error(format!("Failed to request rooms: {}", e));
         }
     }
 
@@ -612,7 +699,7 @@ impl App {
     /// Handle joining a room.
     async fn handle_join_room(&mut self, room_id: uuid::Uuid) {
         let Some(conn) = &self.connection else {
-            self.error = Some("Not connected to server".to_string());
+            self.set_error("Not connected to server");
             return;
         };
 
@@ -624,7 +711,7 @@ impl App {
         };
 
         if let Err(e) = conn.send(msg).await {
-            self.error = Some(format!("Failed to join room: {}", e));
+            self.set_error(format!("Failed to join room: {}", e));
         }
     }
 
@@ -646,7 +733,7 @@ impl App {
         };
 
         if let Err(e) = conn.send(msg).await {
-            self.error = Some(format!("Failed to request message history: {}", e));
+            self.set_error(format!("Failed to request message history: {}", e));
         }
     }
 
@@ -664,7 +751,7 @@ impl App {
         };
 
         if let Err(e) = conn.send(msg).await {
-            self.error = Some(format!("Failed to create room: {}", e));
+            self.set_error(format!("Failed to create room: {}", e));
         }
     }
 
@@ -682,7 +769,7 @@ impl App {
                 ..
             } => {
                 if success {
-                    self.error = None;
+                    self.clear_notifications();
                     // Update user/session if provided (may already be set from HTTP response)
                     if let Some(ref u) = user {
                         self.cache_user(u);
@@ -716,7 +803,7 @@ impl App {
                     let err_msg = error
                         .map(|e| e.message)
                         .unwrap_or_else(|| "Authentication failed".to_string());
-                    self.error = Some(err_msg);
+                    self.set_error(err_msg);
                     self.status = None;
                     // Clear user/session since auth failed
                     self.user = None;
@@ -736,7 +823,7 @@ impl App {
                 warn!("Received deprecated LoginResponse - client should use HTTP + Authenticate");
                 if success {
                     // Clear any previous errors
-                    self.error = None;
+                    self.clear_notifications();
                     // Cache the logged-in user
                     if let Some(ref u) = user {
                         self.cache_user(u);
@@ -768,7 +855,7 @@ impl App {
                     let err_msg = error
                         .map(|e| e.message)
                         .unwrap_or_else(|| "Login failed".to_string());
-                    self.error = Some(err_msg);
+                    self.set_error(err_msg);
                     self.status = None;
                 }
             }
@@ -786,7 +873,7 @@ impl App {
                 );
                 if success {
                     // Clear any previous errors
-                    self.error = None;
+                    self.clear_notifications();
                     // Cache the registered user
                     if let Some(ref u) = user {
                         self.cache_user(u);
@@ -817,7 +904,7 @@ impl App {
                     let err_msg = error
                         .map(|e| e.message)
                         .unwrap_or_else(|| "Registration failed".to_string());
-                    self.error = Some(err_msg);
+                    self.set_error(err_msg);
                     self.status = None;
                 }
             }
@@ -827,7 +914,7 @@ impl App {
                     let err_msg = error
                         .map(|e| e.message)
                         .unwrap_or_else(|| "Failed to send message".to_string());
-                    self.error = Some(err_msg);
+                    self.set_error(err_msg);
                 }
             }
 
@@ -844,7 +931,7 @@ impl App {
                     let err_msg = error
                         .map(|e| e.message)
                         .unwrap_or_else(|| "Failed to list rooms".to_string());
-                    self.error = Some(err_msg);
+                    self.set_error(err_msg);
                 }
             }
 
@@ -865,13 +952,13 @@ impl App {
                         // Request message history for the room
                         self.request_message_history().await;
                     } else {
-                        self.error = Some("Join succeeded but no room data returned".to_string());
+                        self.set_error("Join succeeded but no room data returned");
                     }
                 } else {
                     let err_msg = error
                         .map(|e| e.message)
                         .unwrap_or_else(|| "Failed to join room".to_string());
-                    self.error = Some(err_msg);
+                    self.set_error(err_msg);
                 }
             }
 
@@ -898,7 +985,7 @@ impl App {
                     let err_msg = error
                         .map(|e| e.message)
                         .unwrap_or_else(|| "Failed to create room".to_string());
-                    self.error = Some(err_msg);
+                    self.set_error(err_msg);
                 }
             }
 
@@ -937,7 +1024,7 @@ impl App {
                     let err_msg = error
                         .map(|e| e.message)
                         .unwrap_or_else(|| "Failed to load message history".to_string());
-                    self.error = Some(err_msg);
+                    self.set_error(err_msg);
                 }
             }
 
@@ -1034,7 +1121,7 @@ impl App {
             }
 
             ServerMessage::Error { code, message, .. } => {
-                self.error = Some(format!("{}: {}", code, message));
+                self.set_error(format!("{}: {}", code, message));
             }
 
             ServerMessage::ListUsersResponse {

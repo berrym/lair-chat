@@ -96,7 +96,7 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
 
     // Connect to server
     if let Err(e) = app.connect().await {
-        app.error = Some(format!("Failed to connect: {}", e));
+        app.set_error(format!("Failed to connect: {}", e));
     }
 
     // Main loop
@@ -110,7 +110,7 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
 
             match app.screen {
                 Screen::Login => {
-                    login_screen.render(frame, area, app.error.as_deref());
+                    login_screen.render(frame, area, app.error());
                 }
                 Screen::Chat => {
                     // Get online and offline user lists
@@ -122,7 +122,7 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
                         dm_user: app.current_dm_user.as_ref().map(|u| u.username.as_str()),
                         username: app.user.as_ref().map(|u| u.username.as_str()),
                         status: app.status.as_deref(),
-                        error: app.error.as_deref(),
+                        error: app.error(),
                         online_users: &online_usernames,
                         offline_users: &offline_usernames,
                     };
@@ -135,7 +135,7 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
                         &app.rooms,
                         app.current_room.as_ref(),
                         app.status.as_deref(),
-                        app.error.as_deref(),
+                        app.error(),
                     );
                 }
             }
@@ -181,6 +181,9 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
 
         // Poll for server messages
         app.poll_messages().await;
+
+        // Tick notifications to auto-dismiss expired ones
+        app.tick_notifications();
 
         // Send keepalive ping every 30 seconds
         if last_ping.elapsed() > Duration::from_secs(30) {
