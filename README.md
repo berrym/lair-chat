@@ -19,6 +19,7 @@ A secure, high-performance chat system built with Rust, featuring real-time mess
 - **Role-based access control** (Admin, Moderator, User)
 
 ### Security
+- **Native TLS/HTTPS** support for HTTP API (rustls)
 - **End-to-end encryption** support (AES-256-GCM with X25519 key exchange)
 - **Argon2id password hashing** for secure credential storage
 - **JWT authentication** with session management
@@ -29,7 +30,7 @@ A secure, high-performance chat system built with Rust, featuring real-time mess
 - **Clean architecture** - Domain-driven design with trait-based abstractions
 - **Async throughout** - Built on Tokio for high performance
 - **SQLite storage** - With migration support and connection pooling
-- **Comprehensive tests** - 188+ unit and integration tests with CI/CD
+- **Comprehensive tests** - 200+ unit and integration tests with CI/CD
 
 ## Quick Start
 
@@ -51,11 +52,16 @@ The server exposes two protocols:
 - **HTTP API** (`http://localhost:8082`) - Authentication, room management, message history
 - **TCP** (`localhost:8080`) - Real-time messaging and presence
 
+For HTTPS, see [Transport Security](docs/protocols/HTTP.md#transport-security).
+
 ### Run the Client
 
 ```bash
 # In another terminal
 cargo run --package lair-chat-client
+
+# Or with custom HTTP URL (for HTTPS)
+cargo run --package lair-chat-client -- --http-url https://localhost:8082 --insecure
 ```
 
 The TUI client handles both protocols automatically - it authenticates via HTTP and connects to TCP for real-time messaging.
@@ -67,7 +73,13 @@ Environment variables:
 LAIR_TCP_PORT=8080        # TCP server port (real-time messaging)
 LAIR_HTTP_PORT=8082       # HTTP server port (auth, CRUD, queries)
 LAIR_DATABASE_URL=sqlite:lair-chat.db  # Database path
+LAIR_JWT_SECRET=secret    # JWT signing secret (auto-generated if not set)
 RUST_LOG=info             # Log level (error, warn, info, debug, trace)
+
+# TLS/HTTPS (optional)
+LAIR_TLS_ENABLED=true     # Enable HTTPS (default: false)
+LAIR_TLS_CERT_PATH=/path/to/cert.pem   # Certificate file
+LAIR_TLS_KEY_PATH=/path/to/key.pem     # Private key file
 ```
 
 ## Architecture
@@ -250,7 +262,7 @@ See [docs/protocols/TCP.md](docs/protocols/TCP.md) for the complete wire protoco
 ## Testing
 
 ```bash
-# Run all tests (188+ tests)
+# Run all tests (200+ tests)
 cargo test --workspace
 
 # Run server tests only
