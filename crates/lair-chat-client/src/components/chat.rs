@@ -1,5 +1,6 @@
 //! Chat screen component.
 
+use arboard::Clipboard;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -58,6 +59,8 @@ pub struct ChatScreen {
     pub focus: ChatFocus,
     /// Selection state for the users list.
     pub user_list_state: ListState,
+    /// System clipboard (lazy-initialized).
+    clipboard: Option<Clipboard>,
 }
 
 /// Input mode for chat.
@@ -83,6 +86,36 @@ impl ChatScreen {
             scroll: 0,
             focus: ChatFocus::Messages,
             user_list_state: ListState::default(),
+            clipboard: None,
+        }
+    }
+
+    /// Get or initialize the clipboard.
+    fn get_clipboard(&mut self) -> Option<&mut Clipboard> {
+        if self.clipboard.is_none() {
+            self.clipboard = Clipboard::new().ok();
+        }
+        self.clipboard.as_mut()
+    }
+
+    /// Paste text from clipboard at current cursor position.
+    fn paste_from_clipboard(&mut self) {
+        if let Some(clipboard) = self.get_clipboard() {
+            if let Ok(text) = clipboard.get_text() {
+                // Filter to single line (no newlines in chat input)
+                let text: String = text.chars().filter(|c| *c != '\n' && *c != '\r').collect();
+                if !text.is_empty() {
+                    self.input.insert_str(self.cursor, &text);
+                    self.cursor += text.len();
+                }
+            }
+        }
+    }
+
+    /// Copy text to clipboard.
+    pub fn copy_to_clipboard(&mut self, text: &str) {
+        if let Some(clipboard) = self.get_clipboard() {
+            let _ = clipboard.set_text(text.to_string());
         }
     }
 
@@ -143,6 +176,7 @@ impl ChatScreen {
                 self.scroll = 0;
                 None
             }
+            KeyCode::Char('y') => Some(Action::CopyLastMessage),
             KeyCode::Esc => Some(Action::ClearError),
             _ => None,
         }
@@ -229,6 +263,16 @@ impl ChatScreen {
                 // Ctrl+F - move cursor forward (like Right arrow)
                 KeyCode::Char('f') => {
                     self.cursor = (self.cursor + 1).min(self.input.len());
+                    return None;
+                }
+                // Ctrl+V - paste from clipboard
+                KeyCode::Char('v') => {
+                    self.paste_from_clipboard();
+                    return None;
+                }
+                // Ctrl+Y - yank/paste (readline style)
+                KeyCode::Char('y') => {
+                    self.paste_from_clipboard();
                     return None;
                 }
                 _ => {}

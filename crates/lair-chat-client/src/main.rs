@@ -174,7 +174,15 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
                 };
 
                 if let Some(action) = action {
-                    app.handle_action(action).await;
+                    // Handle clipboard actions specially (need both app and chat_screen)
+                    if matches!(action, Action::CopyLastMessage) {
+                        if let Some(content) = app.last_message_content() {
+                            chat_screen.copy_to_clipboard(content);
+                            app.set_info("Copied to clipboard");
+                        }
+                    } else {
+                        app.handle_action(action).await;
+                    }
                 }
             }
         }

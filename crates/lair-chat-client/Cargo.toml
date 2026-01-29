@@ -33,6 +33,9 @@ x25519-dalek = { version = "2.0", features = ["getrandom"] }
 base64 = "0.22"
 rand = "0.8"
 
+# Clipboard
+arboard = { version = "3.6", features = ["wayland-data-control"] }
+
 # Utilities
 uuid = { version = "1.19", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }

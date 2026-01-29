@@ -180,6 +180,8 @@ pub enum Action {
     ShowHelp,
     /// Clear error message.
     ClearError,
+    /// Copy last message to clipboard (handled by main loop with ChatScreen).
+    CopyLastMessage,
 }
 
 impl App {
@@ -465,7 +467,15 @@ impl App {
             Action::ClearError => {
                 self.clear_notifications();
             }
+            Action::CopyLastMessage => {
+                // Handled by main loop (requires clipboard from ChatScreen)
+            }
         }
+    }
+
+    /// Get the content of the last message (for clipboard copy).
+    pub fn last_message_content(&self) -> Option<&str> {
+        self.messages.last().map(|m| m.content.as_str())
     }
 
     /// Show help message.
@@ -479,9 +489,17 @@ impl App {
         self.add_system_message("  r        - Open room list");
         self.add_system_message("  j/k      - Scroll messages down/up");
         self.add_system_message("  G/g      - Jump to bottom/top of messages");
+        self.add_system_message("  y        - Copy last message to clipboard");
         self.add_system_message("  q        - Quit application");
         self.add_system_message("  R        - Reconnect to server");
         self.add_system_message("  ?/F1     - Show this help");
+        self.add_system_message("");
+        self.add_system_message("INPUT (insert mode):");
+        self.add_system_message("  Ctrl+V/Y - Paste from clipboard");
+        self.add_system_message("  Ctrl+A/E - Move cursor to start/end");
+        self.add_system_message("  Ctrl+W   - Delete word before cursor");
+        self.add_system_message("  Ctrl+U   - Clear line to start");
+        self.add_system_message("  Ctrl+K   - Clear line to end");
         self.add_system_message("");
         self.add_system_message("COMMANDS (type in insert mode):");
         self.add_system_message("  /help              - Show this help");
