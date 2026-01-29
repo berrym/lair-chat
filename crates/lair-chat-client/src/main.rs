@@ -24,7 +24,8 @@ mod protocol;
 
 use app::{Action, App, Screen};
 use components::{
-    render_toasts_default, ChatRenderContext, ChatScreen, CommandPalette, LoginScreen, RoomsScreen,
+    render_toasts_default, ChatRenderContext, ChatScreen, CommandPalette, Dialog, DialogResult,
+    LoginScreen, RoomsScreen,
 };
 
 /// Lair Chat TUI Client
@@ -96,6 +97,7 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
     let mut chat_screen = ChatScreen::new();
     let mut rooms_screen = RoomsScreen::new();
     let mut command_palette = CommandPalette::new();
+    let mut dialog = Dialog::new();
 
     // Connect to server
     if let Err(e) = app.connect().await {
@@ -149,6 +151,9 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
             // Render toast notifications as overlay
             let notifications = app.notifications();
             render_toasts_default(frame, area, &notifications);
+
+            // Render dialog as overlay (topmost)
+            dialog.render(frame, area);
         })?;
 
         // Poll for events
@@ -167,6 +172,26 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
                     break;
                 }
 
+                // Route to dialog if visible (highest priority)
+                if dialog.visible {
+                    match dialog.handle_key(key) {
+                        DialogResult::Confirmed(_) => {
+                            // Dialog was confirmed - check if it was quit confirmation
+                            if dialog.title.contains("Quit") {
+                                app.handle_action(Action::Quit).await;
+                                break;
+                            }
+                        }
+                        DialogResult::Cancelled => {
+                            // Dialog was cancelled, do nothing
+                        }
+                        DialogResult::Pending => {
+                            // Dialog still open
+                        }
+                    }
+                    continue;
+                }
+
                 // Handle Ctrl+P to toggle command palette
                 if key.code == KeyCode::Char('p')
                     && key.modifiers.contains(event::KeyModifiers::CONTROL)
@@ -178,14 +203,20 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
                 // Route to command palette if visible
                 if command_palette.visible {
                     if let Some(action) = command_palette.handle_key(key) {
-                        // Handle clipboard actions specially
-                        if matches!(action, Action::CopyLastMessage) {
-                            if let Some(content) = app.last_message_content() {
-                                chat_screen.copy_to_clipboard(content);
-                                app.set_info("Copied to clipboard");
+                        // Handle special actions from command palette
+                        match &action {
+                            Action::CopyLastMessage => {
+                                if let Some(content) = app.last_message_content() {
+                                    chat_screen.copy_to_clipboard(content);
+                                    app.set_info("Copied to clipboard");
+                                }
                             }
-                        } else {
-                            app.handle_action(action).await;
+                            Action::Quit => {
+                                dialog.show_confirm("Quit", "Are you sure you want to quit?");
+                            }
+                            _ => {
+                                app.handle_action(action).await;
+                            }
                         }
                     }
                     continue;
@@ -208,14 +239,21 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
                 };
 
                 if let Some(action) = action {
-                    // Handle clipboard actions specially (need both app and chat_screen)
-                    if matches!(action, Action::CopyLastMessage) {
-                        if let Some(content) = app.last_message_content() {
-                            chat_screen.copy_to_clipboard(content);
-                            app.set_info("Copied to clipboard");
+                    // Handle special actions
+                    match &action {
+                        Action::CopyLastMessage => {
+                            if let Some(content) = app.last_message_content() {
+                                chat_screen.copy_to_clipboard(content);
+                                app.set_info("Copied to clipboard");
+                            }
                         }
-                    } else {
-                        app.handle_action(action).await;
+                        Action::Quit => {
+                            // Show quit confirmation dialog
+                            dialog.show_confirm("Quit", "Are you sure you want to quit?");
+                        }
+                        _ => {
+                            app.handle_action(action).await;
+                        }
                     }
                 }
             }
