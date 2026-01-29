@@ -758,7 +758,11 @@ impl ChatScreen {
             } else if is_own_message {
                 (Color::Cyan, Color::Blue, Color::Rgb(20, 30, 50)) // Blue tint
             } else {
-                (Color::Green, Color::Rgb(100, 100, 120), Color::Rgb(35, 35, 45)) // Gray tint
+                (
+                    Color::Green,
+                    Color::Rgb(100, 100, 120),
+                    Color::Rgb(35, 35, 45),
+                ) // Gray tint
             };
 
             let text_style = Style::default().fg(Color::White).bg(bg_color);
