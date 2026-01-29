@@ -1,6 +1,6 @@
 //! Chat screen component.
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -45,8 +45,10 @@ pub enum ChatFocus {
 pub struct ChatScreen {
     /// Current input mode.
     pub mode: ChatMode,
-    /// Message input.
+    /// Message input buffer.
     pub input: String,
+    /// Cursor position within input.
+    pub cursor: usize,
     /// Scroll position.
     pub scroll: usize,
     /// Which panel is focused.
@@ -74,6 +76,7 @@ impl ChatScreen {
         Self {
             mode: ChatMode::Normal,
             input: String::new(),
+            cursor: 0,
             scroll: 0,
             focus: ChatFocus::Messages,
             user_list_state: ListState::default(),
@@ -181,6 +184,54 @@ impl ChatScreen {
     }
 
     fn handle_insert_key(&mut self, key: KeyEvent) -> Option<Action> {
+        // Handle Ctrl modifiers first
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            match key.code {
+                // Ctrl+C - exit insert mode (like Esc)
+                KeyCode::Char('c') => {
+                    self.mode = ChatMode::Normal;
+                    return None;
+                }
+                // Ctrl+U - clear line (delete from cursor to start)
+                KeyCode::Char('u') => {
+                    self.input.drain(..self.cursor);
+                    self.cursor = 0;
+                    return None;
+                }
+                // Ctrl+K - delete from cursor to end
+                KeyCode::Char('k') => {
+                    self.input.truncate(self.cursor);
+                    return None;
+                }
+                // Ctrl+W - delete word before cursor
+                KeyCode::Char('w') => {
+                    self.delete_word_before_cursor();
+                    return None;
+                }
+                // Ctrl+A - move cursor to start
+                KeyCode::Char('a') => {
+                    self.cursor = 0;
+                    return None;
+                }
+                // Ctrl+E - move cursor to end
+                KeyCode::Char('e') => {
+                    self.cursor = self.input.len();
+                    return None;
+                }
+                // Ctrl+B - move cursor back (like Left arrow)
+                KeyCode::Char('b') => {
+                    self.cursor = self.cursor.saturating_sub(1);
+                    return None;
+                }
+                // Ctrl+F - move cursor forward (like Right arrow)
+                KeyCode::Char('f') => {
+                    self.cursor = (self.cursor + 1).min(self.input.len());
+                    return None;
+                }
+                _ => {}
+            }
+        }
+
         match key.code {
             KeyCode::Esc => {
                 self.mode = ChatMode::Normal;
@@ -189,6 +240,7 @@ impl ChatScreen {
             KeyCode::Enter => {
                 if !self.input.is_empty() {
                     let content = std::mem::take(&mut self.input);
+                    self.cursor = 0;
 
                     // Check for commands
                     if content.starts_with('/') {
@@ -200,14 +252,67 @@ impl ChatScreen {
                 None
             }
             KeyCode::Backspace => {
-                self.input.pop();
+                if self.cursor > 0 {
+                    self.cursor -= 1;
+                    self.input.remove(self.cursor);
+                }
+                None
+            }
+            KeyCode::Delete => {
+                if self.cursor < self.input.len() {
+                    self.input.remove(self.cursor);
+                }
+                None
+            }
+            KeyCode::Left => {
+                self.cursor = self.cursor.saturating_sub(1);
+                None
+            }
+            KeyCode::Right => {
+                self.cursor = (self.cursor + 1).min(self.input.len());
+                None
+            }
+            KeyCode::Home => {
+                self.cursor = 0;
+                None
+            }
+            KeyCode::End => {
+                self.cursor = self.input.len();
                 None
             }
             KeyCode::Char(c) => {
-                self.input.push(c);
+                self.input.insert(self.cursor, c);
+                self.cursor += 1;
                 None
             }
             _ => None,
+        }
+    }
+
+    /// Delete the word before the cursor (Ctrl+W behavior).
+    fn delete_word_before_cursor(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+
+        // Find start of word (skip trailing spaces, then find word start)
+        let mut end = self.cursor;
+
+        // Skip any spaces before cursor
+        while end > 0 && self.input.chars().nth(end - 1) == Some(' ') {
+            end -= 1;
+        }
+
+        // Find start of word
+        let mut start = end;
+        while start > 0 && self.input.chars().nth(start - 1) != Some(' ') {
+            start -= 1;
+        }
+
+        // Delete from start to cursor
+        if start < self.cursor {
+            self.input.drain(start..self.cursor);
+            self.cursor = start;
         }
     }
 
@@ -341,7 +446,7 @@ impl ChatScreen {
         let input_title = match (self.mode, has_target) {
             (ChatMode::Normal, true) => " Press 'i' to type ",
             (ChatMode::Normal, false) => " Press 'r' to join a room ",
-            (ChatMode::Insert, true) => " Enter:send Esc:cancel ",
+            (ChatMode::Insert, true) => " Enter:send Esc:cancel C-w:del-word C-u:clear ",
             (ChatMode::Insert, false) => " No room! Esc then 'r' ",
         };
         let input_style = match self.mode {
@@ -353,8 +458,11 @@ impl ChatScreen {
             .borders(Borders::ALL)
             .style(input_style);
 
+        // Render input with cursor
         let input_text = if self.mode == ChatMode::Insert {
-            format!("{}|", self.input)
+            // Show cursor position
+            let (before, after) = self.input.split_at(self.cursor);
+            format!("{}│{}", before, after)
         } else {
             self.input.clone()
         };
