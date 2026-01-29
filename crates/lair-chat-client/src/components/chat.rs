@@ -15,6 +15,69 @@ use ratatui::{
 
 use crate::app::{Action, ChatMessage};
 
+/// Message style for bubble rendering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MessageStyle {
+    /// Message sent by current user (right-aligned, blue).
+    Sent,
+    /// Message received from others (left-aligned, gray).
+    Received,
+    /// System message (centered, italic).
+    System,
+    /// DM sent by current user (right-aligned, purple).
+    DmSent,
+    /// DM received from others (left-aligned, green).
+    DmReceived,
+}
+
+/// Wrap text to fit within a specified width.
+fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
+    if max_width == 0 || text.is_empty() {
+        return vec![text.to_string()];
+    }
+
+    let mut lines = Vec::new();
+    let mut current_line = String::new();
+
+    for word in text.split_whitespace() {
+        // If adding this word would exceed max width, start a new line
+        if !current_line.is_empty() && current_line.len() + 1 + word.len() > max_width {
+            lines.push(current_line.clone());
+            current_line.clear();
+        }
+
+        // If the word itself is longer than max_width, break it
+        if word.len() > max_width {
+            if !current_line.is_empty() {
+                lines.push(current_line.clone());
+                current_line.clear();
+            }
+            // Break long word into chunks
+            let mut chars: Vec<char> = word.chars().collect();
+            while !chars.is_empty() {
+                let chunk_size = max_width.min(chars.len());
+                let chunk: String = chars.drain(..chunk_size).collect();
+                lines.push(chunk);
+            }
+        } else {
+            if !current_line.is_empty() {
+                current_line.push(' ');
+            }
+            current_line.push_str(word);
+        }
+    }
+
+    if !current_line.is_empty() {
+        lines.push(current_line);
+    }
+
+    if lines.is_empty() {
+        lines.push(text.to_string());
+    }
+
+    lines
+}
+
 /// Context for rendering the chat screen.
 pub struct ChatRenderContext<'a> {
     /// Messages to display.
@@ -445,52 +508,144 @@ impl ChatScreen {
             .style(Style::default().fg(title_color));
 
         let inner_height = chunks[0].height.saturating_sub(2) as usize;
-        let total_messages = messages.len();
+        let inner_width = chunks[0].width.saturating_sub(4) as usize; // Account for borders and padding
+        let message_max_width = (inner_width * 75) / 100; // 75% of available width for bubbles
 
-        // Clamp scroll
-        let max_scroll = total_messages.saturating_sub(inner_height);
+        // Determine if we're in DM mode
+        let is_dm_mode = dm_user.is_some();
+
+        // Build message lines with bubble styling
+        let mut all_lines: Vec<Line> = Vec::new();
+
+        for (idx, msg) in messages.iter().enumerate() {
+            // Add spacing between messages (except first)
+            if idx > 0 {
+                all_lines.push(Line::from(""));
+            }
+
+            // Determine message style
+            let msg_style = if msg.is_system {
+                MessageStyle::System
+            } else {
+                let is_own_message = username.is_some_and(|u| u == msg.author);
+                if is_dm_mode {
+                    if is_own_message {
+                        MessageStyle::DmSent
+                    } else {
+                        MessageStyle::DmReceived
+                    }
+                } else if is_own_message {
+                    MessageStyle::Sent
+                } else {
+                    MessageStyle::Received
+                }
+            };
+
+            // Format message content with timestamp and author
+            let time = msg.timestamp.format("%H:%M");
+            let display_content = if msg.is_system {
+                format!("[{}] {}", time, msg.content)
+            } else {
+                format!("[{}] {}: {}", time, msg.author, msg.content)
+            };
+
+            // Get styling based on message type
+            let (text_style, bubble_style, right_align) = match msg_style {
+                MessageStyle::Sent => (
+                    Style::default()
+                        .fg(Color::White)
+                        .bg(Color::Rgb(59, 130, 246)) // Blue
+                        .add_modifier(Modifier::BOLD),
+                    Some(Color::Rgb(59, 130, 246)),
+                    true,
+                ),
+                MessageStyle::Received => (
+                    Style::default()
+                        .fg(Color::Rgb(55, 65, 81)) // Dark gray text
+                        .bg(Color::Rgb(229, 231, 235)), // Light gray background
+                    Some(Color::Rgb(229, 231, 235)),
+                    false,
+                ),
+                MessageStyle::System => (
+                    Style::default()
+                        .fg(Color::Rgb(156, 163, 175))
+                        .add_modifier(Modifier::ITALIC),
+                    None,
+                    false,
+                ),
+                MessageStyle::DmSent => (
+                    Style::default()
+                        .fg(Color::White)
+                        .bg(Color::Rgb(147, 51, 234)) // Purple
+                        .add_modifier(Modifier::BOLD),
+                    Some(Color::Rgb(147, 51, 234)),
+                    true,
+                ),
+                MessageStyle::DmReceived => (
+                    Style::default()
+                        .fg(Color::White)
+                        .bg(Color::Rgb(34, 197, 94)) // Green
+                        .add_modifier(Modifier::BOLD),
+                    Some(Color::Rgb(34, 197, 94)),
+                    false,
+                ),
+            };
+
+            // Wrap text to fit within bubble width
+            let content_width = message_max_width.saturating_sub(4).max(10); // Account for padding
+            let wrapped_lines = wrap_text(&display_content, content_width);
+
+            for wrapped_line in wrapped_lines {
+                let line = if bubble_style.is_some() {
+                    // Bubble message with padding
+                    let bubble_content = format!("  {}  ", wrapped_line);
+                    let content_len = bubble_content.len();
+
+                    if right_align {
+                        // Right-align sent messages
+                        let padding = inner_width.saturating_sub(content_len);
+                        Line::from(vec![
+                            Span::raw(" ".repeat(padding)),
+                            Span::styled(bubble_content, text_style),
+                        ])
+                    } else {
+                        // Left-align received messages
+                        Line::from(vec![Span::styled(bubble_content, text_style)])
+                    }
+                } else {
+                    // System message - centered with bullet points
+                    let system_content = format!("• {} •", wrapped_line);
+                    let content_len = system_content.len();
+                    let padding = inner_width.saturating_sub(content_len) / 2;
+                    Line::from(vec![
+                        Span::raw(" ".repeat(padding)),
+                        Span::styled(system_content, text_style),
+                    ])
+                };
+
+                all_lines.push(line);
+            }
+        }
+
+        // Calculate scroll - now based on lines, not messages
+        let total_lines = all_lines.len();
+        let max_scroll = total_lines.saturating_sub(inner_height);
         let scroll = self.scroll.min(max_scroll);
 
-        let visible_messages: Vec<ListItem> = messages
-            .iter()
+        // Take visible lines
+        let visible_lines: Vec<ListItem> = all_lines
+            .into_iter()
             .skip(scroll)
             .take(inner_height)
-            .map(|msg| {
-                let style = if msg.is_system {
-                    Style::default()
-                        .fg(Color::DarkGray)
-                        .add_modifier(Modifier::ITALIC)
-                } else {
-                    Style::default()
-                };
-
-                let time = msg.timestamp.format("%H:%M");
-                let line = if msg.is_system {
-                    Line::from(vec![
-                        Span::styled(format!("[{}] ", time), Style::default().fg(Color::DarkGray)),
-                        Span::styled(&msg.content, style),
-                    ])
-                } else {
-                    Line::from(vec![
-                        Span::styled(format!("[{}] ", time), Style::default().fg(Color::DarkGray)),
-                        Span::styled(
-                            format!("{}: ", msg.author),
-                            Style::default().fg(Color::Green),
-                        ),
-                        Span::raw(&msg.content),
-                    ])
-                };
-
-                ListItem::new(line)
-            })
+            .map(ListItem::new)
             .collect();
 
-        let messages_list = List::new(visible_messages).block(messages_block);
+        let messages_list = List::new(visible_lines).block(messages_block);
         frame.render_widget(messages_list, chunks[0]);
 
-        // Render scrollbar if there are more messages than can fit
-        if total_messages > inner_height {
-            let mut scrollbar_state = ScrollbarState::new(total_messages).position(scroll);
+        // Render scrollbar if there are more lines than can fit
+        if total_lines > inner_height {
+            let mut scrollbar_state = ScrollbarState::new(total_lines).position(scroll);
             let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
                 .begin_symbol(Some("↑"))
                 .end_symbol(Some("↓"))
