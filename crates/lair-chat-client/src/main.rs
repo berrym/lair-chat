@@ -267,8 +267,11 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
             }
         }
 
-        // Poll for server messages
-        app.poll_messages().await;
+        // Poll for server messages (smart scroll: auto-scroll if user was at bottom)
+        let new_messages = app.poll_messages().await;
+        if new_messages && chat_screen.is_at_bottom() {
+            chat_screen.scroll_to_bottom();
+        }
 
         // Tick notifications to auto-dismiss expired ones
         app.tick_notifications();

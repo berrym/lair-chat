@@ -1263,7 +1263,10 @@ impl App {
     }
 
     /// Poll for incoming messages.
-    pub async fn poll_messages(&mut self) {
+    /// Poll for new messages from the server.
+    ///
+    /// Returns `true` if any new messages were received (for smart scroll).
+    pub async fn poll_messages(&mut self) -> bool {
         // Collect messages first to avoid borrow issues
         let mut messages = Vec::new();
         let mut connection_lost = false;
@@ -1285,6 +1288,8 @@ impl App {
             }
         }
 
+        let had_messages = !messages.is_empty();
+
         // Handle connection loss - attempt automatic reconnection
         if connection_lost {
             self.connection = None;
@@ -1296,6 +1301,8 @@ impl App {
         for msg in messages {
             self.handle_server_message(msg).await;
         }
+
+        had_messages
     }
 
     /// Send a ping to keep the connection alive.
