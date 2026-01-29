@@ -5,7 +5,10 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{
+        Block, Borders, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation,
+        ScrollbarState,
+    },
     Frame,
 };
 
@@ -440,6 +443,24 @@ impl ChatScreen {
 
         let messages_list = List::new(visible_messages).block(messages_block);
         frame.render_widget(messages_list, chunks[0]);
+
+        // Render scrollbar if there are more messages than can fit
+        if total_messages > inner_height {
+            let mut scrollbar_state = ScrollbarState::new(total_messages).position(scroll);
+            let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(Some("↑"))
+                .end_symbol(Some("↓"))
+                .track_symbol(Some("│"))
+                .thumb_symbol("█");
+            // Render inside the messages area (offset by 1 for border)
+            let scrollbar_area = Rect {
+                x: chunks[0].x + chunks[0].width.saturating_sub(1),
+                y: chunks[0].y + 1,
+                width: 1,
+                height: chunks[0].height.saturating_sub(2),
+            };
+            frame.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
+        }
 
         // Input area
         let has_target = room_name.is_some() || dm_user.is_some();
