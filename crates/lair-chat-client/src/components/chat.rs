@@ -747,6 +747,8 @@ impl ChatScreen {
             }
 
             // Styling for user messages
+            // DMs: Purple/Magenta for own, Green for received (personal feel)
+            // Rooms: Blue for own, Gray for received (professional/neutral feel)
             let (username_color, border_color, bg_color) = if is_dm_mode {
                 if is_own_message {
                     (Color::Cyan, Color::Magenta, Color::Rgb(40, 20, 50)) // Purple tint
@@ -756,7 +758,7 @@ impl ChatScreen {
             } else if is_own_message {
                 (Color::Cyan, Color::Blue, Color::Rgb(20, 30, 50)) // Blue tint
             } else {
-                (Color::Green, Color::Blue, Color::Rgb(20, 30, 50)) // Blue tint
+                (Color::Green, Color::Rgb(100, 100, 120), Color::Rgb(35, 35, 45)) // Gray tint
             };
 
             let text_style = Style::default().fg(Color::White).bg(bg_color);
