@@ -39,42 +39,51 @@ fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
     }
 
     let mut lines = Vec::new();
-    let mut current_line = String::new();
 
-    for word in text.split_whitespace() {
-        // If adding this word would exceed max width, start a new line
-        if !current_line.is_empty() && current_line.len() + 1 + word.len() > max_width {
-            lines.push(current_line.clone());
-            current_line.clear();
+    // First split by explicit newlines to preserve them
+    for paragraph in text.split('\n') {
+        if paragraph.is_empty() {
+            lines.push(String::new());
+            continue;
         }
 
-        // If the word itself is longer than max_width, break it
-        if word.len() > max_width {
-            if !current_line.is_empty() {
+        let mut current_line = String::new();
+
+        for word in paragraph.split_whitespace() {
+            // If adding this word would exceed max width, start a new line
+            if !current_line.is_empty() && current_line.len() + 1 + word.len() > max_width {
                 lines.push(current_line.clone());
                 current_line.clear();
             }
-            // Break long word into chunks
-            let mut chars: Vec<char> = word.chars().collect();
-            while !chars.is_empty() {
-                let chunk_size = max_width.min(chars.len());
-                let chunk: String = chars.drain(..chunk_size).collect();
-                lines.push(chunk);
+
+            // If the word itself is longer than max_width, break it
+            if word.len() > max_width {
+                if !current_line.is_empty() {
+                    lines.push(current_line.clone());
+                    current_line.clear();
+                }
+                // Break long word into chunks
+                let mut chars: Vec<char> = word.chars().collect();
+                while !chars.is_empty() {
+                    let chunk_size = max_width.min(chars.len());
+                    let chunk: String = chars.drain(..chunk_size).collect();
+                    lines.push(chunk);
+                }
+            } else {
+                if !current_line.is_empty() {
+                    current_line.push(' ');
+                }
+                current_line.push_str(word);
             }
-        } else {
-            if !current_line.is_empty() {
-                current_line.push(' ');
-            }
-            current_line.push_str(word);
+        }
+
+        if !current_line.is_empty() {
+            lines.push(current_line);
         }
     }
 
-    if !current_line.is_empty() {
-        lines.push(current_line);
-    }
-
     if lines.is_empty() {
-        lines.push(text.to_string());
+        lines.push(String::new());
     }
 
     lines
@@ -1080,6 +1089,35 @@ mod tests {
         let result = wrap_text(original, 10);
         let joined = result.join(" ");
         assert_eq!(joined, original);
+    }
+
+    #[test]
+    fn test_wrap_text_preserves_newlines() {
+        let text = "line one\nline two\nline three";
+        let result = wrap_text(text, 50);
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0], "line one");
+        assert_eq!(result[1], "line two");
+        assert_eq!(result[2], "line three");
+    }
+
+    #[test]
+    fn test_wrap_text_newlines_with_wrapping() {
+        let text = "short\nthis is a longer line that needs wrapping";
+        let result = wrap_text(text, 15);
+        assert_eq!(result[0], "short");
+        // The second paragraph should be wrapped
+        assert!(result.len() > 2);
+    }
+
+    #[test]
+    fn test_wrap_text_empty_lines() {
+        let text = "line one\n\nline three";
+        let result = wrap_text(text, 50);
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0], "line one");
+        assert_eq!(result[1], "");
+        assert_eq!(result[2], "line three");
     }
 
     // ========================================================================
