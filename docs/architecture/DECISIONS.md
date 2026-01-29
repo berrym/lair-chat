@@ -638,3 +638,59 @@ These commands will continue to work but log deprecation warnings.
 
 ### Rationale
 Each protocol excels at different things. HTTP is designed for request/response with rich middleware ecosystem (rate limiting, CORS, auth). TCP excels at low-latency bidirectional communication. By assigning each protocol its strengths, we get the best of both worlds and eliminate duplication.
+
+---
+
+## ADR-014: Native TLS for HTTP Transport
+
+### Status
+Accepted
+
+### Context
+The HTTP API handles authentication (login, register, logout) and CRUD operations (rooms, messages, users). These endpoints transmit sensitive data including:
+- User credentials during login/registration
+- JWT tokens in headers
+- Personal information in API responses
+
+Without transport encryption, this data is vulnerable to interception. The system needs native TLS support for production deployments.
+
+**Options considered:**
+1. **External reverse proxy** (nginx, Caddy) - Adds deployment complexity
+2. **rustls** - Pure Rust, modern ciphers, already used by sqlx
+3. **native-tls** - System TLS libraries, platform-dependent behavior
+
+### Decision
+Use **rustls** via `axum-server` for native HTTPS support with the following characteristics:
+
+- **Opt-in TLS**: HTTP by default for backward compatibility and development simplicity
+- **Environment configuration**: Consistent with existing `LAIR_*` env var pattern
+- **TCP unchanged**: Keep existing X25519 + AES-256-GCM application-layer encryption
+
+```
+Configuration Variables:
+- LAIR_TLS_ENABLED (bool, default: false)
+- LAIR_TLS_CERT_PATH (required if TLS enabled)
+- LAIR_TLS_KEY_PATH (required if TLS enabled)
+```
+
+### Consequences
+
+**Positive:**
+- Pure Rust: No system dependencies, consistent behavior across platforms
+- Consistency: sqlx already uses rustls, no additional TLS stacks
+- Modern security: TLS 1.3 support, secure cipher suites by default
+- Simple deployment: Single binary, no reverse proxy required
+- Backward compatible: HTTP still works when TLS disabled
+
+**Negative:**
+- Certificate management: Operators must provide valid certs
+- No automatic cert renewal: Must use external tools (certbot) or implement later
+- Additional dependencies: axum-server, rustls-pemfile
+
+### Rationale
+Native TLS eliminates the need for a separate reverse proxy in simple deployments while maintaining security. Using rustls provides consistency with the existing dependency tree and ensures modern cryptographic practices. The opt-in approach preserves development simplicity and backward compatibility.
+
+TCP retains its existing application-layer encryption because:
+1. Defense in depth: Multiple encryption layers
+2. Future flexibility: Can add TLS to TCP independently
+3. Protocol-specific needs: TCP encryption optimized for real-time messaging

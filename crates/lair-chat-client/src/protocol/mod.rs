@@ -11,7 +11,7 @@ pub mod http;
 pub mod messages;
 pub mod tcp;
 
-pub use http::HttpClient;
+pub use http::{HttpClient, HttpClientConfig};
 pub use messages::{
     ClientMessage, MessageTarget, Room, RoomListItem, ServerMessage, Session, User,
 };

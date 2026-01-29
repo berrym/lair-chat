@@ -22,24 +22,24 @@ Lair Chat is a secure, high-performance chat system built with Rust. It provides
                             ┌──────────────────────────────────────────────┐
                             │              LAIR CHAT SERVER                │
                             │                                              │
-┌─────────┐                 │  ┌────────────────────────────────────────┐ │
-│   TUI   │─────TCP:8080────│──│           PROTOCOL ADAPTERS            │ │
-│ Client  │                 │  │  ┌────────┐ ┌────────┐ ┌────────┐     │ │
+┌─────────┐   TCP:8080      │  ┌────────────────────────────────────────┐ │
+│   TUI   │───(App-layer────│──│           PROTOCOL ADAPTERS            │ │
+│ Client  │    encryption)  │  │  ┌────────┐ ┌────────┐ ┌────────┐     │ │
 └─────────┘                 │  │  │  TCP   │ │  HTTP  │ │   WS   │     │ │
                             │  │  │Adapter │ │Adapter │ │Adapter │     │ │
-┌─────────┐                 │  │  └───┬────┘ └───┬────┘ └───┬────┘     │ │
-│   Web   │────HTTP:8082────│──│      │          │          │          │ │
+┌─────────┐  HTTP/S:8082    │  │  └───┬────┘ └───┬────┘ └───┬────┘     │ │
+│   Web   │───(TLS optional)│──│      │          │          │          │ │
 │ Client  │                 │  └──────┼──────────┼──────────┼──────────┘ │
 └─────────┘                 │         └──────────┼──────────┘            │
                             │                    │                       │
-┌─────────┐                 │  ┌─────────────────▼────────────────────┐ │
-│ Mobile  │────HTTP:8082────│──│            CORE ENGINE               │ │
+┌─────────┐  HTTP/S:8082    │  ┌─────────────────▼────────────────────┐ │
+│ Mobile  │───(TLS optional)│──│            CORE ENGINE               │ │
 │  App    │                 │  │                                      │ │
 └─────────┘                 │  │  ┌──────────┐ ┌──────────┐          │ │
                             │  │  │  Auth    │ │ Messaging│          │ │
-┌─────────┐                 │  │  │ Service  │ │ Service  │          │ │
-│   Bot   │─────TCP:8080────│──│  └──────────┘ └──────────┘          │ │
-│         │                 │  │  ┌──────────┐ ┌──────────┐          │ │
+┌─────────┐   TCP:8080      │  │  │ Service  │ │ Service  │          │ │
+│   Bot   │───(App-layer────│──│  └──────────┘ └──────────┘          │ │
+│         │    encryption)  │  │  ┌──────────┐ ┌──────────┐          │ │
 └─────────┘                 │  │  │  Room    │ │ Session  │          │ │
                             │  │  │ Service  │ │ Manager  │          │ │
                             │  │  └──────────┘ └──────────┘          │ │
@@ -71,11 +71,11 @@ Lair Chat is a secure, high-performance chat system built with Rust. It provides
 
 Thin layer that translates between wire protocols and the core engine.
 
-| Adapter | Port | Primary Purpose |
-|---------|------|-----------------|
-| HTTP | 8082 | **Auth, CRUD, queries** - Login, register, room management, message history |
-| TCP | 8080 | **Real-time only** - Message delivery, presence, typing, live events |
-| WebSocket | 8082 | Real-time for web clients (future) |
+| Adapter | Port | Transport Security | Primary Purpose |
+|---------|------|---------------------|-----------------|
+| HTTP | 8082 | **TLS optional** (rustls) | **Auth, CRUD, queries** - Login, register, room management, message history |
+| TCP | 8080 | **App-layer** (X25519 + AES-256-GCM) | **Real-time only** - Message delivery, presence, typing, live events |
+| WebSocket | 8082 | TLS (future) | Real-time for web clients (future) |
 
 > **Protocol Split**: HTTP handles authentication and data operations; TCP handles real-time messaging. See [ADR-013](DECISIONS.md#adr-013-protocol-responsibility-split).
 
@@ -300,8 +300,11 @@ State Change (e.g., new message)
 
 ### Transport Security
 
-- **TLS 1.3** for HTTP connections
-- **Optional E2E encryption** for TCP (AES-256-GCM)
+- **HTTP/HTTPS**: Optional TLS via rustls (see [ADR-014](DECISIONS.md#adr-014-native-tls-for-http-transport))
+  - Disabled by default for development
+  - Enable via `LAIR_TLS_ENABLED=true`
+  - Requires `LAIR_TLS_CERT_PATH` and `LAIR_TLS_KEY_PATH`
+- **TCP**: Application-layer encryption (X25519 key exchange + AES-256-GCM)
 
 ### Authentication
 
@@ -352,23 +355,36 @@ lair-chat/
 
 ## Configuration
 
-Server configuration via environment or config file:
+Server configuration via environment variables:
 
-```toml
-[server]
-tcp_port = 8080
-http_port = 8082
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `LAIR_TCP_PORT` | TCP server port | `8080` |
+| `LAIR_HTTP_PORT` | HTTP/HTTPS server port | `8082` |
+| `LAIR_DATABASE_URL` | Database connection URL | `sqlite:lair-chat.db?mode=rwc` |
+| `LAIR_JWT_SECRET` | JWT signing secret | Auto-generated (dev) |
+| `LAIR_TLS_ENABLED` | Enable HTTPS | `false` |
+| `LAIR_TLS_CERT_PATH` | TLS certificate path | Required if TLS enabled |
+| `LAIR_TLS_KEY_PATH` | TLS private key path | Required if TLS enabled |
 
-[database]
-url = "sqlite:data/lair_chat.db"
-max_connections = 20
+Example configuration:
 
-[auth]
-jwt_secret = "your-secret-key"
-session_duration_hours = 24
+```bash
+# Development (HTTP)
+LAIR_TCP_PORT=8080 \
+LAIR_HTTP_PORT=8082 \
+LAIR_DATABASE_URL=sqlite:lair-chat.db?mode=rwc \
+cargo run -p lair-chat-server
 
-[features]
-encryption_required = false
+# Production (HTTPS)
+LAIR_TCP_PORT=8080 \
+LAIR_HTTP_PORT=8082 \
+LAIR_DATABASE_URL=sqlite:data/lair_chat.db?mode=rwc \
+LAIR_JWT_SECRET=your-secure-secret-key \
+LAIR_TLS_ENABLED=true \
+LAIR_TLS_CERT_PATH=/etc/ssl/certs/lair-chat.pem \
+LAIR_TLS_KEY_PATH=/etc/ssl/private/lair-chat.key \
+cargo run -p lair-chat-server --release
 ```
 
 ---

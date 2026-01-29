@@ -13,7 +13,7 @@ tokio-stream = { version = "0.1", features = ["full"] }
 futures = "0.3"
 
 # HTTP client (for REST API auth)
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # TUI
 ratatui = { version = "0.30", features = ["serde", "macros"] }

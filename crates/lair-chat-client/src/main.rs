@@ -31,9 +31,19 @@ use components::{ChatRenderContext, ChatScreen, LoginScreen, RoomsScreen};
 #[command(about = "A terminal-based chat client for Lair Chat servers")]
 #[command(version)]
 struct Args {
-    /// Server address
+    /// TCP server address (for real-time messaging)
     #[arg(short, long, default_value = "127.0.0.1:8080")]
     server: String,
+
+    /// HTTP API base URL (http:// or https://).
+    /// If not specified, derived from TCP server address.
+    #[arg(long)]
+    http_url: Option<String>,
+
+    /// Skip TLS certificate verification (for development with self-signed certs).
+    /// WARNING: Do not use in production!
+    #[arg(long, default_value = "false")]
+    insecure: bool,
 }
 
 #[tokio::main]
@@ -54,14 +64,23 @@ async fn main() -> Result<()> {
     let args = Args::parse();
     let server_addr: SocketAddr = args.server.parse().expect("Invalid server address");
 
+    // Derive HTTP URL from server address if not specified
+    let http_url = args
+        .http_url
+        .unwrap_or_else(|| format!("http://{}:{}", server_addr.ip(), server_addr.port() + 2));
+
     info!("Lair Chat Client starting...");
-    info!("Server: {}", server_addr);
+    info!("TCP Server: {}", server_addr);
+    info!("HTTP URL: {}", http_url);
+    if args.insecure {
+        info!("TLS verification: disabled (insecure mode)");
+    }
 
     // Run the TUI
-    run_tui(server_addr).await
+    run_tui(server_addr, http_url, args.insecure).await
 }
 
-async fn run_tui(server_addr: SocketAddr) -> Result<()> {
+async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> Result<()> {
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -69,8 +88,8 @@ async fn run_tui(server_addr: SocketAddr) -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Create app
-    let mut app = App::new(server_addr);
+    // Create app with HTTP configuration
+    let mut app = App::with_http_config(server_addr, http_url, insecure);
     let mut login_screen = LoginScreen::new();
     let mut chat_screen = ChatScreen::new();
     let mut rooms_screen = RoomsScreen::new();

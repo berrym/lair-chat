@@ -61,6 +61,15 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     info!("  HTTP port: {}", config.http.port);
     info!("  Database: {}", config.database.url);
 
+    // Log TLS status
+    if let Some(ref tls) = config.http.tls {
+        info!("  TLS: enabled");
+        info!("    Certificate: {}", tls.cert_path.display());
+        info!("    Private key: {}", tls.key_path.display());
+    } else {
+        info!("  TLS: disabled (set LAIR_TLS_ENABLED=true to enable)");
+    }
+
     // Initialize storage
     info!("Initializing storage...");
     let storage = SqliteStorage::with_config(config.database).await?;
@@ -72,12 +81,19 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Start protocol adapters
     info!("Starting protocol adapters...");
 
-    let tcp_server = TcpServer::start(config.tcp, engine.clone()).await?;
-    let http_server = HttpServer::start(config.http, engine.clone()).await?;
+    let tcp_server = TcpServer::start(config.tcp.clone(), engine.clone()).await?;
+    let http_server = HttpServer::start(config.http.clone(), engine.clone()).await?;
 
     info!("Server ready!");
-    info!("  TCP: telnet localhost 8080");
-    info!("  HTTP: curl http://localhost:8082/health");
+    info!("  TCP: telnet localhost {}", config.tcp.port);
+    if config.http.tls.is_some() {
+        info!(
+            "  HTTPS: curl -k https://localhost:{}/health",
+            config.http.port
+        );
+    } else {
+        info!("  HTTP: curl http://localhost:{}/health", config.http.port);
+    }
 
     // Wait for shutdown signal
     shutdown_signal().await;

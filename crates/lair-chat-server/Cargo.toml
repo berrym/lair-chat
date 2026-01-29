@@ -17,10 +17,15 @@ async-trait = "0.1"
 # Web framework
 axum = { version = "0.8", features = ["macros", "ws"] }
 axum-extra = { version = "0.10", features = ["typed-header"] }
+axum-server = { version = "0.7", features = ["tls-rustls"] }
 tower = { version = "0.5", features = ["full"] }
 tower-http = { version = "0.6", features = ["fs", "trace", "cors", "limit", "timeout"] }
 hyper = { version = "1.6", features = ["full"] }
 http = "1.4"
+
+# TLS support
+rustls = "0.23"
+rustls-pemfile = "2"
 
 # Database
 sqlx = { version = "0.8", features = [

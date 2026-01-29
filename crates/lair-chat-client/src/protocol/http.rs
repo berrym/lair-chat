@@ -7,7 +7,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use super::messages::{Session, SessionId, User};
@@ -30,6 +30,24 @@ pub enum HttpError {
 
     #[error("Server returned error: {code} - {message}")]
     ServerError { code: String, message: String },
+}
+
+/// Configuration for the HTTP client.
+#[derive(Debug, Clone)]
+pub struct HttpClientConfig {
+    /// Base URL for the HTTP API (e.g., "http://localhost:8082" or "https://localhost:8082").
+    pub base_url: String,
+    /// Skip TLS certificate verification (for development with self-signed certs).
+    pub skip_tls_verify: bool,
+}
+
+impl Default for HttpClientConfig {
+    fn default() -> Self {
+        Self {
+            base_url: "http://localhost:8082".to_string(),
+            skip_tls_verify: false,
+        }
+    }
 }
 
 /// HTTP client for REST API operations.
@@ -133,11 +151,31 @@ pub struct ListUsersResponse {
 }
 
 impl HttpClient {
-    /// Create a new HTTP client.
+    /// Create a new HTTP client with default settings.
+    #[allow(dead_code)]
     pub fn new(base_url: impl Into<String>) -> Self {
-        Self {
+        Self::with_config(HttpClientConfig {
             base_url: base_url.into(),
-            client: reqwest::Client::new(),
+            skip_tls_verify: false,
+        })
+    }
+
+    /// Create a new HTTP client with custom configuration.
+    pub fn with_config(config: HttpClientConfig) -> Self {
+        let mut builder = reqwest::Client::builder();
+
+        if config.skip_tls_verify {
+            warn!("TLS certificate verification is disabled - DO NOT USE IN PRODUCTION");
+            builder = builder
+                .danger_accept_invalid_certs(true)
+                .danger_accept_invalid_hostnames(true);
+        }
+
+        let client = builder.build().expect("Failed to build HTTP client");
+
+        Self {
+            base_url: config.base_url,
+            client,
             token: None,
         }
     }

@@ -8,8 +8,8 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::protocol::{
-    ClientMessage, Connection, HttpClient, MessageTarget, Room, RoomListItem, ServerMessage,
-    Session, TcpError, User,
+    ClientMessage, Connection, HttpClient, HttpClientConfig, MessageTarget, Room, RoomListItem,
+    ServerMessage, Session, TcpError, User,
 };
 
 /// Type alias for user IDs.
@@ -150,19 +150,39 @@ impl App {
     /// # Arguments
     /// * `server_addr` - TCP server address for real-time messaging
     /// * `http_port` - HTTP server port for authentication (defaults to TCP port + 2)
+    #[allow(dead_code)]
     pub fn new(server_addr: SocketAddr) -> Self {
         Self::with_http_port(server_addr, server_addr.port() + 2)
     }
 
     /// Create a new application with explicit HTTP port.
+    #[allow(dead_code)]
     pub fn with_http_port(server_addr: SocketAddr, http_port: u16) -> Self {
         let http_base_url = format!("http://{}:{}", server_addr.ip(), http_port);
+        Self::with_http_config(server_addr, http_base_url, false)
+    }
+
+    /// Create a new application with full HTTP configuration.
+    ///
+    /// # Arguments
+    /// * `server_addr` - TCP server address for real-time messaging
+    /// * `http_url` - Full HTTP API base URL (e.g., "http://localhost:8082" or "https://localhost:8082")
+    /// * `skip_tls_verify` - Skip TLS certificate verification (for self-signed certs)
+    pub fn with_http_config(
+        server_addr: SocketAddr,
+        http_url: String,
+        skip_tls_verify: bool,
+    ) -> Self {
+        let http_config = HttpClientConfig {
+            base_url: http_url.clone(),
+            skip_tls_verify,
+        };
         Self {
             screen: Screen::Login,
             connection: None,
-            http_client: HttpClient::new(&http_base_url),
+            http_client: HttpClient::with_config(http_config),
             server_addr,
-            http_base_url,
+            http_base_url: http_url,
             user: None,
             session: None,
             token: None,

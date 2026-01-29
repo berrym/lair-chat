@@ -3,7 +3,67 @@
 This document specifies the Lair Chat REST API. Any client can use this API to interact with a Lair Chat server using standard HTTP requests.
 
 **API Version**: v1
-**Base URL**: `http://localhost:8082/api/v1`
+**Base URL**: `http://localhost:8082/api/v1` (or `https://` with TLS enabled)
+
+---
+
+## Transport Security
+
+The HTTP API supports native TLS (HTTPS) for transport encryption. TLS is opt-in and disabled by default for development convenience.
+
+### Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `LAIR_TLS_ENABLED` | Enable HTTPS | `false` |
+| `LAIR_TLS_CERT_PATH` | Path to certificate PEM file | Required if TLS enabled |
+| `LAIR_TLS_KEY_PATH` | Path to private key PEM file | Required if TLS enabled |
+
+### Development Setup (Self-Signed Certificates)
+
+Generate self-signed certificates for local development:
+
+```bash
+# Generate RSA key and self-signed certificate
+openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem \
+    -days 365 -nodes -subj "/CN=localhost"
+
+# Start server with TLS
+LAIR_TLS_ENABLED=true \
+LAIR_TLS_CERT_PATH=./cert.pem \
+LAIR_TLS_KEY_PATH=./key.pem \
+cargo run -p lair-chat-server
+
+# Connect with client (skip verification for self-signed)
+cargo run -p lair-chat-client -- --http-url https://127.0.0.1:8082 --insecure
+
+# Test with curl
+curl -k https://localhost:8082/health
+```
+
+### Production Recommendations
+
+For production deployments:
+
+1. **Use certificates from a trusted CA** (Let's Encrypt, etc.)
+2. **Set up automatic renewal** using certbot or similar
+3. **Use strong cipher suites** (rustls defaults are secure)
+4. **Consider using a reverse proxy** for advanced features (rate limiting, load balancing)
+
+### Client Connection Examples
+
+```bash
+# HTTP (development default)
+curl http://localhost:8082/health
+
+# HTTPS (production)
+curl https://your-domain.com:8082/health
+
+# HTTPS with self-signed cert (development)
+curl -k https://localhost:8082/health
+```
+
+See [ADR-014](../architecture/DECISIONS.md#adr-014-native-tls-for-http-transport) for the design rationale.
 
 ---
 

@@ -5,8 +5,12 @@
 pub mod settings;
 
 use std::env;
+use std::path::PathBuf;
 
-use crate::adapters::{http::HttpConfig, tcp::TcpConfig};
+use crate::adapters::{
+    http::{HttpConfig, TlsConfig},
+    tcp::TcpConfig,
+};
 use crate::storage::sqlite::SqliteConfig;
 use crate::Result;
 
@@ -50,6 +54,9 @@ impl Config {
     /// - `LAIR_HTTP_PORT`: HTTP server port (default: 8082)
     /// - `LAIR_DATABASE_URL`: SQLite database URL (default: sqlite:lair-chat.db?mode=rwc)
     /// - `LAIR_JWT_SECRET`: JWT signing secret (auto-generated if not set)
+    /// - `LAIR_TLS_ENABLED`: Enable TLS for HTTP (default: false)
+    /// - `LAIR_TLS_CERT_PATH`: Path to TLS certificate (required if TLS enabled)
+    /// - `LAIR_TLS_KEY_PATH`: Path to TLS private key (required if TLS enabled)
     pub fn from_env() -> Result<Self> {
         let tcp_port = env::var("LAIR_TCP_PORT")
             .ok()
@@ -72,15 +79,49 @@ impl Config {
             generate_default_jwt_secret()
         });
 
+        // Parse TLS configuration
+        let tls = Self::parse_tls_config()?;
+
         Ok(Self {
             tcp: TcpConfig { port: tcp_port },
-            http: HttpConfig { port: http_port },
+            http: HttpConfig {
+                port: http_port,
+                tls,
+            },
             database: SqliteConfig {
                 url: database_url,
                 ..Default::default()
             },
             jwt_secret,
         })
+    }
+
+    /// Parse TLS configuration from environment variables.
+    fn parse_tls_config() -> Result<Option<TlsConfig>> {
+        let tls_enabled = env::var("LAIR_TLS_ENABLED")
+            .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
+            .unwrap_or(false);
+
+        if !tls_enabled {
+            return Ok(None);
+        }
+
+        let cert_path = env::var("LAIR_TLS_CERT_PATH").map_err(|_| {
+            crate::error::Error::Config(
+                "LAIR_TLS_ENABLED is true but LAIR_TLS_CERT_PATH is not set".to_string(),
+            )
+        })?;
+
+        let key_path = env::var("LAIR_TLS_KEY_PATH").map_err(|_| {
+            crate::error::Error::Config(
+                "LAIR_TLS_ENABLED is true but LAIR_TLS_KEY_PATH is not set".to_string(),
+            )
+        })?;
+
+        Ok(Some(TlsConfig {
+            cert_path: PathBuf::from(cert_path),
+            key_path: PathBuf::from(key_path),
+        }))
     }
 
     /// Load configuration (currently from environment, could be extended to file).
