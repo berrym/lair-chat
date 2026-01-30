@@ -305,6 +305,7 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 ## Documentation
 
 - **[Production Deployment](docs/deployment/PRODUCTION.md)** - Deployment guide, platform support, security
+- **[Manual Testing Guide](docs/development/TESTING.md)** - Verify TLS, encryption, and client functionality
 - **[Architecture Overview](docs/architecture/OVERVIEW.md)** - High-level system design
 - **[Architecture Decisions](docs/architecture/DECISIONS.md)** - ADRs explaining why choices were made
 - **[Domain Model](docs/architecture/DOMAIN_MODEL.md)** - Entity definitions and relationships
