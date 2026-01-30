@@ -25,7 +25,7 @@ mod protocol;
 use app::{Action, App, Screen};
 use components::{
     render_toasts_default, ChatRenderContext, ChatScreen, CommandPalette, Dialog, DialogResult,
-    LoginScreen, RoomsScreen,
+    HelpOverlay, LoginScreen, RoomsScreen,
 };
 
 /// Lair Chat TUI Client
@@ -102,6 +102,7 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
     let mut rooms_screen = RoomsScreen::new();
     let mut command_palette = CommandPalette::new();
     let mut dialog = Dialog::new();
+    let mut help_overlay = HelpOverlay::new();
 
     // Connect to server
     if let Err(e) = app.connect().await {
@@ -165,8 +166,11 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
             let notifications = app.notifications();
             render_toasts_default(frame, area, &notifications);
 
-            // Render dialog as overlay (topmost)
+            // Render dialog as overlay
             dialog.render(frame, area);
+
+            // Render help overlay (topmost)
+            help_overlay.render(frame, area);
         })?;
 
         // Poll for events
@@ -185,7 +189,13 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
                     break;
                 }
 
-                // Route to dialog if visible (highest priority)
+                // Route to help overlay if visible (highest priority)
+                if help_overlay.visible {
+                    help_overlay.handle_key(key);
+                    continue;
+                }
+
+                // Route to dialog if visible
                 if dialog.visible {
                     match dialog.handle_key(key) {
                         DialogResult::Confirmed(_) => {
@@ -227,6 +237,9 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
                             Action::Quit => {
                                 dialog.show_confirm("Quit", "Are you sure you want to quit?");
                             }
+                            Action::ShowHelp => {
+                                help_overlay.show();
+                            }
                             _ => {
                                 let context_changed = app.handle_action(action).await;
                                 if context_changed {
@@ -266,6 +279,10 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
                         Action::Quit => {
                             // Show quit confirmation dialog
                             dialog.show_confirm("Quit", "Are you sure you want to quit?");
+                        }
+                        Action::ShowHelp => {
+                            // Show help in a popup dialog
+                            help_overlay.show();
                         }
                         _ => {
                             let context_changed = app.handle_action(action).await;

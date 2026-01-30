@@ -499,7 +499,7 @@ impl App {
                 }
             }
             Action::ShowHelp => {
-                self.show_help();
+                // Handled in main.rs via dialog popup
                 false
             }
             Action::ClearError => {
@@ -517,46 +517,6 @@ impl App {
     pub fn last_message_content(&self) -> Option<&str> {
         self.messages.last().map(|m| m.content.as_str())
     }
-
-    /// Show help message.
-    fn show_help(&mut self) {
-        self.messages.clear();
-        self.add_system_message("=== Lair Chat Help ===");
-        self.add_system_message("");
-        self.add_system_message("NAVIGATION:");
-        self.add_system_message("  i        - Enter insert mode to type messages");
-        self.add_system_message("  Esc      - Exit insert mode");
-        self.add_system_message("  r        - Open room list");
-        self.add_system_message("  j/k      - Scroll messages down/up");
-        self.add_system_message("  G/g      - Jump to bottom/top of messages");
-        self.add_system_message("  y        - Copy last message to clipboard");
-        self.add_system_message("  q        - Quit application");
-        self.add_system_message("  R        - Reconnect to server");
-        self.add_system_message("  ?/F1     - Show this help");
-        self.add_system_message("  Ctrl+P   - Open command palette");
-        self.add_system_message("");
-        self.add_system_message("INPUT (insert mode):");
-        self.add_system_message("  Ctrl+V/Y - Paste from clipboard");
-        self.add_system_message("  Ctrl+A/E - Move cursor to start/end");
-        self.add_system_message("  Ctrl+W   - Delete word before cursor");
-        self.add_system_message("  Ctrl+U   - Clear line to start");
-        self.add_system_message("  Ctrl+K   - Clear line to end");
-        self.add_system_message("");
-        self.add_system_message("COMMANDS (type in insert mode):");
-        self.add_system_message("  /help              - Show this help");
-        self.add_system_message("  /rooms             - Open room list");
-        self.add_system_message("  /create <name>     - Create a new room");
-        self.add_system_message("  /join <room>       - Join a room (use room list instead)");
-        self.add_system_message("  /dm <username>     - Start direct message with user");
-        self.add_system_message("  /quit              - Quit application");
-        self.add_system_message("");
-        self.add_system_message("GETTING STARTED:");
-        self.add_system_message("  1. Press 'r' to open rooms and join or create one");
-        self.add_system_message("  2. Press 'i' to start typing a message");
-        self.add_system_message("  3. Press Enter to send, Esc to cancel");
-        self.add_system_message("");
-    }
-
     /// Handle starting a DM with a user.
     async fn handle_start_dm(&mut self, username: String) {
         // Don't DM yourself
@@ -1705,24 +1665,6 @@ mod tests {
         let _ = Action::ShowHelp;
         let _ = Action::ClearError;
         let _ = Action::CopyLastMessage;
-    }
-
-    // ========================================================================
-    // Show Help Tests
-    // ========================================================================
-
-    #[test]
-    fn test_show_help() {
-        let addr = test_server_addr();
-        let mut app = App::with_http_config(addr, "http://localhost:8082".to_string(), false);
-
-        // Add some messages first
-        app.messages.push(ChatMessage::user("alice", "Hello"));
-
-        app.show_help();
-
-        // Messages should have been cleared and help content added
-        assert!(app.messages.iter().any(|m| m.content.contains("Help")));
     }
 
     // ========================================================================
