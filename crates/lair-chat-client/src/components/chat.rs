@@ -109,6 +109,8 @@ pub struct ChatRenderContext<'a> {
     pub offline_users: &'a [String],
     /// Unread DM counts per username.
     pub unread_dms: &'a std::collections::HashMap<String, u32>,
+    /// Number of pending invitations.
+    pub pending_invitation_count: usize,
 }
 
 /// Which panel is focused in the chat screen.
@@ -340,6 +342,8 @@ impl ChatScreen {
             KeyCode::Char('r') => Some(Action::ShowRooms),
             KeyCode::Char('R') => Some(Action::Reconnect),
             KeyCode::Char('?') | KeyCode::F(1) => Some(Action::ShowHelp),
+            KeyCode::Char('I') => Some(Action::ShowInvitations),
+            KeyCode::Char('m') => Some(Action::ShowMembers),
             KeyCode::Char('j') | KeyCode::Down => {
                 self.scroll = self.scroll.saturating_add(1);
                 None
@@ -389,6 +393,13 @@ impl ChatScreen {
                 if let Some(idx) = self.user_list_state.selected() {
                     self.focus = ChatFocus::Messages;
                     return Some(Action::StartDMByIndex(idx));
+                }
+                None
+            }
+            KeyCode::Char('i') => {
+                // Invite selected user to current room
+                if let Some(idx) = self.user_list_state.selected() {
+                    return Some(Action::InviteUserByIndex(idx));
                 }
                 None
             }
@@ -613,6 +624,7 @@ impl ChatScreen {
             online_users,
             offline_users,
             unread_dms,
+            pending_invitation_count,
         } = ctx;
 
         // Main layout: chat area + users panel (always show users panel)
@@ -1009,11 +1021,23 @@ impl ChatScreen {
             ));
         }
 
+        // Invitation badge (if any pending)
+        if *pending_invitation_count > 0 {
+            status_spans.push(Span::styled(
+                format!(" [{}] ", pending_invitation_count),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+
         // Context-aware keybind hints
         let hints = match (self.mode, self.focus) {
             (ChatMode::Insert, _) => " Esc:normal Enter:send Alt+Enter:newline ",
-            (ChatMode::Normal, ChatFocus::Messages) => " Tab:users i:type r:rooms ?:help q:quit ",
-            (ChatMode::Normal, ChatFocus::Users) => " Tab:chat j/k:nav Enter:DM Esc:back ",
+            (ChatMode::Normal, ChatFocus::Messages) => {
+                " Tab:users i:type r:rooms I:invites m:members ?:help q:quit "
+            }
+            (ChatMode::Normal, ChatFocus::Users) => " Tab:chat j/k:nav Enter:DM i:invite Esc:back ",
         };
         status_spans.push(Span::styled(hints, Style::default().fg(Color::DarkGray)));
 

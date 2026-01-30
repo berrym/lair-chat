@@ -468,6 +468,14 @@ pub enum ServerMessage {
         user_id: UserId,
         reason: String,
     },
+    MemberRoleChanged {
+        room_id: RoomId,
+        user_id: UserId,
+        username: String,
+        old_role: String,
+        new_role: String,
+        changed_by: UserId,
+    },
     RoomUpdated {
         room: Room,
         changed_by: UserId,
@@ -611,20 +619,42 @@ pub struct UserFilter {
     pub online_only: bool,
 }
 
-/// Invitation.
+/// Invitation with enriched data (matches server's EnrichedInvitation).
+///
+/// The server ALWAYS populates name fields - clients don't need to do lookups.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Invitation {
     pub id: InvitationId,
     pub room_id: RoomId,
+    /// Room name (always populated by server).
     pub room_name: String,
+    /// User who sent the invitation.
+    #[serde(alias = "inviter")]
     pub inviter_id: UserId,
+    /// Inviter's username (always populated by server).
     pub inviter_name: String,
+    /// User being invited.
+    #[serde(alias = "invitee")]
     pub invitee_id: UserId,
+    /// Invitee's username (always populated by server).
+    pub invitee_name: String,
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     pub created_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub responded_at: Option<DateTime<Utc>>,
+}
+
+/// Enriched room member (matches server's RoomMember).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoomMember {
+    pub user_id: UserId,
+    pub username: String,
+    pub role: String,
+    pub joined_at: DateTime<Utc>,
+    pub is_online: bool,
 }
 
 /// Error information.

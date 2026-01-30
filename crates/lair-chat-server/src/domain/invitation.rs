@@ -8,6 +8,7 @@ use std::fmt::{self, Display, Formatter};
 use uuid::Uuid;
 
 use super::{RoomId, UserId, ValidationError};
+use crate::domain::RoomRole;
 
 // ============================================================================
 // InvitationId
@@ -313,6 +314,88 @@ impl Display for InvitationError {
 }
 
 impl std::error::Error for InvitationError {}
+
+// ============================================================================
+// EnrichedInvitation
+// ============================================================================
+
+/// An invitation with enriched data (names resolved from IDs).
+///
+/// This is what the API returns. The server always populates name fields
+/// so clients don't need to do additional lookups.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnrichedInvitation {
+    /// Unique identifier.
+    pub id: InvitationId,
+    /// Room ID.
+    pub room_id: RoomId,
+    /// Room name (always populated by server).
+    pub room_name: String,
+    /// User who sent the invitation.
+    pub inviter_id: UserId,
+    /// Inviter's username (always populated by server).
+    pub inviter_name: String,
+    /// User being invited.
+    pub invitee_id: UserId,
+    /// Invitee's username (always populated by server).
+    pub invitee_name: String,
+    /// Current status.
+    pub status: InvitationStatus,
+    /// Optional message from the inviter.
+    pub message: Option<String>,
+    /// When the invitation was created.
+    pub created_at: DateTime<Utc>,
+    /// When the invitation expires.
+    pub expires_at: DateTime<Utc>,
+    /// When the invitation was responded to.
+    pub responded_at: Option<DateTime<Utc>>,
+}
+
+impl EnrichedInvitation {
+    /// Create an enriched invitation from a base invitation with resolved names.
+    pub fn from_invitation(
+        invitation: &Invitation,
+        room_name: String,
+        inviter_name: String,
+        invitee_name: String,
+    ) -> Self {
+        Self {
+            id: invitation.id,
+            room_id: invitation.room_id,
+            room_name,
+            inviter_id: invitation.inviter,
+            inviter_name,
+            invitee_id: invitation.invitee,
+            invitee_name,
+            status: invitation.status,
+            message: invitation.message.clone(),
+            created_at: invitation.created_at,
+            expires_at: invitation.expires_at,
+            responded_at: invitation.responded_at,
+        }
+    }
+}
+
+// ============================================================================
+// RoomMember
+// ============================================================================
+
+/// Enriched room member with user details.
+///
+/// Used for the members list API endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoomMember {
+    /// User ID.
+    pub user_id: UserId,
+    /// Username.
+    pub username: String,
+    /// Role in the room.
+    pub role: RoomRole,
+    /// When they joined.
+    pub joined_at: DateTime<Utc>,
+    /// Whether they are currently online.
+    pub is_online: bool,
+}
 
 // ============================================================================
 // Tests

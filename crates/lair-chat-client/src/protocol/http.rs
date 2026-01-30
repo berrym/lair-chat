@@ -196,6 +196,72 @@ pub struct GetMessagesResponse {
     pub has_more: bool,
 }
 
+/// List invitations response.
+#[derive(Debug, Deserialize)]
+pub struct ListInvitationsResponse {
+    pub invitations: Vec<super::messages::Invitation>,
+    /// Pagination support (for future use).
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub has_more: bool,
+}
+
+/// Accept invitation response (returns the new membership and room).
+#[derive(Debug, Deserialize)]
+pub struct AcceptInvitationResponse {
+    /// The membership record for the newly joined room.
+    #[allow(dead_code)]
+    pub membership: super::messages::RoomMembership,
+    /// The room that was joined.
+    pub room: super::messages::Room,
+}
+
+/// Decline invitation response.
+#[derive(Debug, Deserialize)]
+pub struct DeclineInvitationResponse {
+    /// Whether the decline was successful.
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub success: bool,
+}
+
+/// Create invitation request.
+#[derive(Debug, Serialize)]
+pub struct CreateInvitationRequest {
+    pub room_id: String,
+    pub user_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+/// Create invitation response.
+#[derive(Debug, Deserialize)]
+pub struct CreateInvitationResponse {
+    /// The created invitation with enriched data.
+    #[allow(dead_code)]
+    pub invitation: super::messages::Invitation,
+}
+
+/// Get room members response (new format with enriched members).
+#[derive(Debug, Deserialize)]
+pub struct GetRoomMembersResponse {
+    pub members: Vec<super::messages::RoomMember>,
+    #[allow(dead_code)]
+    pub total: u32,
+}
+
+/// Update member role request.
+#[derive(Debug, serde::Serialize)]
+pub struct UpdateRoleRequest {
+    pub role: String,
+}
+
+/// Update member role response.
+#[derive(Debug, Deserialize)]
+pub struct UpdateRoleResponse {
+    pub member: super::messages::RoomMember,
+}
+
 impl HttpClient {
     /// Create a new HTTP client with default settings.
     #[allow(dead_code)]
@@ -496,6 +562,257 @@ impl HttpClient {
 
         let messages_response: GetMessagesResponse = response.json().await?;
         Ok(messages_response)
+    }
+
+    /// List pending invitations for the current user.
+    pub async fn list_invitations(&self) -> Result<ListInvitationsResponse, HttpError> {
+        let token = self
+            .token
+            .as_ref()
+            .ok_or_else(|| HttpError::AuthenticationFailed("Not authenticated".to_string()))?;
+
+        let url = format!("{}/api/v1/invitations", self.base_url);
+        debug!("HTTP GET {} (list invitations)", url);
+
+        let response = self.client.get(&url).bearer_auth(token).send().await?;
+        let status = response.status();
+
+        if !status.is_success() {
+            let error_response: ErrorResponse = response.json().await.map_err(|e| {
+                HttpError::InvalidResponse(format!("Failed to parse error response: {}", e))
+            })?;
+            return Err(HttpError::ServerError {
+                code: error_response.error.code,
+                message: error_response.error.message,
+            });
+        }
+
+        let invitations_response: ListInvitationsResponse = response.json().await.map_err(|e| {
+            HttpError::InvalidResponse(format!("Failed to parse invitations response: {}", e))
+        })?;
+        debug!(
+            "HTTP list_invitations returned {} invitations",
+            invitations_response.invitations.len()
+        );
+        Ok(invitations_response)
+    }
+
+    /// Accept an invitation.
+    pub async fn accept_invitation(
+        &self,
+        invitation_id: &str,
+    ) -> Result<AcceptInvitationResponse, HttpError> {
+        let token = self
+            .token
+            .as_ref()
+            .ok_or_else(|| HttpError::AuthenticationFailed("Not authenticated".to_string()))?;
+
+        let url = format!(
+            "{}/api/v1/invitations/{}/accept",
+            self.base_url, invitation_id
+        );
+        debug!("HTTP accept invitation at {}", url);
+
+        let response = self.client.post(&url).bearer_auth(token).send().await?;
+
+        if !response.status().is_success() {
+            let error_response: ErrorResponse = response.json().await.map_err(|e| {
+                HttpError::InvalidResponse(format!("Failed to parse error response: {}", e))
+            })?;
+            return Err(HttpError::ServerError {
+                code: error_response.error.code,
+                message: error_response.error.message,
+            });
+        }
+
+        let accept_response: AcceptInvitationResponse = response.json().await?;
+        info!("Invitation accepted");
+        Ok(accept_response)
+    }
+
+    /// Decline an invitation.
+    pub async fn decline_invitation(
+        &self,
+        invitation_id: &str,
+    ) -> Result<DeclineInvitationResponse, HttpError> {
+        let token = self
+            .token
+            .as_ref()
+            .ok_or_else(|| HttpError::AuthenticationFailed("Not authenticated".to_string()))?;
+
+        let url = format!(
+            "{}/api/v1/invitations/{}/decline",
+            self.base_url, invitation_id
+        );
+        debug!("HTTP decline invitation at {}", url);
+
+        let response = self.client.post(&url).bearer_auth(token).send().await?;
+
+        if !response.status().is_success() {
+            let error_response: ErrorResponse = response.json().await.map_err(|e| {
+                HttpError::InvalidResponse(format!("Failed to parse error response: {}", e))
+            })?;
+            return Err(HttpError::ServerError {
+                code: error_response.error.code,
+                message: error_response.error.message,
+            });
+        }
+
+        let decline_response: DeclineInvitationResponse = response.json().await?;
+        info!("Invitation declined");
+        Ok(decline_response)
+    }
+
+    /// Create an invitation to a room.
+    pub async fn create_invitation(
+        &self,
+        room_id: &str,
+        user_id: &str,
+        message: Option<&str>,
+    ) -> Result<CreateInvitationResponse, HttpError> {
+        let token = self
+            .token
+            .as_ref()
+            .ok_or_else(|| HttpError::AuthenticationFailed("Not authenticated".to_string()))?;
+
+        let url = format!("{}/api/v1/invitations", self.base_url);
+        debug!("HTTP create invitation at {}", url);
+
+        let request = CreateInvitationRequest {
+            room_id: room_id.to_string(),
+            user_id: user_id.to_string(),
+            message: message.map(|s| s.to_string()),
+        };
+
+        let response = self
+            .client
+            .post(&url)
+            .bearer_auth(token)
+            .json(&request)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_response: ErrorResponse = response.json().await.map_err(|e| {
+                HttpError::InvalidResponse(format!("Failed to parse error response: {}", e))
+            })?;
+            return Err(HttpError::ServerError {
+                code: error_response.error.code,
+                message: error_response.error.message,
+            });
+        }
+
+        let invitation_response: CreateInvitationResponse = response.json().await?;
+        info!("Invitation created");
+        Ok(invitation_response)
+    }
+
+    /// Get members of a room with their roles.
+    pub async fn get_room_members(
+        &self,
+        room_id: &str,
+    ) -> Result<GetRoomMembersResponse, HttpError> {
+        let token = self
+            .token
+            .as_ref()
+            .ok_or_else(|| HttpError::AuthenticationFailed("Not authenticated".to_string()))?;
+
+        let url = format!("{}/api/v1/rooms/{}/members", self.base_url, room_id);
+        debug!("HTTP get room members from {}", url);
+
+        let response = self.client.get(&url).bearer_auth(token).send().await?;
+
+        if !response.status().is_success() {
+            let error_response: ErrorResponse = response.json().await.map_err(|e| {
+                HttpError::InvalidResponse(format!("Failed to parse error response: {}", e))
+            })?;
+            return Err(HttpError::ServerError {
+                code: error_response.error.code,
+                message: error_response.error.message,
+            });
+        }
+
+        let members_response: GetRoomMembersResponse = response.json().await?;
+        Ok(members_response)
+    }
+
+    /// Change a member's role in a room.
+    ///
+    /// Only room owners can change roles.
+    pub async fn change_member_role(
+        &self,
+        room_id: &str,
+        user_id: &str,
+        role: &str,
+    ) -> Result<UpdateRoleResponse, HttpError> {
+        let token = self
+            .token
+            .as_ref()
+            .ok_or_else(|| HttpError::AuthenticationFailed("Not authenticated".to_string()))?;
+
+        let url = format!(
+            "{}/api/v1/rooms/{}/members/{}/role",
+            self.base_url, room_id, user_id
+        );
+        debug!("HTTP change member role at {}", url);
+
+        let request = UpdateRoleRequest {
+            role: role.to_string(),
+        };
+
+        let response = self
+            .client
+            .put(&url)
+            .bearer_auth(token)
+            .json(&request)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_response: ErrorResponse = response.json().await.map_err(|e| {
+                HttpError::InvalidResponse(format!("Failed to parse error response: {}", e))
+            })?;
+            return Err(HttpError::ServerError {
+                code: error_response.error.code,
+                message: error_response.error.message,
+            });
+        }
+
+        let role_response: UpdateRoleResponse = response.json().await?;
+        info!("Member role changed to {}", role);
+        Ok(role_response)
+    }
+
+    /// Remove a member from a room (kick).
+    ///
+    /// Owners can kick anyone except themselves.
+    /// Moderators can kick regular members only.
+    pub async fn kick_member(&self, room_id: &str, user_id: &str) -> Result<(), HttpError> {
+        let token = self
+            .token
+            .as_ref()
+            .ok_or_else(|| HttpError::AuthenticationFailed("Not authenticated".to_string()))?;
+
+        let url = format!(
+            "{}/api/v1/rooms/{}/members/{}",
+            self.base_url, room_id, user_id
+        );
+        debug!("HTTP kick member at {}", url);
+
+        let response = self.client.delete(&url).bearer_auth(token).send().await?;
+
+        if !response.status().is_success() {
+            let error_response: ErrorResponse = response.json().await.map_err(|e| {
+                HttpError::InvalidResponse(format!("Failed to parse error response: {}", e))
+            })?;
+            return Err(HttpError::ServerError {
+                code: error_response.error.code,
+                message: error_response.error.message,
+            });
+        }
+
+        info!("Member kicked from room");
+        Ok(())
     }
 }
 

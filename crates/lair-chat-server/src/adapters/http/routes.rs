@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use axum::{
     middleware,
-    routing::{delete, get, patch, post},
+    routing::{delete, get, patch, post, put},
     Router,
 };
 
@@ -93,7 +93,19 @@ fn room_routes<S: Storage + Clone + 'static>() -> Router<AppState<S>> {
         .route("/{room_id}", delete(handlers::rooms::delete_room))
         .route("/{room_id}/join", post(handlers::rooms::join_room))
         .route("/{room_id}/leave", post(handlers::rooms::leave_room))
-        .route("/{room_id}/members", get(handlers::rooms::get_members))
+        // Room members management
+        .route(
+            "/{room_id}/members",
+            get(handlers::room_members::get_room_members),
+        )
+        .route(
+            "/{room_id}/members/{user_id}/role",
+            put(handlers::room_members::update_member_role),
+        )
+        .route(
+            "/{room_id}/members/{user_id}",
+            delete(handlers::room_members::remove_member),
+        )
 }
 
 /// Message routes.

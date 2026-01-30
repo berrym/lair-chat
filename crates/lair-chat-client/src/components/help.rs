@@ -228,6 +228,8 @@ fn build_help_lines() -> Vec<Line<'static>> {
     add_key(&mut lines, "G", "Jump to bottom of messages");
     add_key(&mut lines, "g", "Jump to top of messages");
     add_key(&mut lines, "y", "Copy last message to clipboard");
+    add_key(&mut lines, "I", "Show pending invitations");
+    add_key(&mut lines, "m", "Show room members (in a room)");
     add_key(&mut lines, "q", "Quit application");
     add_key(&mut lines, "R", "Reconnect to server");
     add_key(&mut lines, "? / F1", "Show this help");
@@ -261,6 +263,7 @@ fn build_help_lines() -> Vec<Line<'static>> {
     add_header(&mut lines, "USERS PANEL (press Tab to switch)");
     add_key(&mut lines, "j / k", "Navigate user list");
     add_key(&mut lines, "Enter", "Start DM with selected user");
+    add_key(&mut lines, "i", "Invite selected user to current room");
     add_key(&mut lines, "Tab / Esc", "Return to messages");
 
     // Room list

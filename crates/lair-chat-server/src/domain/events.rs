@@ -8,8 +8,8 @@ use std::fmt::{self, Display, Formatter};
 use uuid::Uuid;
 
 use super::{
-    Invitation, InvitationId, Message, MessageId, MessageTarget, Room, RoomId, RoomMembership,
-    SessionId, User, UserId, ValidationError,
+    EnrichedInvitation, InvitationId, Message, MessageId, MessageTarget, Room, RoomId,
+    RoomMembership, RoomRole, SessionId, User, UserId, ValidationError,
 };
 
 // ============================================================================
@@ -117,6 +117,7 @@ pub enum EventPayload {
     // Room events
     UserJoinedRoom(UserJoinedRoomEvent),
     UserLeftRoom(UserLeftRoomEvent),
+    MemberRoleChanged(MemberRoleChangedEvent),
     RoomUpdated(RoomUpdatedEvent),
     RoomDeleted(RoomDeletedEvent),
 
@@ -143,6 +144,7 @@ impl EventPayload {
             EventPayload::MessageDeleted(_) => "message_deleted",
             EventPayload::UserJoinedRoom(_) => "user_joined_room",
             EventPayload::UserLeftRoom(_) => "user_left_room",
+            EventPayload::MemberRoleChanged(_) => "member_role_changed",
             EventPayload::RoomUpdated(_) => "room_updated",
             EventPayload::RoomDeleted(_) => "room_deleted",
             EventPayload::UserOnline(_) => "user_online",
@@ -163,12 +165,13 @@ impl EventPayload {
             EventPayload::MessageDeleted(e) => e.target(),
             EventPayload::UserJoinedRoom(e) => EventTarget::Room(e.room_id),
             EventPayload::UserLeftRoom(e) => EventTarget::Room(e.room_id),
+            EventPayload::MemberRoleChanged(e) => EventTarget::Room(e.room_id),
             EventPayload::RoomUpdated(e) => EventTarget::Room(e.room.id),
             EventPayload::RoomDeleted(e) => EventTarget::Room(e.room_id),
             EventPayload::UserOnline(e) => EventTarget::UserConnections(e.user_id),
             EventPayload::UserOffline(e) => EventTarget::UserConnections(e.user_id),
             EventPayload::UserTyping(e) => e.target(),
-            EventPayload::InvitationReceived(e) => EventTarget::User(e.invitation.invitee),
+            EventPayload::InvitationReceived(e) => EventTarget::User(e.invitation.invitee_id),
             EventPayload::InvitationCancelled(e) => EventTarget::User(e.invitee),
             EventPayload::ServerNotice(_) => EventTarget::Broadcast,
             EventPayload::SessionExpiring(e) => EventTarget::Session(e.session_id),
@@ -355,6 +358,37 @@ impl Display for LeaveReason {
     }
 }
 
+/// A member's role was changed in a room.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemberRoleChangedEvent {
+    pub room_id: RoomId,
+    pub user_id: UserId,
+    pub username: String,
+    pub old_role: RoomRole,
+    pub new_role: RoomRole,
+    pub changed_by: UserId,
+}
+
+impl MemberRoleChangedEvent {
+    pub fn new(
+        room_id: RoomId,
+        user_id: UserId,
+        username: String,
+        old_role: RoomRole,
+        new_role: RoomRole,
+        changed_by: UserId,
+    ) -> Self {
+        Self {
+            room_id,
+            user_id,
+            username,
+            old_role,
+            new_role,
+            changed_by,
+        }
+    }
+}
+
 /// Room settings or details changed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoomUpdatedEvent {
@@ -477,18 +511,12 @@ impl UserTypingEvent {
 /// User received a room invitation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InvitationReceivedEvent {
-    pub invitation: Invitation,
-    pub room: Room,
-    pub inviter: User,
+    pub invitation: EnrichedInvitation,
 }
 
 impl InvitationReceivedEvent {
-    pub fn new(invitation: Invitation, room: Room, inviter: User) -> Self {
-        Self {
-            invitation,
-            room,
-            inviter,
-        }
+    pub fn new(invitation: EnrichedInvitation) -> Self {
+        Self { invitation }
     }
 }
 
@@ -1067,5 +1095,62 @@ mod tests {
         assert_eq!(event.invitation_id, invitation_id);
         assert_eq!(event.invitee, invitee);
         assert_eq!(event.reason, CancelReason::Expired);
+    }
+
+    #[test]
+    fn test_member_role_changed_event() {
+        let room_id = RoomId::new();
+        let user_id = UserId::new();
+        let changed_by = UserId::new();
+
+        let event = MemberRoleChangedEvent::new(
+            room_id,
+            user_id,
+            "testuser".to_string(),
+            RoomRole::Member,
+            RoomRole::Moderator,
+            changed_by,
+        );
+
+        assert_eq!(event.room_id, room_id);
+        assert_eq!(event.user_id, user_id);
+        assert_eq!(event.username, "testuser");
+        assert_eq!(event.old_role, RoomRole::Member);
+        assert_eq!(event.new_role, RoomRole::Moderator);
+        assert_eq!(event.changed_by, changed_by);
+    }
+
+    #[test]
+    fn test_member_role_changed_event_target() {
+        let room_id = RoomId::new();
+        let event = MemberRoleChangedEvent::new(
+            room_id,
+            UserId::new(),
+            "user".to_string(),
+            RoomRole::Member,
+            RoomRole::Moderator,
+            UserId::new(),
+        );
+
+        let payload = EventPayload::MemberRoleChanged(event);
+        assert_eq!(payload.event_type(), "member_role_changed");
+        assert!(matches!(payload.target(), EventTarget::Room(id) if id == room_id));
+    }
+
+    #[test]
+    fn test_member_role_changed_event_serialization() {
+        let event = MemberRoleChangedEvent::new(
+            RoomId::new(),
+            UserId::new(),
+            "testuser".to_string(),
+            RoomRole::Member,
+            RoomRole::Owner,
+            UserId::new(),
+        );
+
+        let payload = EventPayload::MemberRoleChanged(event);
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(json.contains("\"type\":\"member_role_changed\""));
+        assert!(json.contains("\"username\":\"testuser\""));
     }
 }

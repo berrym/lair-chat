@@ -877,6 +877,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_reinvite_after_decline() {
+        let (service, storage) = create_test_service().await;
+        let alice_id = create_user(&storage, "alice", "alice@example.com").await;
+        let bob_id = create_user(&storage, "bob", "bob@example.com").await;
+
+        let room = service
+            .create(
+                alice_id,
+                "private-room",
+                None,
+                Some(RoomSettings {
+                    is_private: true,
+                    ..Default::default()
+                }),
+            )
+            .await
+            .unwrap();
+
+        // First invitation
+        let invitation1 = service.invite(alice_id, room.id, bob_id).await.unwrap();
+
+        // Decline it
+        service
+            .decline_invitation(bob_id, invitation1.id)
+            .await
+            .unwrap();
+
+        // Re-invite should succeed (declined invitation should not block)
+        let invitation2 = service.invite(alice_id, room.id, bob_id).await;
+        assert!(
+            invitation2.is_ok(),
+            "Re-invitation after decline should succeed"
+        );
+
+        // The new invitation should be different
+        let inv2 = invitation2.unwrap();
+        assert_ne!(inv2.id, invitation1.id);
+    }
+
+    #[tokio::test]
     async fn test_list_invitations() {
         let (service, storage) = create_test_service().await;
         let alice_id = create_user(&storage, "alice", "alice@example.com").await;

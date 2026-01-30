@@ -634,7 +634,7 @@ impl<S: Storage + 'static> CommandHandler<S> {
             };
         };
 
-        match self.engine.list_invitations(session_id).await {
+        match self.engine.list_invitations_enriched(session_id).await {
             Ok(invitations) => ServerMessage::ListInvitationsResponse {
                 request_id: None,
                 success: true,

@@ -422,35 +422,6 @@ async fn test_join_and_leave_room() {
     leave_response.assert_status_ok();
 }
 
-#[tokio::test]
-async fn test_get_room_members() {
-    let server = create_test_server().await;
-
-    // Create room
-    let session = register_and_get_token(&server, "memberlister").await;
-    let (name, value) = auth_header(&session);
-    let create_response = server
-        .post("/api/v1/rooms")
-        .add_header(name, value)
-        .json(&json!({ "name": "Members Room" }))
-        .await;
-
-    let body: Value = create_response.json();
-    let room_id = body["room"]["id"].as_str().unwrap();
-
-    // Get members - need to be a member to get members
-    let (name, value) = auth_header(&session);
-    let response = server
-        .get(&format!("/api/v1/rooms/{}/members", room_id))
-        .add_header(name, value)
-        .await;
-
-    response.assert_status_ok();
-    let body: Value = response.json();
-    let members = body["members"].as_array().unwrap();
-    assert_eq!(members.len(), 1); // Just the creator
-}
-
 // ============================================================================
 // Message Tests
 // ============================================================================
@@ -926,6 +897,76 @@ async fn test_decline_invitation() {
 }
 
 #[tokio::test]
+async fn test_reinvite_after_decline() {
+    let server = create_test_server().await;
+
+    // Create room owner and room
+    let owner_session = register_and_get_token(&server, "reinviteowner").await;
+    let (name, value) = auth_header(&owner_session);
+    let create_response = server
+        .post("/api/v1/rooms")
+        .add_header(name, value)
+        .json(&json!({
+            "name": "Reinvite Test Room",
+            "settings": { "public": false }
+        }))
+        .await;
+
+    let body: Value = create_response.json();
+    let room_id = body["room"]["id"].as_str().unwrap();
+
+    // Create invitee
+    let invitee_info = register_and_get_full_info(&server, "reinvitee").await;
+    let invitee_id = invitee_info["user"]["id"].as_str().unwrap();
+    let invitee_session = invitee_info["token"].as_str().unwrap();
+
+    // Owner sends first invitation
+    let (name, value) = auth_header(&owner_session);
+    let invite_response = server
+        .post("/api/v1/invitations")
+        .add_header(name, value)
+        .json(&json!({
+            "room_id": room_id,
+            "user_id": invitee_id
+        }))
+        .await;
+
+    invite_response.assert_status(StatusCode::CREATED);
+    let body: Value = invite_response.json();
+    let invitation_id = body["invitation"]["id"].as_str().unwrap();
+
+    // Invitee declines invitation
+    let (name, value) = auth_header(invitee_session);
+    let response = server
+        .post(&format!("/api/v1/invitations/{}/decline", invitation_id))
+        .add_header(name, value)
+        .await;
+
+    response.assert_status_ok();
+
+    // Owner sends second invitation - should succeed after decline
+    let (name, value) = auth_header(&owner_session);
+    let reinvite_response = server
+        .post("/api/v1/invitations")
+        .add_header(name, value)
+        .json(&json!({
+            "room_id": room_id,
+            "user_id": invitee_id
+        }))
+        .await;
+
+    reinvite_response.assert_status(StatusCode::CREATED);
+
+    // Verify it's a new invitation
+    let body: Value = reinvite_response.json();
+    let new_invitation_id = body["invitation"]["id"].as_str().unwrap();
+    assert_ne!(
+        invitation_id, new_invitation_id,
+        "Should be a new invitation"
+    );
+}
+
+#[tokio::test]
 async fn test_accept_invitation_not_found() {
     let server = create_test_server().await;
     let session = register_and_get_token(&server, "notfoundinvitee").await;
@@ -1325,4 +1366,836 @@ async fn test_admin_stats_requires_permission() {
 
     // Regular users get 403 Forbidden for admin endpoints
     response.assert_status(StatusCode::FORBIDDEN);
+}
+
+// ============================================================================
+// Room Members Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_room_members() {
+    let server = create_test_server().await;
+
+    // Create owner and room
+    let owner_session = register_and_get_token(&server, "membersowner").await;
+    let (name, value) = auth_header(&owner_session);
+    let create_response = server
+        .post("/api/v1/rooms")
+        .add_header(name, value)
+        .json(&json!({
+            "name": "Members Test Room"
+        }))
+        .await;
+    let room: Value = create_response.json();
+    let room_id = room["room"]["id"].as_str().unwrap();
+
+    // Get members list
+    let (name, value) = auth_header(&owner_session);
+    let response = server
+        .get(&format!("/api/v1/rooms/{}/members", room_id))
+        .add_header(name, value)
+        .await;
+
+    response.assert_status_ok();
+    let body: Value = response.json();
+    let members = body["members"].as_array().unwrap();
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0]["username"], "membersowner");
+    assert_eq!(members[0]["role"], "owner");
+}
+
+#[tokio::test]
+async fn test_get_room_members_requires_membership() {
+    let server = create_test_server().await;
+
+    // Create owner and room
+    let owner_session = register_and_get_token(&server, "membreqowner").await;
+    let (name, value) = auth_header(&owner_session);
+    let create_response = server
+        .post("/api/v1/rooms")
+        .add_header(name, value)
+        .json(&json!({
+            "name": "Private Members Room"
+        }))
+        .await;
+    let room: Value = create_response.json();
+    let room_id = room["room"]["id"].as_str().unwrap();
+
+    // Create another user who is NOT a member
+    let other_session = register_and_get_token(&server, "membreqother").await;
+    let (name, value) = auth_header(&other_session);
+
+    // Try to get members list - should fail
+    let response = server
+        .get(&format!("/api/v1/rooms/{}/members", room_id))
+        .add_header(name, value)
+        .await;
+
+    response.assert_status(StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_update_member_role() {
+    let server = create_test_server().await;
+
+    // Create owner and room
+    let owner_session = register_and_get_token(&server, "roleowner").await;
+    let (name, value) = auth_header(&owner_session);
+    let create_response = server
+        .post("/api/v1/rooms")
+        .add_header(name, value)
+        .json(&json!({
+            "name": "Role Test Room",
+            "settings": { "public": true }
+        }))
+        .await;
+    let room: Value = create_response.json();
+    let room_id = room["room"]["id"].as_str().unwrap();
+
+    // Create another user and have them join
+    let member_response = server
+        .post("/api/v1/auth/register")
+        .json(&json!({
+            "username": "rolemember",
+            "email": "rolemember@example.com",
+            "password": "SecurePass123!"
+        }))
+        .await;
+    let member_body: Value = member_response.json();
+    let member_session = member_body["token"].as_str().unwrap();
+    let member_id = member_body["user"]["id"].as_str().unwrap();
+
+    // Member joins the room
+    let (name, value) = auth_header(member_session);
+    server
+        .post(&format!("/api/v1/rooms/{}/join", room_id))
+        .add_header(name, value)
+        .await;
+
+    // Owner promotes member to moderator
+    let (name, value) = auth_header(&owner_session);
+    let response = server
+        .put(&format!(
+            "/api/v1/rooms/{}/members/{}/role",
+            room_id, member_id
+        ))
+        .add_header(name, value)
+        .json(&json!({ "role": "moderator" }))
+        .await;
+
+    response.assert_status_ok();
+    let body: Value = response.json();
+    assert_eq!(body["member"]["role"], "moderator");
+    assert_eq!(body["member"]["username"], "rolemember");
+}
+
+#[tokio::test]
+async fn test_update_member_role_requires_owner() {
+    let server = create_test_server().await;
+
+    // Create owner and room
+    let owner_session = register_and_get_token(&server, "roleowner2").await;
+    let (name, value) = auth_header(&owner_session);
+    let create_response = server
+        .post("/api/v1/rooms")
+        .add_header(name, value)
+        .json(&json!({
+            "name": "Role Permission Test",
+            "settings": { "public": true }
+        }))
+        .await;
+    let room: Value = create_response.json();
+    let room_id = room["room"]["id"].as_str().unwrap();
+
+    // Create and register a moderator
+    let mod_response = server
+        .post("/api/v1/auth/register")
+        .json(&json!({
+            "username": "rolemod2",
+            "email": "rolemod2@example.com",
+            "password": "SecurePass123!"
+        }))
+        .await;
+    let mod_body: Value = mod_response.json();
+    let mod_session = mod_body["token"].as_str().unwrap();
+    let mod_id = mod_body["user"]["id"].as_str().unwrap();
+
+    // Moderator joins
+    let (name, value) = auth_header(mod_session);
+    server
+        .post(&format!("/api/v1/rooms/{}/join", room_id))
+        .add_header(name, value)
+        .await;
+
+    // Owner promotes to moderator
+    let (name, value) = auth_header(&owner_session);
+    server
+        .put(&format!(
+            "/api/v1/rooms/{}/members/{}/role",
+            room_id, mod_id
+        ))
+        .add_header(name, value)
+        .json(&json!({ "role": "moderator" }))
+        .await;
+
+    // Create a regular member
+    let member_response = server
+        .post("/api/v1/auth/register")
+        .json(&json!({
+            "username": "rolemember2",
+            "email": "rolemember2@example.com",
+            "password": "SecurePass123!"
+        }))
+        .await;
+    let member_body: Value = member_response.json();
+    let member_session = member_body["token"].as_str().unwrap();
+    let member_id = member_body["user"]["id"].as_str().unwrap();
+
+    // Member joins
+    let (name, value) = auth_header(member_session);
+    server
+        .post(&format!("/api/v1/rooms/{}/join", room_id))
+        .add_header(name, value)
+        .await;
+
+    // Moderator tries to change member's role - should fail (only owners can)
+    let (name, value) = auth_header(mod_session);
+    let response = server
+        .put(&format!(
+            "/api/v1/rooms/{}/members/{}/role",
+            room_id, member_id
+        ))
+        .add_header(name, value)
+        .json(&json!({ "role": "moderator" }))
+        .await;
+
+    response.assert_status(StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_kick_member() {
+    let server = create_test_server().await;
+
+    // Create owner and room
+    let owner_session = register_and_get_token(&server, "kickowner").await;
+    let (name, value) = auth_header(&owner_session);
+    let create_response = server
+        .post("/api/v1/rooms")
+        .add_header(name, value)
+        .json(&json!({
+            "name": "Kick Test Room",
+            "settings": { "public": true }
+        }))
+        .await;
+    let room: Value = create_response.json();
+    let room_id = room["room"]["id"].as_str().unwrap();
+
+    // Create and register a member
+    let member_response = server
+        .post("/api/v1/auth/register")
+        .json(&json!({
+            "username": "kickmember",
+            "email": "kickmember@example.com",
+            "password": "SecurePass123!"
+        }))
+        .await;
+    let member_body: Value = member_response.json();
+    let member_session = member_body["token"].as_str().unwrap();
+    let member_id = member_body["user"]["id"].as_str().unwrap();
+
+    // Member joins
+    let (name, value) = auth_header(member_session);
+    server
+        .post(&format!("/api/v1/rooms/{}/join", room_id))
+        .add_header(name, value)
+        .await;
+
+    // Verify member is in room
+    let (name, value) = auth_header(&owner_session);
+    let members_response = server
+        .get(&format!("/api/v1/rooms/{}/members", room_id))
+        .add_header(name, value)
+        .await;
+    let members_body: Value = members_response.json();
+    assert_eq!(members_body["members"].as_array().unwrap().len(), 2);
+
+    // Owner kicks member
+    let (name, value) = auth_header(&owner_session);
+    let response = server
+        .delete(&format!("/api/v1/rooms/{}/members/{}", room_id, member_id))
+        .add_header(name, value)
+        .await;
+
+    response.assert_status_ok();
+
+    // Verify member is no longer in room
+    let (name, value) = auth_header(&owner_session);
+    let members_response = server
+        .get(&format!("/api/v1/rooms/{}/members", room_id))
+        .add_header(name, value)
+        .await;
+    let members_body: Value = members_response.json();
+    assert_eq!(members_body["members"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn test_kick_member_permission_check() {
+    let server = create_test_server().await;
+
+    // Create owner and room
+    let owner_session = register_and_get_token(&server, "kickpermowner").await;
+    let (name, value) = auth_header(&owner_session);
+    let create_response = server
+        .post("/api/v1/rooms")
+        .add_header(name, value)
+        .json(&json!({
+            "name": "Kick Permission Test",
+            "settings": { "public": true }
+        }))
+        .await;
+    let room: Value = create_response.json();
+    let room_id = room["room"]["id"].as_str().unwrap();
+
+    // Create member1
+    let member1_response = server
+        .post("/api/v1/auth/register")
+        .json(&json!({
+            "username": "kickperm1",
+            "email": "kickperm1@example.com",
+            "password": "SecurePass123!"
+        }))
+        .await;
+    let member1_body: Value = member1_response.json();
+    let member1_session = member1_body["token"].as_str().unwrap();
+
+    // Create member2
+    let member2_response = server
+        .post("/api/v1/auth/register")
+        .json(&json!({
+            "username": "kickperm2",
+            "email": "kickperm2@example.com",
+            "password": "SecurePass123!"
+        }))
+        .await;
+    let member2_body: Value = member2_response.json();
+    let member2_session = member2_body["token"].as_str().unwrap();
+    let member2_id = member2_body["user"]["id"].as_str().unwrap();
+
+    // Both members join
+    let (name, value) = auth_header(member1_session);
+    server
+        .post(&format!("/api/v1/rooms/{}/join", room_id))
+        .add_header(name, value)
+        .await;
+
+    let (name, value) = auth_header(member2_session);
+    server
+        .post(&format!("/api/v1/rooms/{}/join", room_id))
+        .add_header(name, value)
+        .await;
+
+    // Member1 tries to kick member2 - should fail (regular members can't kick)
+    let (name, value) = auth_header(member1_session);
+    let response = server
+        .delete(&format!("/api/v1/rooms/{}/members/{}", room_id, member2_id))
+        .add_header(name, value)
+        .await;
+
+    response.assert_status(StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_moderator_can_kick_member() {
+    let server = create_test_server().await;
+
+    // Create owner and room
+    let owner_session = register_and_get_token(&server, "modkickowner").await;
+    let (name, value) = auth_header(&owner_session);
+    let create_response = server
+        .post("/api/v1/rooms")
+        .add_header(name, value)
+        .json(&json!({
+            "name": "Mod Kick Test",
+            "settings": { "public": true }
+        }))
+        .await;
+    let room: Value = create_response.json();
+    let room_id = room["room"]["id"].as_str().unwrap();
+
+    // Create moderator
+    let mod_response = server
+        .post("/api/v1/auth/register")
+        .json(&json!({
+            "username": "modkickmod",
+            "email": "modkickmod@example.com",
+            "password": "SecurePass123!"
+        }))
+        .await;
+    let mod_body: Value = mod_response.json();
+    let mod_session = mod_body["token"].as_str().unwrap();
+    let mod_id = mod_body["user"]["id"].as_str().unwrap();
+
+    // Moderator joins
+    let (name, value) = auth_header(mod_session);
+    server
+        .post(&format!("/api/v1/rooms/{}/join", room_id))
+        .add_header(name, value)
+        .await;
+
+    // Owner promotes to moderator
+    let (name, value) = auth_header(&owner_session);
+    server
+        .put(&format!(
+            "/api/v1/rooms/{}/members/{}/role",
+            room_id, mod_id
+        ))
+        .add_header(name, value)
+        .json(&json!({ "role": "moderator" }))
+        .await;
+
+    // Create regular member
+    let member_response = server
+        .post("/api/v1/auth/register")
+        .json(&json!({
+            "username": "modkickmember",
+            "email": "modkickmember@example.com",
+            "password": "SecurePass123!"
+        }))
+        .await;
+    let member_body: Value = member_response.json();
+    let member_session = member_body["token"].as_str().unwrap();
+    let member_id = member_body["user"]["id"].as_str().unwrap();
+
+    // Member joins
+    let (name, value) = auth_header(member_session);
+    server
+        .post(&format!("/api/v1/rooms/{}/join", room_id))
+        .add_header(name, value)
+        .await;
+
+    // Moderator kicks member - should succeed
+    let (name, value) = auth_header(mod_session);
+    let response = server
+        .delete(&format!("/api/v1/rooms/{}/members/{}", room_id, member_id))
+        .add_header(name, value)
+        .await;
+
+    response.assert_status_ok();
+}
+
+#[tokio::test]
+async fn test_moderator_cannot_kick_moderator() {
+    let server = create_test_server().await;
+
+    // Create owner and room
+    let owner_session = register_and_get_token(&server, "modkickmodowner").await;
+    let (name, value) = auth_header(&owner_session);
+    let create_response = server
+        .post("/api/v1/rooms")
+        .add_header(name, value)
+        .json(&json!({
+            "name": "Mod vs Mod Test",
+            "settings": { "public": true }
+        }))
+        .await;
+    let room: Value = create_response.json();
+    let room_id = room["room"]["id"].as_str().unwrap();
+
+    // Create mod1
+    let mod1_response = server
+        .post("/api/v1/auth/register")
+        .json(&json!({
+            "username": "modvmod1",
+            "email": "modvmod1@example.com",
+            "password": "SecurePass123!"
+        }))
+        .await;
+    let mod1_body: Value = mod1_response.json();
+    let mod1_session = mod1_body["token"].as_str().unwrap();
+    let mod1_id = mod1_body["user"]["id"].as_str().unwrap();
+
+    // Create mod2
+    let mod2_response = server
+        .post("/api/v1/auth/register")
+        .json(&json!({
+            "username": "modvmod2",
+            "email": "modvmod2@example.com",
+            "password": "SecurePass123!"
+        }))
+        .await;
+    let mod2_body: Value = mod2_response.json();
+    let mod2_session = mod2_body["token"].as_str().unwrap();
+    let mod2_id = mod2_body["user"]["id"].as_str().unwrap();
+
+    // Both join
+    let (name, value) = auth_header(mod1_session);
+    server
+        .post(&format!("/api/v1/rooms/{}/join", room_id))
+        .add_header(name, value)
+        .await;
+
+    let (name, value) = auth_header(mod2_session);
+    server
+        .post(&format!("/api/v1/rooms/{}/join", room_id))
+        .add_header(name, value)
+        .await;
+
+    // Owner promotes both to moderator
+    let (name, value) = auth_header(&owner_session);
+    server
+        .put(&format!(
+            "/api/v1/rooms/{}/members/{}/role",
+            room_id, mod1_id
+        ))
+        .add_header(name, value)
+        .json(&json!({ "role": "moderator" }))
+        .await;
+
+    let (name, value) = auth_header(&owner_session);
+    server
+        .put(&format!(
+            "/api/v1/rooms/{}/members/{}/role",
+            room_id, mod2_id
+        ))
+        .add_header(name, value)
+        .json(&json!({ "role": "moderator" }))
+        .await;
+
+    // Mod1 tries to kick mod2 - should fail
+    let (name, value) = auth_header(mod1_session);
+    let response = server
+        .delete(&format!("/api/v1/rooms/{}/members/{}", room_id, mod2_id))
+        .add_header(name, value)
+        .await;
+
+    response.assert_status(StatusCode::FORBIDDEN);
+}
+
+// ============================================================================
+// Invitation Permission Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_create_invitation_requires_moderator() {
+    let server = create_test_server().await;
+
+    // Create owner and room
+    let owner_session = register_and_get_token(&server, "invpermowner").await;
+    let (name, value) = auth_header(&owner_session);
+    let create_response = server
+        .post("/api/v1/rooms")
+        .add_header(name, value)
+        .json(&json!({
+            "name": "Invite Permission Test",
+            "settings": { "public": true }
+        }))
+        .await;
+    let room: Value = create_response.json();
+    let room_id = room["room"]["id"].as_str().unwrap();
+
+    // Create regular member
+    let member_response = server
+        .post("/api/v1/auth/register")
+        .json(&json!({
+            "username": "invpermmember",
+            "email": "invpermmember@example.com",
+            "password": "SecurePass123!"
+        }))
+        .await;
+    let member_body: Value = member_response.json();
+    let member_session = member_body["token"].as_str().unwrap();
+
+    // Member joins
+    let (name, value) = auth_header(member_session);
+    server
+        .post(&format!("/api/v1/rooms/{}/join", room_id))
+        .add_header(name, value)
+        .await;
+
+    // Create a user to invite
+    let invitee_response = server
+        .post("/api/v1/auth/register")
+        .json(&json!({
+            "username": "invperminvitee",
+            "email": "invperminvitee@example.com",
+            "password": "SecurePass123!"
+        }))
+        .await;
+    let invitee_body: Value = invitee_response.json();
+    let invitee_id = invitee_body["user"]["id"].as_str().unwrap();
+
+    // Regular member tries to invite - should fail
+    let (name, value) = auth_header(member_session);
+    let response = server
+        .post("/api/v1/invitations")
+        .add_header(name, value)
+        .json(&json!({
+            "room_id": room_id,
+            "user_id": invitee_id
+        }))
+        .await;
+
+    response.assert_status(StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_moderator_can_create_invitation() {
+    let server = create_test_server().await;
+
+    // Create owner and room
+    let owner_session = register_and_get_token(&server, "modinvowner").await;
+    let (name, value) = auth_header(&owner_session);
+    let create_response = server
+        .post("/api/v1/rooms")
+        .add_header(name, value)
+        .json(&json!({
+            "name": "Mod Invite Test",
+            "settings": { "public": true }
+        }))
+        .await;
+    let room: Value = create_response.json();
+    let room_id = room["room"]["id"].as_str().unwrap();
+
+    // Create moderator
+    let mod_response = server
+        .post("/api/v1/auth/register")
+        .json(&json!({
+            "username": "modinvmod",
+            "email": "modinvmod@example.com",
+            "password": "SecurePass123!"
+        }))
+        .await;
+    let mod_body: Value = mod_response.json();
+    let mod_session = mod_body["token"].as_str().unwrap();
+    let mod_id = mod_body["user"]["id"].as_str().unwrap();
+
+    // Moderator joins
+    let (name, value) = auth_header(mod_session);
+    server
+        .post(&format!("/api/v1/rooms/{}/join", room_id))
+        .add_header(name, value)
+        .await;
+
+    // Owner promotes to moderator
+    let (name, value) = auth_header(&owner_session);
+    server
+        .put(&format!(
+            "/api/v1/rooms/{}/members/{}/role",
+            room_id, mod_id
+        ))
+        .add_header(name, value)
+        .json(&json!({ "role": "moderator" }))
+        .await;
+
+    // Create a user to invite
+    let invitee_response = server
+        .post("/api/v1/auth/register")
+        .json(&json!({
+            "username": "modinvinvitee",
+            "email": "modinvinvitee@example.com",
+            "password": "SecurePass123!"
+        }))
+        .await;
+    let invitee_body: Value = invitee_response.json();
+    let invitee_id = invitee_body["user"]["id"].as_str().unwrap();
+
+    // Moderator creates invitation - should succeed
+    let (name, value) = auth_header(mod_session);
+    let response = server
+        .post("/api/v1/invitations")
+        .add_header(name, value)
+        .json(&json!({
+            "room_id": room_id,
+            "user_id": invitee_id
+        }))
+        .await;
+
+    response.assert_status(StatusCode::CREATED);
+    let body: Value = response.json();
+    assert!(body["invitation"]["id"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn test_non_member_cannot_create_invitation() {
+    let server = create_test_server().await;
+
+    // Create owner and room
+    let owner_session = register_and_get_token(&server, "nonmeminvowner").await;
+    let (name, value) = auth_header(&owner_session);
+    let create_response = server
+        .post("/api/v1/rooms")
+        .add_header(name, value)
+        .json(&json!({
+            "name": "Non-member Invite Test"
+        }))
+        .await;
+    let room: Value = create_response.json();
+    let room_id = room["room"]["id"].as_str().unwrap();
+
+    // Create a non-member
+    let non_member_response = server
+        .post("/api/v1/auth/register")
+        .json(&json!({
+            "username": "nonmeminvuser",
+            "email": "nonmeminvuser@example.com",
+            "password": "SecurePass123!"
+        }))
+        .await;
+    let non_member_body: Value = non_member_response.json();
+    let non_member_session = non_member_body["token"].as_str().unwrap();
+
+    // Create a user to invite
+    let invitee_response = server
+        .post("/api/v1/auth/register")
+        .json(&json!({
+            "username": "nonmeminvinvitee",
+            "email": "nonmeminvinvitee@example.com",
+            "password": "SecurePass123!"
+        }))
+        .await;
+    let invitee_body: Value = invitee_response.json();
+    let invitee_id = invitee_body["user"]["id"].as_str().unwrap();
+
+    // Non-member tries to invite - should fail
+    let (name, value) = auth_header(non_member_session);
+    let response = server
+        .post("/api/v1/invitations")
+        .add_header(name, value)
+        .json(&json!({
+            "room_id": room_id,
+            "user_id": invitee_id
+        }))
+        .await;
+
+    response.assert_status(StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_cannot_accept_others_invitation() {
+    let server = create_test_server().await;
+
+    // Create owner and room
+    let owner_session = register_and_get_token(&server, "acceptotherowner").await;
+    let (name, value) = auth_header(&owner_session);
+    let create_response = server
+        .post("/api/v1/rooms")
+        .add_header(name, value)
+        .json(&json!({
+            "name": "Accept Other Test"
+        }))
+        .await;
+    let room: Value = create_response.json();
+    let room_id = room["room"]["id"].as_str().unwrap();
+
+    // Create invitee
+    let invitee_response = server
+        .post("/api/v1/auth/register")
+        .json(&json!({
+            "username": "acceptotherinvitee",
+            "email": "acceptotherinvitee@example.com",
+            "password": "SecurePass123!"
+        }))
+        .await;
+    let invitee_body: Value = invitee_response.json();
+    let invitee_id = invitee_body["user"]["id"].as_str().unwrap();
+
+    // Create another user who will try to accept
+    let other_response = server
+        .post("/api/v1/auth/register")
+        .json(&json!({
+            "username": "acceptotherother",
+            "email": "acceptotherother@example.com",
+            "password": "SecurePass123!"
+        }))
+        .await;
+    let other_body: Value = other_response.json();
+    let other_session = other_body["token"].as_str().unwrap();
+
+    // Owner invites the invitee
+    let (name, value) = auth_header(&owner_session);
+    let invite_response = server
+        .post("/api/v1/invitations")
+        .add_header(name, value)
+        .json(&json!({
+            "room_id": room_id,
+            "user_id": invitee_id
+        }))
+        .await;
+    let invite_body: Value = invite_response.json();
+    let invitation_id = invite_body["invitation"]["id"].as_str().unwrap();
+
+    // Other user tries to accept the invitation - should fail
+    let (name, value) = auth_header(other_session);
+    let response = server
+        .post(&format!("/api/v1/invitations/{}/accept", invitation_id))
+        .add_header(name, value)
+        .await;
+
+    // NotInvitee error returns 409 CONFLICT
+    response.assert_status(StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn test_cannot_decline_others_invitation() {
+    let server = create_test_server().await;
+
+    // Create owner and room
+    let owner_session = register_and_get_token(&server, "declineotherowner").await;
+    let (name, value) = auth_header(&owner_session);
+    let create_response = server
+        .post("/api/v1/rooms")
+        .add_header(name, value)
+        .json(&json!({
+            "name": "Decline Other Test"
+        }))
+        .await;
+    let room: Value = create_response.json();
+    let room_id = room["room"]["id"].as_str().unwrap();
+
+    // Create invitee
+    let invitee_response = server
+        .post("/api/v1/auth/register")
+        .json(&json!({
+            "username": "declineotherinvitee",
+            "email": "declineotherinvitee@example.com",
+            "password": "SecurePass123!"
+        }))
+        .await;
+    let invitee_body: Value = invitee_response.json();
+    let invitee_id = invitee_body["user"]["id"].as_str().unwrap();
+
+    // Create another user who will try to decline
+    let other_response = server
+        .post("/api/v1/auth/register")
+        .json(&json!({
+            "username": "declineotherother",
+            "email": "declineotherother@example.com",
+            "password": "SecurePass123!"
+        }))
+        .await;
+    let other_body: Value = other_response.json();
+    let other_session = other_body["token"].as_str().unwrap();
+
+    // Owner invites the invitee
+    let (name, value) = auth_header(&owner_session);
+    let invite_response = server
+        .post("/api/v1/invitations")
+        .add_header(name, value)
+        .json(&json!({
+            "room_id": room_id,
+            "user_id": invitee_id
+        }))
+        .await;
+    let invite_body: Value = invite_response.json();
+    let invitation_id = invite_body["invitation"]["id"].as_str().unwrap();
+
+    // Other user tries to decline the invitation - should fail
+    let (name, value) = auth_header(other_session);
+    let response = server
+        .post(&format!("/api/v1/invitations/{}/decline", invitation_id))
+        .add_header(name, value)
+        .await;
+
+    // NotInvitee error returns 409 CONFLICT
+    response.assert_status(StatusCode::CONFLICT);
 }

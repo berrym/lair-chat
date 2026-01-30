@@ -10,6 +10,8 @@ A terminal-based chat client for Lair Chat servers, built with Ratatui.
 - **Direct messages**: Private one-on-one conversations with `/dm <username>`
 - **Message history**: Automatically loads recent messages when joining a room or DM
 - **Room support**: Create, join, and switch between chat rooms
+- **Room invitations**: Invite users to private rooms, accept/decline invitations with `I` key
+- **Room member management**: View members, change roles, kick users (owner/moderator)
 - **Online users panel**: See who's in the current room with a sidebar
 - **User presence**: See when users come online or go offline
 - **Vim-like navigation**: Use j/k, G/g for scrolling through messages
@@ -89,13 +91,18 @@ After logging in, you'll see the main chat interface:
 - `i` - Enter insert mode to type a message
 - `q` - Quit the application
 - `r` - Open room list
+- `I` - Show pending invitations
+- `m` - Show room members (when in a room)
 - `j`/`↓` - Scroll down through messages
 - `k`/`↑` - Scroll up through messages
 - `G` - Jump to newest message
 - `g` - Jump to oldest message
+- `Tab` - Switch focus between messages and users panel
+- `?`/`F1` - Show help overlay
 
 **Controls (Normal mode continued):**
 - `R` - Reconnect to server (if disconnected)
+- `Ctrl+P` - Open command palette
 
 **Controls (Insert mode):**
 - Type your message
@@ -144,6 +151,71 @@ Press `r` (in normal mode) from chat to see available rooms:
 - `Esc` - Return to chat
 - `q` - Quit the application
 
+### Invitations Overlay
+
+Press `I` (Shift+i) to view pending room invitations:
+
+```
+┌─────────────────────────────────────────┐
+│           INVITATIONS (2)               │
+├─────────────────────────────────────────┤
+│ > #dev-team from alice                  │
+│   #random from bob                      │
+│                                         │
+│  [↑/↓] Navigate  [Enter] Accept         │
+│  [d] Decline     [Esc] Close            │
+└─────────────────────────────────────────┘
+```
+
+**Controls:**
+- `j`/`↓` - Move selection down
+- `k`/`↑` - Move selection up
+- `Enter` - Accept invitation and join room
+- `d` - Decline invitation
+- `Esc` - Close overlay
+
+When you receive an invitation while online, a notification appears and the
+status bar shows a badge like `[2]` indicating pending invitation count.
+
+### Room Members Overlay
+
+Press `m` while in a room to view and manage members:
+
+```
+┌─────────────────────────────────────────┐
+│        MEMBERS: #general (5)            │
+├─────────────────────────────────────────┤
+│ > alice [owner] ●                       │
+│   bob [moderator] ●                     │
+│   charlie [member] ○                    │
+│                                         │
+│  [↑/↓] Navigate  [r] Change role        │
+│  [k] Kick        [Esc] Close            │
+└─────────────────────────────────────────┘
+```
+
+**Controls:**
+- `j`/`↓` - Move selection down
+- `k`/`↑` - Move selection up
+- `r` - Change member's role (owner only)
+- `k` - Kick member from room (owner/moderator)
+- `Esc` - Close overlay
+
+**Permission Rules:**
+- Owners can change roles and kick anyone except themselves
+- Moderators can kick regular members only
+- Regular members can only view the member list
+
+### Users Panel
+
+Press `Tab` to switch focus to the users panel on the right side of the chat:
+
+**Controls (when focused on users panel):**
+- `j`/`k` - Navigate user list
+- `Enter` - Start DM with selected user
+- `i` - Invite selected user to current room (owner/moderator only)
+- `Tab`/`Esc` - Return to messages
+
 ## Architecture
 
 The client implements ADR-013's protocol responsibility split:
@@ -177,13 +249,17 @@ src/
 ├── protocol/         # Protocol implementations
 │   ├── mod.rs
 │   ├── tcp.rs        # TCP client with framing
-│   ├── http.rs       # HTTP client for auth (per ADR-013)
+│   ├── http.rs       # HTTP client for auth and API (per ADR-013)
 │   └── messages.rs   # Protocol message types
 └── components/       # TUI components
     ├── mod.rs
     ├── login.rs      # Login/register screen
     ├── chat.rs       # Main chat view
     ├── rooms.rs      # Room list/selection
+    ├── invitations.rs # Invitations overlay
+    ├── members.rs    # Room members overlay
+    ├── help.rs       # Full-screen help overlay
+    ├── command_palette.rs # Command palette overlay
     └── status.rs     # Status bar utilities
 ```
 
@@ -210,7 +286,9 @@ tasks for non-blocking I/O.
 
 ### Environment Variables
 
-- `RUST_LOG` - Control logging verbosity (default: `warn,lair_chat_client=info`)
+- `RUST_LOG` - Control logging verbosity (default: `warn`)
+  - Use `RUST_LOG=lair_chat_client=info` for verbose client logging
+  - Use `RUST_LOG=lair_chat_client=debug` for debug output
 
 ### Command-Line Options
 
@@ -249,14 +327,18 @@ If the terminal display looks broken:
 
 ### Logging
 
-Enable debug logging to see what's happening:
+Enable verbose logging to see what's happening:
 
 ```bash
-RUST_LOG=debug lair-chat-client
+# Info-level logging (recommended for troubleshooting)
+RUST_LOG=lair_chat_client=info cargo run -p lair-chat-client 2>client.log
+
+# Debug-level logging (very verbose)
+RUST_LOG=lair_chat_client=debug cargo run -p lair-chat-client 2>client.log
 ```
 
-Note: In TUI mode, logs won't be visible. Run with `RUST_LOG=debug` and check
-stderr output, or modify the code to log to a file.
+Logs are written to stderr to avoid interfering with the TUI. Redirect stderr
+to a file as shown above, then `tail -f client.log` in another terminal.
 
 ## Development
 

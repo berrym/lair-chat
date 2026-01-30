@@ -787,6 +787,14 @@ impl<S: Storage + 'static> Connection<S> {
                 user_id: e.user_id.to_string(),
                 reason: e.reason.to_string(),
             }),
+            EventPayload::MemberRoleChanged(e) => Some(ServerMessage::MemberRoleChanged {
+                room_id: e.room_id.to_string(),
+                user_id: e.user_id.to_string(),
+                username: e.username.clone(),
+                old_role: e.old_role.to_string(),
+                new_role: e.new_role.to_string(),
+                changed_by: e.changed_by.to_string(),
+            }),
             EventPayload::RoomUpdated(e) => Some(ServerMessage::RoomUpdated {
                 room: e.room.clone(),
                 changed_by: e.changed_by.to_string(),
@@ -830,6 +838,13 @@ impl<S: Storage + 'static> Connection<S> {
         loop {
             match event_rx.recv().await {
                 Ok(event) => {
+                    // Log event receipt for debugging
+                    debug!(
+                        "Event listener for user {} received event: {:?}",
+                        user_id,
+                        event.payload.event_type()
+                    );
+
                     // Fetch user's current room memberships for filtering
                     let user_rooms: Vec<RoomId> =
                         match RoomRepository::list_for_user(&*storage, user_id).await {
@@ -842,8 +857,19 @@ impl<S: Storage + 'static> Connection<S> {
 
                     // Check if this user should receive this event
                     if !should_receive_event(&event, user_id, &user_rooms) {
+                        debug!(
+                            "Event filtered out for user {}: {:?}",
+                            user_id,
+                            event.payload.event_type()
+                        );
                         continue;
                     }
+
+                    debug!(
+                        "Event passed filter for user {}: {:?}",
+                        user_id,
+                        event.payload.event_type()
+                    );
 
                     // Handle MessageReceived specially to include author username
                     let msg = if let EventPayload::MessageReceived(e) = &event.payload {
@@ -883,6 +909,7 @@ impl<S: Storage + 'static> Connection<S> {
 
     /// Spawn the event listener task after successful authentication.
     fn spawn_event_listener(&mut self, user_id: crate::domain::UserId) {
+        info!("Spawning event listener for user {}", user_id);
         let event_rx = self.events.subscribe();
         let outgoing_tx = self.outgoing_tx.clone();
         let storage = self.storage.clone();

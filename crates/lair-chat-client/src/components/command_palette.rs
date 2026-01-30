@@ -72,6 +72,18 @@ impl CommandPalette {
         let commands = vec![
             PaletteCommand::new("rooms", "Show Rooms", "Open room list", Action::ShowRooms),
             PaletteCommand::new(
+                "invitations",
+                "Invitations",
+                "Show pending invitations",
+                Action::ShowInvitations,
+            ),
+            PaletteCommand::new(
+                "members",
+                "Room Members",
+                "Show members of current room",
+                Action::ShowMembers,
+            ),
+            PaletteCommand::new(
                 "help",
                 "Show Help",
                 "Display help information",
@@ -430,8 +442,8 @@ mod tests {
         palette.input.clear();
         palette.update_filter();
 
-        // Should show all default commands (5 commands)
-        assert_eq!(palette.filtered.len(), 5);
+        // Should show all default commands (7 commands)
+        assert_eq!(palette.filtered.len(), 7);
     }
 
     #[test]

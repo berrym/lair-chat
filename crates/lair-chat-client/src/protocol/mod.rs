@@ -13,6 +13,7 @@ pub mod tcp;
 
 pub use http::{HttpClient, HttpClientConfig};
 pub use messages::{
-    ClientMessage, MessageTarget, Room, RoomListItem, ServerMessage, Session, User,
+    ClientMessage, Invitation, MessageTarget, Room, RoomListItem, RoomMember, ServerMessage,
+    Session, User,
 };
 pub use tcp::{Connection, TcpError};

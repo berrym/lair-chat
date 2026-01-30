@@ -11,8 +11,8 @@
 use std::sync::Arc;
 
 use crate::domain::{
-    Invitation, InvitationId, Message, MessageId, MessageTarget, Pagination, Role, Room, RoomId,
-    RoomMembership, RoomSettings, Session, SessionId, User, UserId,
+    EnrichedInvitation, Invitation, InvitationId, Message, MessageId, MessageTarget, Pagination,
+    Role, Room, RoomId, RoomMembership, RoomSettings, Session, SessionId, User, UserId,
 };
 use crate::storage::{RoomRepository, Storage, UserRepository};
 use crate::Result;
@@ -354,6 +354,41 @@ impl<S: Storage + 'static> ChatEngine<S> {
     pub async fn list_invitations(&self, session_id: SessionId) -> Result<Vec<Invitation>> {
         let (_, user) = self.sessions.validate(session_id).await?;
         self.rooms.list_invitations(user.id).await
+    }
+
+    /// List pending invitations with enriched data (names resolved).
+    pub async fn list_invitations_enriched(
+        &self,
+        session_id: SessionId,
+    ) -> Result<Vec<EnrichedInvitation>> {
+        let invitations = self.list_invitations(session_id).await?;
+
+        let mut enriched = Vec::with_capacity(invitations.len());
+        for inv in &invitations {
+            // Get room name
+            let room = RoomRepository::find_by_id(self.storage.as_ref(), inv.room_id)
+                .await?
+                .ok_or(crate::Error::RoomNotFound)?;
+
+            // Get inviter name
+            let inviter = UserRepository::find_by_id(self.storage.as_ref(), inv.inviter)
+                .await?
+                .ok_or(crate::Error::UserNotFound)?;
+
+            // Get invitee name
+            let invitee = UserRepository::find_by_id(self.storage.as_ref(), inv.invitee)
+                .await?
+                .ok_or(crate::Error::UserNotFound)?;
+
+            enriched.push(EnrichedInvitation::from_invitation(
+                inv,
+                room.name.to_string(),
+                inviter.username.to_string(),
+                invitee.username.to_string(),
+            ));
+        }
+
+        Ok(enriched)
     }
 
     // ========================================================================

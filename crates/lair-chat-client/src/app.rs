@@ -46,8 +46,8 @@ pub struct Notification {
 }
 
 use crate::protocol::{
-    ClientMessage, Connection, HttpClient, HttpClientConfig, MessageTarget, Room, RoomListItem,
-    ServerMessage, Session, TcpError, User,
+    ClientMessage, Connection, HttpClient, HttpClientConfig, Invitation, MessageTarget, Room,
+    RoomListItem, RoomMember, ServerMessage, Session, TcpError, User,
 };
 
 /// Type alias for user IDs.
@@ -94,6 +94,10 @@ pub struct App {
     pub user_cache: HashMap<UserId, String>,
     /// Unread DM counts per user (UserId -> unread count).
     pub unread_dms: HashMap<UserId, u32>,
+    /// Pending invitations for the current user.
+    pub pending_invitations: Vec<Invitation>,
+    /// Current room members (when viewing members overlay).
+    pub current_room_members: Vec<RoomMember>,
 }
 
 /// Screens in the application.
@@ -184,6 +188,29 @@ pub enum Action {
     ClearError,
     /// Copy last message to clipboard (handled by main loop with ChatScreen).
     CopyLastMessage,
+    /// Show invitations overlay.
+    ShowInvitations,
+    /// Accept an invitation.
+    AcceptInvitation(uuid::Uuid),
+    /// Decline an invitation.
+    DeclineInvitation(uuid::Uuid),
+    /// Invite a user to the current room (for programmatic use).
+    #[allow(dead_code)]
+    InviteUser {
+        user_id: uuid::Uuid,
+        room_id: uuid::Uuid,
+        message: Option<String>,
+    },
+    /// Invite a user by index in the users list.
+    InviteUserByIndex(usize),
+    /// Show room members overlay.
+    ShowMembers,
+    /// Refresh invitations list.
+    RefreshInvitations,
+    /// Kick a member from the current room.
+    KickMember { user_id: uuid::Uuid },
+    /// Change a member's role in the current room.
+    ChangeMemberRole { user_id: uuid::Uuid, role: String },
 }
 
 impl App {
@@ -239,6 +266,8 @@ impl App {
             online_user_ids: HashSet::new(),
             user_cache: HashMap::new(),
             unread_dms: HashMap::new(),
+            pending_invitations: Vec::new(),
+            current_room_members: Vec::new(),
         }
     }
 
@@ -267,6 +296,15 @@ impl App {
         self.notifications.push_back(Notification {
             message: message.into(),
             level: NotificationLevel::Success,
+            created_at: Instant::now(),
+        });
+    }
+
+    /// Add a warning notification (more prominent, longer display).
+    pub fn set_warning(&mut self, message: impl Into<String>) {
+        self.notifications.push_back(Notification {
+            message: message.into(),
+            level: NotificationLevel::Warning,
             created_at: Instant::now(),
         });
     }
@@ -310,6 +348,12 @@ impl App {
         }
 
         (online, offline)
+    }
+
+    /// Get the count of pending invitations.
+    #[allow(dead_code)]
+    pub fn pending_invitation_count(&self) -> usize {
+        self.pending_invitations.len()
     }
 
     /// Get unread DM counts by username.
@@ -508,6 +552,64 @@ impl App {
             }
             Action::CopyLastMessage => {
                 // Handled by main loop (requires clipboard from ChatScreen)
+                false
+            }
+            Action::ShowInvitations => {
+                // Handled in main.rs - just trigger refresh
+                self.request_invitations().await;
+                false
+            }
+            Action::RefreshInvitations => {
+                self.request_invitations().await;
+                false
+            }
+            Action::AcceptInvitation(invitation_id) => {
+                self.handle_accept_invitation(invitation_id).await;
+                true // Context may have changed if we joined a room
+            }
+            Action::DeclineInvitation(invitation_id) => {
+                self.handle_decline_invitation(invitation_id).await;
+                false
+            }
+            Action::InviteUser {
+                user_id,
+                room_id,
+                message,
+            } => {
+                self.handle_invite_user(user_id, room_id, message).await;
+                false
+            }
+            Action::InviteUserByIndex(idx) => {
+                // Get combined user list (online first, then offline)
+                let (online, offline) = self.get_user_lists();
+                let combined: Vec<_> = online.iter().chain(offline.iter()).collect();
+                if let Some(username) = combined.get(idx) {
+                    // Find the user ID
+                    if let Some(user) = self.all_users.iter().find(|u| &u.username == *username) {
+                        if let Some(room) = &self.current_room {
+                            let user_id = user.id;
+                            let room_id = room.id;
+                            self.handle_invite_user(user_id, room_id, None).await;
+                        } else {
+                            self.set_error("Must be in a room to invite users");
+                        }
+                    } else {
+                        self.set_error("User not found");
+                    }
+                }
+                false
+            }
+            Action::ShowMembers => {
+                // Fetch room members and handled in main.rs
+                self.request_room_members().await;
+                false
+            }
+            Action::KickMember { user_id } => {
+                self.handle_kick_member(user_id).await;
+                false
+            }
+            Action::ChangeMemberRole { user_id, role } => {
+                self.handle_change_member_role(user_id, role).await;
                 false
             }
         }
@@ -845,6 +947,166 @@ impl App {
         }
     }
 
+    /// Request pending invitations via HTTP.
+    pub async fn request_invitations(&mut self) {
+        debug!("Requesting pending invitations via HTTP...");
+        match self.http_client.list_invitations().await {
+            Ok(response) => {
+                self.pending_invitations = response.invitations;
+                debug!(
+                    "Loaded {} pending invitations via HTTP",
+                    self.pending_invitations.len()
+                );
+            }
+            Err(e) => {
+                debug!("Failed to load invitations: {}", e);
+            }
+        }
+    }
+
+    /// Handle accepting an invitation.
+    async fn handle_accept_invitation(&mut self, invitation_id: Uuid) {
+        match self
+            .http_client
+            .accept_invitation(&invitation_id.to_string())
+            .await
+        {
+            Ok(response) => {
+                // Remove from pending invitations
+                self.pending_invitations
+                    .retain(|inv| inv.id != invitation_id);
+
+                // Use the room returned directly from the response
+                self.set_success(format!("Joined room: {}", response.room.name));
+
+                self.current_room = Some(response.room);
+                self.current_dm_user = None;
+                self.messages.clear();
+                self.screen = Screen::Chat;
+                self.request_message_history().await;
+            }
+            Err(e) => {
+                self.set_error(format!("Failed to accept invitation: {}", e));
+            }
+        }
+    }
+
+    /// Handle declining an invitation.
+    async fn handle_decline_invitation(&mut self, invitation_id: Uuid) {
+        match self
+            .http_client
+            .decline_invitation(&invitation_id.to_string())
+            .await
+        {
+            Ok(_) => {
+                // Remove from pending invitations
+                self.pending_invitations
+                    .retain(|inv| inv.id != invitation_id);
+                self.set_info("Invitation declined");
+            }
+            Err(e) => {
+                self.set_error(format!("Failed to decline invitation: {}", e));
+            }
+        }
+    }
+
+    /// Handle inviting a user to a room.
+    async fn handle_invite_user(&mut self, user_id: Uuid, room_id: Uuid, message: Option<String>) {
+        match self
+            .http_client
+            .create_invitation(
+                &room_id.to_string(),
+                &user_id.to_string(),
+                message.as_deref(),
+            )
+            .await
+        {
+            Ok(_) => {
+                // Find the username for a nice message
+                let username = self.get_username(user_id);
+                self.set_success(format!("Invitation sent to {}", username));
+            }
+            Err(e) => {
+                self.set_error(format!("Failed to send invitation: {}", e));
+            }
+        }
+    }
+
+    /// Request room members via HTTP.
+    pub async fn request_room_members(&mut self) {
+        let Some(room) = &self.current_room else {
+            self.set_error("No room selected");
+            return;
+        };
+
+        let room_id = room.id.to_string();
+        match self.http_client.get_room_members(&room_id).await {
+            Ok(response) => {
+                self.current_room_members = response.members;
+                debug!("Loaded {} room members", self.current_room_members.len());
+            }
+            Err(e) => {
+                self.set_error(format!("Failed to load room members: {}", e));
+            }
+        }
+    }
+
+    /// Handle kicking a member from the current room.
+    async fn handle_kick_member(&mut self, user_id: Uuid) {
+        let Some(room) = &self.current_room else {
+            self.set_error("No room selected");
+            return;
+        };
+
+        let room_id = room.id.to_string();
+        let user_id_str = user_id.to_string();
+        let username = self.get_username(user_id);
+
+        match self.http_client.kick_member(&room_id, &user_id_str).await {
+            Ok(()) => {
+                // Remove the member from local list
+                self.current_room_members.retain(|m| m.user_id != user_id);
+                self.set_success(format!("Kicked {} from the room", username));
+            }
+            Err(e) => {
+                self.set_error(format!("Failed to kick member: {}", e));
+            }
+        }
+    }
+
+    /// Handle changing a member's role in the current room.
+    async fn handle_change_member_role(&mut self, user_id: Uuid, role: String) {
+        let Some(room) = &self.current_room else {
+            self.set_error("No room selected");
+            return;
+        };
+
+        let room_id = room.id.to_string();
+        let user_id_str = user_id.to_string();
+        let username = self.get_username(user_id);
+
+        match self
+            .http_client
+            .change_member_role(&room_id, &user_id_str, &role)
+            .await
+        {
+            Ok(response) => {
+                // Update the member in local list
+                if let Some(member) = self
+                    .current_room_members
+                    .iter_mut()
+                    .find(|m| m.user_id == user_id)
+                {
+                    *member = response.member;
+                }
+                self.set_success(format!("Changed {}'s role to {}", username, role));
+            }
+            Err(e) => {
+                self.set_error(format!("Failed to change role: {}", e));
+            }
+        }
+    }
+
     /// Handle a server message.
     async fn handle_server_message(&mut self, msg: ServerMessage) {
         debug!("Handling server message: {:?}", msg);
@@ -886,9 +1148,19 @@ impl App {
                     self.add_system_message("  i      - Start typing a message");
                     self.add_system_message("  ?/F1   - Show full help");
                     self.add_system_message("");
-                    // Request room list and user list after authentication
+                    // Request room list, user list, and pending invitations after authentication
                     self.request_room_list().await;
                     self.request_user_list().await;
+                    self.request_invitations().await;
+                    // Show invitation notification if there are any pending
+                    if !self.pending_invitations.is_empty() {
+                        let count = self.pending_invitations.len();
+                        self.set_warning(format!(
+                            "You have {} pending invitation{} (I to view)",
+                            count,
+                            if count == 1 { "" } else { "s" }
+                        ));
+                    }
                 } else {
                     let err_msg = error
                         .map(|e| e.message)
@@ -1190,10 +1462,67 @@ impl App {
                 user_id,
                 reason,
             } => {
-                if let Some(current) = &self.current_room {
+                debug!(
+                    "Received UserLeftRoom event: room={}, user={}, reason={}",
+                    room_id, user_id, reason
+                );
+                // Check if the current user was kicked/banned from the room
+                let is_current_user = self.user.as_ref().map(|u| u.id == user_id).unwrap_or(false);
+
+                if is_current_user {
+                    // User was removed from a room
+                    let was_in_this_room = self
+                        .current_room
+                        .as_ref()
+                        .map(|r| r.id == room_id)
+                        .unwrap_or(false);
+
+                    if was_in_this_room {
+                        // Exit the room view
+                        let room_name = self
+                            .current_room
+                            .as_ref()
+                            .map(|r| r.name.clone())
+                            .unwrap_or_default();
+                        self.current_room = None;
+                        self.current_room_members.clear();
+                        self.messages.clear();
+
+                        // Show notification based on reason
+                        if reason == "kicked" {
+                            self.set_error(format!("You were kicked from #{}", room_name));
+                        } else if reason == "banned" {
+                            self.set_error(format!("You were banned from #{}", room_name));
+                        } else {
+                            self.set_info(format!("You left #{}", room_name));
+                        }
+                    }
+                } else if let Some(current) = &self.current_room {
+                    // Another user left the room we're viewing
                     if room_id == current.id {
                         let username = self.get_username(user_id);
                         self.add_system_message(format!("{} left the room ({})", username, reason));
+                        // Remove from local members list
+                        self.current_room_members.retain(|m| m.user_id != user_id);
+                    }
+                }
+            }
+
+            ServerMessage::MemberRoleChanged {
+                room_id,
+                username,
+                old_role,
+                new_role,
+                ..
+            } => {
+                if let Some(current) = &self.current_room {
+                    if room_id == current.id {
+                        self.add_system_message(format!(
+                            "{}'s role changed from {} to {}",
+                            username, old_role, new_role
+                        ));
+                        // Refresh members list if we have the overlay open
+                        // The caller can handle refreshing the members list
                     }
                 }
             }
@@ -1281,6 +1610,41 @@ impl App {
                 // Keepalive response, ignore
             }
 
+            ServerMessage::InvitationReceived { invitation } => {
+                debug!(
+                    "Received InvitationReceived event: room={}, from={}",
+                    invitation.room_name, invitation.inviter_name
+                );
+                // Add to pending invitations
+                self.pending_invitations.push(invitation.clone());
+
+                // Show prominent notification (names are always populated by server)
+                let inviter = &invitation.inviter_name;
+                let room = &invitation.room_name;
+                self.set_warning(format!(
+                    "📨 {} invited you to #{} (I to view)",
+                    inviter, room
+                ));
+                self.add_system_message(format!(
+                    "📨 {} invited you to join #{} - Press 'I' to view invitations",
+                    inviter, room
+                ));
+            }
+
+            ServerMessage::ListInvitationsResponse {
+                success,
+                invitations,
+                ..
+            } => {
+                if success {
+                    self.pending_invitations = invitations;
+                    debug!(
+                        "Received {} pending invitations",
+                        self.pending_invitations.len()
+                    );
+                }
+            }
+
             _ => {
                 debug!("Unhandled server message");
             }
@@ -1329,6 +1693,10 @@ impl App {
 
         // Process collected messages
         for msg in messages {
+            debug!(
+                "Processing server message: {:?}",
+                std::mem::discriminant(&msg)
+            );
             self.handle_server_message(msg).await;
         }
 

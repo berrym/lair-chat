@@ -166,7 +166,20 @@ pub fn should_receive_event(
 ) -> bool {
     match event.target() {
         EventTarget::User(target_user) => target_user == user_id,
-        EventTarget::Room(room_id) => user_rooms.contains(&room_id),
+        EventTarget::Room(room_id) => {
+            // Special case: UserLeftRoom should also be sent to the user who left
+            // (so kicked/banned users know they've been removed)
+            // Check this FIRST before membership check, because the user's membership
+            // is deleted before the event is dispatched
+            if let EventPayload::UserLeftRoom(ref left_event) = event.payload {
+                if left_event.user_id == user_id {
+                    return true;
+                }
+            }
+
+            // Normal case: room members receive room events
+            user_rooms.contains(&room_id)
+        }
         EventTarget::DirectMessage { user1, user2 } => user_id == user1 || user_id == user2,
         EventTarget::UserConnections(_target_user) => {
             // User receives events about people they might know

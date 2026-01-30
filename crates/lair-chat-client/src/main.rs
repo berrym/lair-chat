@@ -25,7 +25,8 @@ mod protocol;
 use app::{Action, App, Screen};
 use components::{
     render_toasts_default, ChatRenderContext, ChatScreen, CommandPalette, Dialog, DialogResult,
-    HelpOverlay, LoginScreen, RoomsScreen,
+    HelpOverlay, InvitationAction, InvitationsOverlay, LoginScreen, MemberAction, MembersOverlay,
+    RoomsScreen,
 };
 
 /// Lair Chat TUI Client
@@ -55,10 +56,10 @@ async fn main() -> Result<()> {
     color_eyre::install()?;
 
     // Initialize logging - write to stderr to avoid interfering with TUI
+    // Default to warnings only; use RUST_LOG=lair_chat_client=info for verbose output
     tracing_subscriber::registry()
         .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "warn,lair_chat_client=info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into()),
         )
         .with(
             tracing_subscriber::fmt::layer()
@@ -103,6 +104,8 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
     let mut command_palette = CommandPalette::new();
     let mut dialog = Dialog::new();
     let mut help_overlay = HelpOverlay::new();
+    let mut invitations_overlay = InvitationsOverlay::new();
+    let mut members_overlay = MembersOverlay::new();
 
     // Connect to server
     if let Err(e) = app.connect().await {
@@ -144,6 +147,7 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
                         online_users: &online_usernames,
                         offline_users: &offline_usernames,
                         unread_dms: &unread_dms,
+                        pending_invitation_count: app.pending_invitations.len(),
                     };
                     chat_screen.render(frame, area, &ctx);
                 }
@@ -162,15 +166,21 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
             // Render command palette as overlay (if visible)
             command_palette.render(frame, area);
 
-            // Render toast notifications as overlay
-            let notifications = app.notifications();
-            render_toasts_default(frame, area, &notifications);
-
             // Render dialog as overlay
             dialog.render(frame, area);
 
-            // Render help overlay (topmost)
+            // Render invitations overlay
+            invitations_overlay.render(frame, area, &app.pending_invitations);
+
+            // Render members overlay
+            members_overlay.render(frame, area, &app.current_room_members);
+
+            // Render help overlay
             help_overlay.render(frame, area);
+
+            // Render toast notifications last (topmost, always visible)
+            let notifications = app.notifications();
+            render_toasts_default(frame, area, &notifications);
         })?;
 
         // Poll for events
@@ -204,12 +214,120 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
                                 app.handle_action(Action::Quit).await;
                                 break;
                             }
+                            // Check if it was invite confirmation
+                            if dialog.title.contains("Invite") {
+                                // Invite was confirmed - the action has already been handled
+                            }
                         }
                         DialogResult::Cancelled => {
                             // Dialog was cancelled, do nothing
                         }
                         DialogResult::Pending => {
                             // Dialog still open
+                        }
+                    }
+                    continue;
+                }
+
+                // Route to invitations overlay if visible
+                if invitations_overlay.visible {
+                    if let Some(action) =
+                        invitations_overlay.handle_key(key, app.pending_invitations.len())
+                    {
+                        match action {
+                            InvitationAction::Accept => {
+                                // Get the actual invitation ID from the selected index
+                                if let Some(idx) = invitations_overlay.selected_index() {
+                                    if let Some(inv) = app.pending_invitations.get(idx) {
+                                        let inv_id = inv.id;
+                                        let context_changed = app
+                                            .handle_action(Action::AcceptInvitation(inv_id))
+                                            .await;
+                                        if context_changed {
+                                            chat_screen.scroll_to_bottom();
+                                            invitations_overlay.hide();
+                                        }
+                                    }
+                                }
+                            }
+                            InvitationAction::Decline => {
+                                // Get the actual invitation ID from the selected index
+                                if let Some(idx) = invitations_overlay.selected_index() {
+                                    if let Some(inv) = app.pending_invitations.get(idx) {
+                                        let inv_id = inv.id;
+                                        app.handle_action(Action::DeclineInvitation(inv_id)).await;
+                                    }
+                                }
+                            }
+                            InvitationAction::Close => {
+                                // Already handled by handle_key
+                            }
+                            InvitationAction::Refresh => {
+                                app.handle_action(Action::RefreshInvitations).await;
+                            }
+                        }
+                    }
+                    continue;
+                }
+
+                // Route to members overlay if visible
+                if members_overlay.visible {
+                    if let Some(action) =
+                        members_overlay.handle_key(key, app.current_room_members.len())
+                    {
+                        match action {
+                            MemberAction::Close => {
+                                // Already handled by handle_key
+                            }
+                            MemberAction::StartDM => {
+                                // Get the actual user from the selected index
+                                if let Some(idx) = members_overlay.selected_index() {
+                                    if let Some(member) = app.current_room_members.get(idx) {
+                                        let username = member.username.clone();
+                                        members_overlay.hide();
+                                        let context_changed =
+                                            app.handle_action(Action::StartDM(username)).await;
+                                        if context_changed {
+                                            chat_screen.scroll_to_bottom();
+                                        }
+                                    }
+                                }
+                            }
+                            MemberAction::KickMember => {
+                                // Kick the selected member
+                                if let Some(idx) = members_overlay.selected_index() {
+                                    if let Some(member) = app.current_room_members.get(idx) {
+                                        let user_id = member.user_id;
+                                        app.handle_action(Action::KickMember { user_id }).await;
+                                    }
+                                }
+                            }
+                            MemberAction::PromoteToMod => {
+                                // Promote selected member to moderator
+                                if let Some(idx) = members_overlay.selected_index() {
+                                    if let Some(member) = app.current_room_members.get(idx) {
+                                        let user_id = member.user_id;
+                                        app.handle_action(Action::ChangeMemberRole {
+                                            user_id,
+                                            role: "moderator".to_string(),
+                                        })
+                                        .await;
+                                    }
+                                }
+                            }
+                            MemberAction::DemoteToMember => {
+                                // Demote selected member to regular member
+                                if let Some(idx) = members_overlay.selected_index() {
+                                    if let Some(member) = app.current_room_members.get(idx) {
+                                        let user_id = member.user_id;
+                                        app.handle_action(Action::ChangeMemberRole {
+                                            user_id,
+                                            role: "member".to_string(),
+                                        })
+                                        .await;
+                                    }
+                                }
+                            }
                         }
                     }
                     continue;
@@ -283,6 +401,32 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
                         Action::ShowHelp => {
                             // Show help in a popup dialog
                             help_overlay.show();
+                        }
+                        Action::ShowInvitations => {
+                            // Fetch invitations and show overlay
+                            app.handle_action(Action::RefreshInvitations).await;
+                            invitations_overlay.show(app.pending_invitations.len());
+                        }
+                        Action::ShowMembers => {
+                            if let Some(room) = &app.current_room {
+                                let room_name = room.name.clone();
+                                app.handle_action(Action::ShowMembers).await;
+                                members_overlay.show(&room_name, app.current_room_members.len());
+                            } else {
+                                app.set_error("No room selected");
+                            }
+                        }
+                        Action::InviteUser {
+                            user_id,
+                            room_id,
+                            message,
+                        } => {
+                            app.handle_action(Action::InviteUser {
+                                user_id: *user_id,
+                                room_id: *room_id,
+                                message: message.clone(),
+                            })
+                            .await;
                         }
                         _ => {
                             let context_changed = app.handle_action(action).await;

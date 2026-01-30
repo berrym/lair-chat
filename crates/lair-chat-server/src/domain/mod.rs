@@ -31,8 +31,8 @@ pub mod session;
 pub mod user;
 
 // Re-export commonly used types
-pub use events::{Event, EventId, EventPayload};
-pub use invitation::{Invitation, InvitationId, InvitationStatus};
+pub use events::{Event, EventId, EventPayload, InvitationReceivedEvent};
+pub use invitation::{EnrichedInvitation, Invitation, InvitationId, InvitationStatus, RoomMember};
 pub use message::{Message, MessageContent, MessageId, MessageTarget};
 pub use room::{Room, RoomId, RoomMembership, RoomName, RoomRole, RoomSettings};
 pub use session::{Protocol, Session, SessionId};

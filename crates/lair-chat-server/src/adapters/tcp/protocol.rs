@@ -16,7 +16,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::crypto::{Cipher, NONCE_SIZE};
 use crate::domain::{
-    Invitation, Message, MessageTarget, Room, RoomMembership, RoomSettings, Session, User,
+    EnrichedInvitation, Message, MessageTarget, Room, RoomMembership, RoomSettings, Session, User,
 };
 
 /// Maximum message size (1 MB).
@@ -619,7 +619,7 @@ pub enum ServerMessage {
         request_id: Option<String>,
         success: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
-        invitation: Option<Invitation>,
+        invitation: Option<EnrichedInvitation>,
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<ErrorInfo>,
     },
@@ -641,7 +641,7 @@ pub enum ServerMessage {
         request_id: Option<String>,
         success: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
-        invitations: Option<Vec<Invitation>>,
+        invitations: Option<Vec<EnrichedInvitation>>,
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<ErrorInfo>,
     },
@@ -710,6 +710,14 @@ pub enum ServerMessage {
         user_id: String,
         reason: String,
     },
+    MemberRoleChanged {
+        room_id: String,
+        user_id: String,
+        username: String,
+        old_role: String,
+        new_role: String,
+        changed_by: String,
+    },
     RoomUpdated {
         room: Room,
         changed_by: String,
@@ -732,7 +740,7 @@ pub enum ServerMessage {
         target: MessageTarget,
     },
     InvitationReceived {
-        invitation: Invitation,
+        invitation: EnrichedInvitation,
     },
     ServerNotice {
         message: String,

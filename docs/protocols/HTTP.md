@@ -640,7 +640,7 @@ Authorization: Bearer <token>
 
 ### Get Room Members
 
-List room members.
+List room members. Requires room membership.
 
 ```http
 GET /rooms/{room_id}/members?limit=50&offset=0
@@ -653,15 +653,100 @@ Authorization: Bearer <token>
 {
   "members": [
     {
-      "user": { ... },
-      "membership": { ... },
+      "user_id": "456e7890-e12b-34c5-d678-901234567890",
+      "username": "alice",
+      "role": "member",
       "online": true
     }
   ],
-  "has_more": false,
-  "total_count": 42
+  "has_more": false
 }
 ```
+
+**Room Roles:**
+
+| Role | Description |
+|------|-------------|
+| owner | Room creator, full control |
+| moderator | Can kick members, send invitations |
+| member | Regular member |
+
+---
+
+### Update Member Role
+
+Change a member's role. Owner only.
+
+```http
+PUT /rooms/{room_id}/members/{user_id}/role
+Authorization: Bearer <token>
+```
+
+**Request Body:**
+
+```json
+{
+  "role": "moderator"
+}
+```
+
+| Field | Type | Required | Valid Values |
+|-------|------|----------|--------------|
+| role | string | Yes | "member", "moderator" |
+
+Note: Cannot change owner role. To transfer ownership, use room settings.
+
+**Response (200 OK):**
+
+```json
+{
+  "member": {
+    "user_id": "456e7890-e12b-34c5-d678-901234567890",
+    "username": "alice",
+    "role": "moderator"
+  }
+}
+```
+
+**Errors:**
+
+| Code | Status | Condition |
+|------|--------|-----------|
+| permission_denied | 403 | Not the room owner |
+| not_found | 404 | User is not a room member |
+| invalid_role | 400 | Cannot assign owner role |
+
+---
+
+### Kick Member
+
+Remove a member from the room. Owner or moderator only.
+
+```http
+DELETE /rooms/{room_id}/members/{user_id}
+Authorization: Bearer <token>
+```
+
+**Permission Rules:**
+- Owners can kick anyone except themselves
+- Moderators can kick members, but not other moderators or owners
+- Members cannot kick anyone
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true
+}
+```
+
+**Errors:**
+
+| Code | Status | Condition |
+|------|--------|-----------|
+| permission_denied | 403 | Insufficient permissions to kick target |
+| not_found | 404 | User is not a room member |
+| cannot_kick_self | 400 | Cannot kick yourself (use leave) |
 
 ---
 
@@ -829,7 +914,7 @@ Authorization: Bearer <token>
 
 ### Invite to Room
 
-Invite a user to a room.
+Invite a user to a room. **Only room owners and moderators can create invitations.**
 
 ```http
 POST /invitations
@@ -846,6 +931,12 @@ Authorization: Bearer <token>
 }
 ```
 
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| room_id | string | Yes | Target room UUID |
+| user_id | string | Yes | User to invite UUID |
+| message | string | No | Optional invitation message |
+
 **Response (201 Created):**
 
 ```json
@@ -853,14 +944,26 @@ Authorization: Bearer <token>
   "invitation": {
     "id": "aaa11111-bbbb-cccc-dddd-eeeeeeeeeeee",
     "room_id": "...",
+    "room_name": "General Chat",
     "inviter": "...",
+    "inviter_name": "alice",
     "invitee": "...",
+    "invitee_name": "bob",
     "status": "pending",
     "created_at": "2025-01-21T12:00:00Z",
     "expires_at": "2025-01-28T12:00:00Z"
   }
 }
 ```
+
+**Errors:**
+
+| Code | Status | Condition |
+|------|--------|-----------|
+| permission_denied | 403 | Not an owner or moderator |
+| not_room_member | 403 | Not a member of the room |
+| user_not_found | 404 | Invitee doesn't exist |
+| already_member | 409 | User is already a room member |
 
 ---
 
@@ -892,6 +995,8 @@ Authorization: Bearer <token>
 
 ### Accept Invitation
 
+Accept a pending invitation. Only the invitee can accept their own invitations.
+
 ```http
 POST /invitations/{invitation_id}/accept
 Authorization: Bearer <token>
@@ -902,13 +1007,28 @@ Authorization: Bearer <token>
 ```json
 {
   "room": { ... },
-  "membership": { ... }
+  "membership": {
+    "room_id": "...",
+    "user_id": "...",
+    "role": "member",
+    "joined_at": "2025-01-21T12:00:00Z"
+  }
 }
 ```
+
+**Errors:**
+
+| Code | Status | Condition |
+|------|--------|-----------|
+| invitation_not_found | 404 | Invitation doesn't exist |
+| not_invitee | 409 | You are not the intended recipient |
+| invitation_expired | 410 | Invitation has expired |
 
 ---
 
 ### Decline Invitation
+
+Decline a pending invitation. Only the invitee can decline their own invitations.
 
 ```http
 POST /invitations/{invitation_id}/decline
@@ -922,6 +1042,14 @@ Authorization: Bearer <token>
   "success": true
 }
 ```
+
+**Errors:**
+
+| Code | Status | Condition |
+|------|--------|-----------|
+| invitation_not_found | 404 | Invitation doesn't exist |
+| not_invitee | 409 | You are not the intended recipient |
+| invitation_expired | 410 | Invitation has expired |
 
 ---
 
@@ -1192,5 +1320,6 @@ openapi-generator generate -i openapi.json -g go -o ./client
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v1.2 | 2025-01 | Added room member management (role update, kick), invitation RBAC |
 | v1.1 | 2025-01 | Marked as primary protocol for auth/CRUD per ADR-013 |
 | v1 | 2025-01 | Initial specification |
