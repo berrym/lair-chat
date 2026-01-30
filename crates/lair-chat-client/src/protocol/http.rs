@@ -140,14 +140,60 @@ pub struct ListRoomsResponse {
     pub total_count: u64,
 }
 
+/// User with online status from HTTP API.
+#[derive(Debug, Deserialize)]
+pub struct UserWithStatus {
+    pub user: User,
+    pub online: bool,
+}
+
 /// List users response.
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct ListUsersResponse {
-    pub users: Vec<User>,
-    pub online_user_ids: Vec<String>,
+    pub users: Vec<UserWithStatus>,
+    #[allow(dead_code)]
     pub has_more: bool,
-    pub total_count: u64,
+    #[allow(dead_code)]
+    pub total_count: u32,
+}
+
+/// Create room request body.
+#[derive(Debug, Serialize)]
+pub struct CreateRoomRequest {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub settings: Option<RoomSettingsRequest>,
+}
+
+/// Room settings for create/update requests.
+#[derive(Debug, Serialize)]
+pub struct RoomSettingsRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub public: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_members: Option<u32>,
+}
+
+/// Create room response.
+#[derive(Debug, Deserialize)]
+pub struct CreateRoomResponse {
+    pub room: super::messages::Room,
+}
+
+/// Join room response.
+#[derive(Debug, Deserialize)]
+pub struct JoinRoomResponse {
+    pub room: super::messages::Room,
+}
+
+/// Get messages response.
+#[derive(Debug, Deserialize)]
+pub struct GetMessagesResponse {
+    pub messages: Vec<super::messages::Message>,
+    #[allow(dead_code)]
+    pub has_more: bool,
 }
 
 impl HttpClient {
@@ -301,8 +347,7 @@ impl HttpClient {
         Ok(())
     }
 
-    /// List rooms (optional, for future use).
-    #[allow(dead_code)]
+    /// List rooms.
     pub async fn list_rooms(&self) -> Result<ListRoomsResponse, HttpError> {
         let token = self
             .token
@@ -325,8 +370,7 @@ impl HttpClient {
         Ok(rooms_response)
     }
 
-    /// List users (optional, for future use).
-    #[allow(dead_code)]
+    /// List users.
     pub async fn list_users(&self) -> Result<ListUsersResponse, HttpError> {
         let token = self
             .token
@@ -347,6 +391,111 @@ impl HttpClient {
 
         let users_response: ListUsersResponse = response.json().await?;
         Ok(users_response)
+    }
+
+    /// Create a new room.
+    pub async fn create_room(
+        &self,
+        name: &str,
+        description: Option<&str>,
+    ) -> Result<super::messages::Room, HttpError> {
+        let token = self
+            .token
+            .as_ref()
+            .ok_or_else(|| HttpError::AuthenticationFailed("Not authenticated".to_string()))?;
+
+        let url = format!("{}/api/v1/rooms", self.base_url);
+        debug!("HTTP create room at {}", url);
+
+        let request = CreateRoomRequest {
+            name: name.to_string(),
+            description: description.map(|s| s.to_string()),
+            settings: None,
+        };
+
+        let response = self
+            .client
+            .post(&url)
+            .bearer_auth(token)
+            .json(&request)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_response: ErrorResponse = response.json().await.map_err(|e| {
+                HttpError::InvalidResponse(format!("Failed to parse error response: {}", e))
+            })?;
+            return Err(HttpError::ServerError {
+                code: error_response.error.code,
+                message: error_response.error.message,
+            });
+        }
+
+        let room_response: CreateRoomResponse = response.json().await?;
+        info!("Room created: {}", room_response.room.name);
+        Ok(room_response.room)
+    }
+
+    /// Join a room.
+    pub async fn join_room(&self, room_id: &str) -> Result<super::messages::Room, HttpError> {
+        let token = self
+            .token
+            .as_ref()
+            .ok_or_else(|| HttpError::AuthenticationFailed("Not authenticated".to_string()))?;
+
+        let url = format!("{}/api/v1/rooms/{}/join", self.base_url, room_id);
+        debug!("HTTP join room at {}", url);
+
+        let response = self.client.post(&url).bearer_auth(token).send().await?;
+
+        if !response.status().is_success() {
+            let error_response: ErrorResponse = response.json().await.map_err(|e| {
+                HttpError::InvalidResponse(format!("Failed to parse error response: {}", e))
+            })?;
+            return Err(HttpError::ServerError {
+                code: error_response.error.code,
+                message: error_response.error.message,
+            });
+        }
+
+        let join_response: JoinRoomResponse = response.json().await?;
+        info!("Joined room: {}", join_response.room.name);
+        Ok(join_response.room)
+    }
+
+    /// Get messages for a room or direct message conversation.
+    pub async fn get_messages(
+        &self,
+        target_type: &str,
+        target_id: &str,
+        limit: Option<u32>,
+    ) -> Result<GetMessagesResponse, HttpError> {
+        let token = self
+            .token
+            .as_ref()
+            .ok_or_else(|| HttpError::AuthenticationFailed("Not authenticated".to_string()))?;
+
+        let limit = limit.unwrap_or(50);
+        let url = format!(
+            "{}/api/v1/messages?target_type={}&target_id={}&limit={}",
+            self.base_url, target_type, target_id, limit
+        );
+        debug!("HTTP get messages from {}", url);
+
+        let response = self.client.get(&url).bearer_auth(token).send().await?;
+
+        if !response.status().is_success() {
+            let error_response: ErrorResponse = response.json().await.map_err(|e| {
+                HttpError::InvalidResponse(format!("Failed to parse error response: {}", e))
+            })?;
+            return Err(HttpError::ServerError {
+                code: error_response.error.code,
+                message: error_response.error.message,
+            });
+        }
+
+        let messages_response: GetMessagesResponse = response.json().await?;
+        Ok(messages_response)
     }
 }
 

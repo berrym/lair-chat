@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::adapters::http::middleware::AuthUser;
 use crate::adapters::http::routes::AppState;
 use crate::domain::{Pagination, Room, RoomId, RoomMembership, RoomSettings, User};
-use crate::storage::Storage;
+use crate::storage::{MembershipRepository, Storage};
 use crate::Error;
 
 use super::SuccessResponse;
@@ -181,6 +181,14 @@ pub async fn list_rooms<S: Storage + Clone + 'static>(
         offset: query.offset,
     };
 
+    // Get user_id for membership checking
+    let user_id = state
+        .engine
+        .validate_session(auth.session_id)
+        .await
+        .ok()
+        .map(|(_, user)| user.id);
+
     let rooms = if query.joined_only {
         state.engine.list_user_rooms(auth.session_id).await?
     } else {
@@ -190,17 +198,33 @@ pub async fn list_rooms<S: Storage + Clone + 'static>(
     let has_more = rooms.len() == query.limit as usize;
     let total_count = rooms.len() as u32;
 
-    let rooms: Vec<RoomListItem> = rooms
-        .into_iter()
-        .map(|room| RoomListItem {
+    // Build room list with actual member counts and membership status
+    let mut items = Vec::with_capacity(rooms.len());
+    for room in rooms {
+        let member_count =
+            MembershipRepository::count_members(state.engine.storage_clone().as_ref(), room.id)
+                .await
+                .unwrap_or(0);
+
+        let is_member = if query.joined_only {
+            true
+        } else if let Some(uid) = user_id {
+            MembershipRepository::is_member(state.engine.storage_clone().as_ref(), room.id, uid)
+                .await
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        items.push(RoomListItem {
             room,
-            member_count: 0,
-            is_member: query.joined_only,
-        })
-        .collect();
+            member_count,
+            is_member,
+        });
+    }
 
     Ok(Json(RoomsListResponse {
-        rooms,
+        rooms: items,
         has_more,
         total_count,
     }))

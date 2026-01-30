@@ -591,21 +591,42 @@ impl App {
         }
     }
 
-    /// Request DM history with a user.
+    /// Request DM history with a user via HTTP.
     async fn request_dm_history(&mut self, recipient: UserId) {
-        let Some(conn) = &self.connection else {
-            return;
-        };
+        let recipient_id = recipient.to_string();
+        match self
+            .http_client
+            .get_messages("direct_message", &recipient_id, Some(50))
+            .await
+        {
+            Ok(response) => {
+                // Messages come from server newest-first, reverse to display oldest-first
+                let mut messages = response.messages;
+                messages.reverse();
 
-        let msg = ClientMessage::GetMessages {
-            request_id: Some(Uuid::new_v4().to_string()),
-            target: MessageTarget::DirectMessage { recipient },
-            limit: Some(50),
-            before: None,
-        };
+                // Convert to ChatMessages
+                let history: Vec<ChatMessage> = messages
+                    .into_iter()
+                    .map(|msg| {
+                        let author = self.get_username(msg.author);
+                        ChatMessage {
+                            id: Some(msg.id),
+                            author,
+                            content: msg.content,
+                            timestamp: msg.created_at,
+                            is_system: false,
+                        }
+                    })
+                    .collect();
 
-        if let Err(e) = conn.send(msg).await {
-            self.set_error(format!("Failed to request DM history: {}", e));
+                // Prepend history to existing messages
+                let mut new_messages = history;
+                new_messages.append(&mut self.messages);
+                self.messages = new_messages;
+            }
+            Err(e) => {
+                self.set_error(format!("Failed to load DM history: {}", e));
+            }
         }
     }
 
@@ -721,98 +742,146 @@ impl App {
         }
     }
 
-    /// Request room list.
+    /// Request room list via HTTP.
     async fn request_room_list(&mut self) {
-        let Some(conn) = &self.connection else {
-            return;
-        };
-
-        let msg = ClientMessage::ListRooms {
-            request_id: Some(Uuid::new_v4().to_string()),
-            filter: None,
-            limit: Some(50),
-            offset: None,
-        };
-
-        if let Err(e) = conn.send(msg).await {
-            self.set_error(format!("Failed to request rooms: {}", e));
+        match self.http_client.list_rooms().await {
+            Ok(response) => {
+                // Convert HTTP response format to our internal format
+                self.rooms = response
+                    .rooms
+                    .into_iter()
+                    .map(|item| RoomListItem {
+                        room: item.room,
+                        member_count: item.member_count,
+                        is_member: item.is_member,
+                    })
+                    .collect();
+            }
+            Err(e) => {
+                self.set_error(format!("Failed to list rooms: {}", e));
+            }
         }
     }
 
-    /// Request user list to populate cache.
+    /// Request user list via HTTP to populate cache.
     async fn request_user_list(&mut self) {
-        let Some(conn) = &self.connection else {
-            return;
-        };
+        match self.http_client.list_users().await {
+            Ok(response) => {
+                // Clear and repopulate all_users list and online status
+                self.all_users.clear();
+                self.online_user_ids.clear();
 
-        let msg = ClientMessage::ListUsers {
-            request_id: Some(Uuid::new_v4().to_string()),
-            filter: None,
-            limit: Some(100),
-            offset: None,
-        };
+                for user_with_status in response.users {
+                    let user = user_with_status.user;
+                    let online = user_with_status.online;
 
-        if let Err(e) = conn.send(msg).await {
-            debug!("Failed to request user list: {}", e);
+                    // Track online status
+                    if online {
+                        self.online_user_ids.insert(user.id);
+                    }
+
+                    self.cache_user(&user);
+                    // Add to all_users if not the current user
+                    if self.user.as_ref().map(|u| u.id != user.id).unwrap_or(true) {
+                        self.all_users.push(user);
+                    }
+                }
+                debug!(
+                    "Cached {} users, {} in all_users, {} online",
+                    self.user_cache.len(),
+                    self.all_users.len(),
+                    self.online_user_ids.len()
+                );
+            }
+            Err(e) => {
+                debug!("Failed to request user list: {}", e);
+            }
         }
     }
 
-    /// Handle joining a room.
+    /// Handle joining a room via HTTP.
     async fn handle_join_room(&mut self, room_id: uuid::Uuid) {
-        let Some(conn) = &self.connection else {
-            self.set_error("Not connected to server");
-            return;
-        };
-
         self.status = Some(format!("Joining room {}...", room_id));
 
-        let msg = ClientMessage::JoinRoom {
-            request_id: Some(uuid::Uuid::new_v4().to_string()),
-            room_id,
-        };
-
-        if let Err(e) = conn.send(msg).await {
-            self.set_error(format!("Failed to join room: {}", e));
+        match self.http_client.join_room(&room_id.to_string()).await {
+            Ok(room) => {
+                self.status = Some(format!("In room: {}", room.name));
+                self.add_system_message(format!("Joined room: {}", room.name));
+                self.current_room = Some(room);
+                self.current_dm_user = None;
+                self.messages.clear();
+                self.screen = Screen::Chat;
+                // Request message history for the room
+                self.request_message_history().await;
+            }
+            Err(e) => {
+                self.set_error(format!("Failed to join room: {}", e));
+            }
         }
     }
 
-    /// Request message history for the current room.
+    /// Request message history for the current room via HTTP.
     async fn request_message_history(&mut self) {
-        let Some(conn) = &self.connection else {
-            return;
-        };
-
         let Some(room) = &self.current_room else {
             return;
         };
 
-        let msg = ClientMessage::GetMessages {
-            request_id: Some(uuid::Uuid::new_v4().to_string()),
-            target: MessageTarget::Room { room_id: room.id },
-            limit: Some(50),
-            before: None,
-        };
+        let room_id = room.id.to_string();
+        match self
+            .http_client
+            .get_messages("room", &room_id, Some(50))
+            .await
+        {
+            Ok(response) => {
+                // Messages come from server newest-first, reverse to display oldest-first
+                let mut messages = response.messages;
+                messages.reverse();
 
-        if let Err(e) = conn.send(msg).await {
-            self.set_error(format!("Failed to request message history: {}", e));
+                // Convert to ChatMessages
+                let history: Vec<ChatMessage> = messages
+                    .into_iter()
+                    .map(|msg| {
+                        let author = self.get_username(msg.author);
+                        ChatMessage {
+                            id: Some(msg.id),
+                            author,
+                            content: msg.content,
+                            timestamp: msg.created_at,
+                            is_system: false,
+                        }
+                    })
+                    .collect();
+
+                // Prepend history to existing messages (system messages about joining)
+                let mut new_messages = history;
+                new_messages.append(&mut self.messages);
+                self.messages = new_messages;
+            }
+            Err(e) => {
+                self.set_error(format!("Failed to load message history: {}", e));
+            }
         }
     }
 
-    /// Handle creating a room.
+    /// Handle creating a room via HTTP.
     async fn handle_create_room(&mut self, name: String) {
-        let Some(conn) = &self.connection else {
-            return;
-        };
-
-        let msg = ClientMessage::CreateRoom {
-            request_id: Some(uuid::Uuid::new_v4().to_string()),
-            name,
-            description: None,
-            settings: None,
-        };
-
-        if let Err(e) = conn.send(msg).await {
-            self.set_error(format!("Failed to create room: {}", e));
+        match self.http_client.create_room(&name, None).await {
+            Ok(room) => {
+                self.add_system_message(format!("Created room: {}", room.name));
+                // Add as RoomListItem with member_count of 1 (just the creator)
+                self.rooms.push(RoomListItem {
+                    room: room.clone(),
+                    member_count: 1,
+                    is_member: true,
+                });
+                self.current_room = Some(room);
+                self.current_dm_user = None;
+                self.messages.clear();
+                self.screen = Screen::Chat;
+            }
+            Err(e) => {
+                self.set_error(format!("Failed to create room: {}", e));
+            }
         }
     }
 

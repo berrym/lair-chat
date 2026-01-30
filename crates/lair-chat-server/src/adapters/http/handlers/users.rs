@@ -112,11 +112,14 @@ pub async fn list_users<S: Storage + Clone + 'static>(
     let has_more = users.len() == query.limit as usize;
     let total_count = users.len() as u32;
 
+    // Get online user IDs to check status
+    let online_ids = state.engine.online_user_ids().await;
+
     let users: Vec<UserWithStatus> = users
         .into_iter()
-        .map(|user| UserWithStatus {
-            user,
-            online: false,
+        .map(|user| {
+            let online = online_ids.contains(&user.id);
+            UserWithStatus { user, online }
         })
         .collect();
 

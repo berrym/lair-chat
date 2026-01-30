@@ -579,7 +579,7 @@ pub struct RoomSettings {
 pub struct RoomMembership {
     pub room_id: RoomId,
     pub user_id: UserId,
-    pub room_role: String,
+    pub role: String,
     pub joined_at: DateTime<Utc>,
 }
 

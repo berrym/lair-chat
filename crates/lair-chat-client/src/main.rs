@@ -54,13 +54,17 @@ async fn main() -> Result<()> {
     // Initialize error handling
     color_eyre::install()?;
 
-    // Initialize logging
+    // Initialize logging - write to stderr to avoid interfering with TUI
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "warn,lair_chat_client=info".into()),
         )
-        .with(tracing_subscriber::fmt::layer().with_target(false))
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_target(false)
+                .with_writer(std::io::stderr),
+        )
         .init();
 
     // Parse arguments
@@ -107,8 +111,15 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
     // Main loop
     let tick_rate = Duration::from_millis(100);
     let mut last_ping = std::time::Instant::now();
+    let mut last_screen = app.screen.clone();
 
     loop {
+        // Check for screen changes and force terminal clear if needed
+        if app.screen != last_screen {
+            terminal.clear()?;
+            last_screen = app.screen.clone();
+        }
+
         // Draw
         terminal.draw(|frame| {
             let area = frame.area();
