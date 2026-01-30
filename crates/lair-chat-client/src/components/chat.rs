@@ -385,8 +385,9 @@ impl ChatScreen {
                 None
             }
             KeyCode::Enter => {
-                // Start DM with selected user
+                // Start DM with selected user and switch focus to messages
                 if let Some(idx) = self.user_list_state.selected() {
+                    self.focus = ChatFocus::Messages;
                     return Some(Action::StartDMByIndex(idx));
                 }
                 None
@@ -1746,6 +1747,8 @@ mod tests {
         let action = screen.handle_key(key, 5);
 
         assert!(matches!(action, Some(Action::StartDMByIndex(2))));
+        // Focus should switch back to messages after starting DM
+        assert_eq!(screen.focus, ChatFocus::Messages);
     }
 
     #[test]
