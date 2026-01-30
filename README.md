@@ -30,6 +30,7 @@ A secure, high-performance chat system built with Rust, featuring real-time mess
 - **Clean architecture** - Domain-driven design with trait-based abstractions
 - **Async throughout** - Built on Tokio for high performance
 - **SQLite storage** - With migration support and connection pooling
+- **Cross-platform** - Linux, macOS, Windows (see [Platform Support](docs/deployment/PRODUCTION.md#platform-support))
 - **Comprehensive tests** - 570+ unit and integration tests with CI/CD
 
 ## Quick Start
@@ -303,6 +304,7 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 
 ## Documentation
 
+- **[Production Deployment](docs/deployment/PRODUCTION.md)** - Deployment guide, platform support, security
 - **[Architecture Overview](docs/architecture/OVERVIEW.md)** - High-level system design
 - **[Architecture Decisions](docs/architecture/DECISIONS.md)** - ADRs explaining why choices were made
 - **[Domain Model](docs/architecture/DOMAIN_MODEL.md)** - Entity definitions and relationships
