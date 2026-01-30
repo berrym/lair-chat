@@ -1,0 +1,24 @@
+services:
+  server:
+    build: .
+    container_name: lair-chat-server
+    ports:
+      - "8080:8080"   # TCP protocol
+      - "8082:8082"   # HTTP API
+      # - "8443:8443" # HTTPS (when TLS enabled)
+    volumes:
+      - lair-data:/data
+      # For TLS, mount your certificates:
+      # - ./certs:/certs:ro
+    environment:
+      LAIR_DATABASE_URL: sqlite:/data/lair-chat.db?mode=rwc
+      RUST_LOG: info
+      # TLS Configuration (uncomment to enable):
+      # LAIR_TLS_ENABLED: "true"
+      # LAIR_TLS_CERT_PATH: /certs/cert.pem
+      # LAIR_TLS_KEY_PATH: /certs/key.pem
+      # LAIR_HTTP_PORT: "8443"
+    restart: unless-stopped
+
+volumes:
+  lair-data:
