@@ -1172,8 +1172,9 @@ impl App {
                 self.cache_user(&user);
                 // Mark user as online
                 self.online_user_ids.insert(user.id);
-                // Add to all_users if not present
-                if !self.all_users.iter().any(|u| u.id == user.id) {
+                // Add to all_users if not present and not the current user
+                let is_self = self.user.as_ref().map(|u| u.id == user.id).unwrap_or(false);
+                if !is_self && !self.all_users.iter().any(|u| u.id == user.id) {
                     self.all_users.push(user.clone());
                 }
 
