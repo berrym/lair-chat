@@ -503,11 +503,52 @@ impl HttpClient {
 mod tests {
     use super::*;
 
+    // ========================================================================
+    // HttpClientConfig Tests
+    // ========================================================================
+
+    #[test]
+    fn test_http_client_config_default() {
+        let config = HttpClientConfig::default();
+        assert_eq!(config.base_url, "http://localhost:8082");
+        assert!(!config.skip_tls_verify);
+    }
+
+    #[test]
+    fn test_http_client_config_custom() {
+        let config = HttpClientConfig {
+            base_url: "https://example.com:9000".to_string(),
+            skip_tls_verify: true,
+        };
+        assert_eq!(config.base_url, "https://example.com:9000");
+        assert!(config.skip_tls_verify);
+    }
+
+    // ========================================================================
+    // HttpClient Creation Tests
+    // ========================================================================
+
     #[test]
     fn test_http_client_new() {
         let client = HttpClient::new("http://localhost:8082");
         assert!(client.token().is_none());
+        assert_eq!(client.base_url, "http://localhost:8082");
     }
+
+    #[test]
+    fn test_http_client_with_config() {
+        let config = HttpClientConfig {
+            base_url: "http://test:1234".to_string(),
+            skip_tls_verify: false,
+        };
+        let client = HttpClient::with_config(config);
+        assert!(client.token().is_none());
+        assert_eq!(client.base_url, "http://test:1234");
+    }
+
+    // ========================================================================
+    // Token Management Tests
+    // ========================================================================
 
     #[test]
     fn test_set_token() {
@@ -517,10 +558,468 @@ mod tests {
     }
 
     #[test]
+    fn test_set_token_overwrites() {
+        let mut client = HttpClient::new("http://localhost:8082");
+        client.set_token("token-1");
+        client.set_token("token-2");
+        assert_eq!(client.token(), Some("token-2"));
+    }
+
+    #[test]
     fn test_clear_token() {
         let mut client = HttpClient::new("http://localhost:8082");
         client.set_token("test-token");
         client.clear_token();
         assert!(client.token().is_none());
+    }
+
+    #[test]
+    fn test_clear_token_when_none() {
+        let mut client = HttpClient::new("http://localhost:8082");
+        client.clear_token(); // Should not panic
+        assert!(client.token().is_none());
+    }
+
+    // ========================================================================
+    // SessionInfo Tests
+    // ========================================================================
+
+    #[test]
+    fn test_session_info_to_session_valid() {
+        let session_info = SessionInfo {
+            id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            expires_at: "2026-12-31T23:59:59Z".to_string(),
+        };
+
+        let session = session_info.to_session().unwrap();
+        assert_eq!(
+            session.id.to_string(),
+            "550e8400-e29b-41d4-a716-446655440000"
+        );
+    }
+
+    #[test]
+    fn test_session_info_to_session_invalid_uuid() {
+        let session_info = SessionInfo {
+            id: "not-a-valid-uuid".to_string(),
+            expires_at: "2026-12-31T23:59:59Z".to_string(),
+        };
+
+        let result = session_info.to_session();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, HttpError::InvalidResponse(_)));
+    }
+
+    #[test]
+    fn test_session_info_to_session_invalid_date() {
+        let session_info = SessionInfo {
+            id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            expires_at: "not-a-valid-date".to_string(),
+        };
+
+        let result = session_info.to_session();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, HttpError::InvalidResponse(_)));
+    }
+
+    // ========================================================================
+    // Request Struct Serialization Tests
+    // ========================================================================
+
+    #[test]
+    fn test_login_request_serialization() {
+        let request = LoginRequest {
+            identifier: "testuser".to_string(),
+            password: "secret123".to_string(),
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(json.contains("\"identifier\":\"testuser\""));
+        assert!(json.contains("\"password\":\"secret123\""));
+    }
+
+    #[test]
+    fn test_register_request_serialization() {
+        let request = RegisterRequest {
+            username: "newuser".to_string(),
+            email: "new@example.com".to_string(),
+            password: "password123".to_string(),
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(json.contains("\"username\":\"newuser\""));
+        assert!(json.contains("\"email\":\"new@example.com\""));
+        assert!(json.contains("\"password\":\"password123\""));
+    }
+
+    #[test]
+    fn test_create_room_request_serialization_minimal() {
+        let request = CreateRoomRequest {
+            name: "test-room".to_string(),
+            description: None,
+            settings: None,
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(json.contains("\"name\":\"test-room\""));
+        // Optional fields should be skipped
+        assert!(!json.contains("description"));
+        assert!(!json.contains("settings"));
+    }
+
+    #[test]
+    fn test_create_room_request_serialization_full() {
+        let request = CreateRoomRequest {
+            name: "test-room".to_string(),
+            description: Some("A test room".to_string()),
+            settings: Some(RoomSettingsRequest {
+                public: Some(true),
+                max_members: Some(50),
+            }),
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(json.contains("\"name\":\"test-room\""));
+        assert!(json.contains("\"description\":\"A test room\""));
+        assert!(json.contains("\"public\":true"));
+        assert!(json.contains("\"max_members\":50"));
+    }
+
+    #[test]
+    fn test_room_settings_request_serialization_partial() {
+        let settings = RoomSettingsRequest {
+            public: Some(false),
+            max_members: None,
+        };
+
+        let json = serde_json::to_string(&settings).unwrap();
+        assert!(json.contains("\"public\":false"));
+        assert!(!json.contains("max_members"));
+    }
+
+    // ========================================================================
+    // Response Struct Deserialization Tests
+    // ========================================================================
+
+    #[test]
+    fn test_error_response_deserialization() {
+        let json = r#"{"error": {"code": "unauthorized", "message": "Invalid token"}}"#;
+        let response: ErrorResponse = serde_json::from_str(json).unwrap();
+
+        assert_eq!(response.error.code, "unauthorized");
+        assert_eq!(response.error.message, "Invalid token");
+    }
+
+    #[test]
+    fn test_list_rooms_response_deserialization() {
+        let json = r#"{
+            "rooms": [
+                {
+                    "room": {
+                        "id": "550e8400-e29b-41d4-a716-446655440000",
+                        "name": "general",
+                        "owner": "550e8400-e29b-41d4-a716-446655440001",
+                        "settings": {"public": true, "moderated": false},
+                        "created_at": "2026-01-01T00:00:00Z"
+                    },
+                    "member_count": 5,
+                    "is_member": true
+                }
+            ],
+            "has_more": false,
+            "total_count": 1
+        }"#;
+
+        let response: ListRoomsResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.rooms.len(), 1);
+        assert_eq!(response.rooms[0].room.name, "general");
+        assert_eq!(response.rooms[0].member_count, 5);
+        assert!(response.rooms[0].is_member);
+        assert!(!response.has_more);
+        assert_eq!(response.total_count, 1);
+    }
+
+    #[test]
+    fn test_list_users_response_deserialization() {
+        let json = r#"{
+            "users": [
+                {
+                    "user": {
+                        "id": "550e8400-e29b-41d4-a716-446655440000",
+                        "username": "alice",
+                        "email": "alice@example.com",
+                        "role": "user",
+                        "created_at": "2026-01-01T00:00:00Z"
+                    },
+                    "online": true
+                }
+            ],
+            "has_more": false,
+            "total_count": 1
+        }"#;
+
+        let response: ListUsersResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.users.len(), 1);
+        assert_eq!(response.users[0].user.username, "alice");
+        assert!(response.users[0].online);
+    }
+
+    #[test]
+    fn test_create_room_response_deserialization() {
+        let json = r#"{
+            "room": {
+                "id": "550e8400-e29b-41d4-a716-446655440000",
+                "name": "new-room",
+                "owner": "550e8400-e29b-41d4-a716-446655440001",
+                "settings": {"public": true, "moderated": false},
+                "created_at": "2026-01-01T00:00:00Z"
+            }
+        }"#;
+
+        let response: CreateRoomResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.room.name, "new-room");
+    }
+
+    #[test]
+    fn test_join_room_response_deserialization() {
+        let json = r#"{
+            "room": {
+                "id": "550e8400-e29b-41d4-a716-446655440000",
+                "name": "joined-room",
+                "owner": "550e8400-e29b-41d4-a716-446655440001",
+                "settings": {"public": false, "moderated": true},
+                "created_at": "2026-01-01T00:00:00Z"
+            }
+        }"#;
+
+        let response: JoinRoomResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.room.name, "joined-room");
+    }
+
+    #[test]
+    fn test_get_messages_response_deserialization() {
+        let json = r#"{
+            "messages": [
+                {
+                    "id": "550e8400-e29b-41d4-a716-446655440000",
+                    "author": "550e8400-e29b-41d4-a716-446655440001",
+                    "target": {"type": "room", "room_id": "550e8400-e29b-41d4-a716-446655440002"},
+                    "content": "Hello, world!",
+                    "edited": false,
+                    "created_at": "2026-01-01T00:00:00Z"
+                }
+            ],
+            "has_more": true
+        }"#;
+
+        let response: GetMessagesResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.messages.len(), 1);
+        assert_eq!(response.messages[0].content, "Hello, world!");
+        assert!(response.has_more);
+    }
+
+    #[test]
+    fn test_get_messages_response_empty() {
+        let json = r#"{"messages": [], "has_more": false}"#;
+
+        let response: GetMessagesResponse = serde_json::from_str(json).unwrap();
+        assert!(response.messages.is_empty());
+        assert!(!response.has_more);
+    }
+
+    // ========================================================================
+    // Authentication Required Tests (without network)
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_list_rooms_requires_auth() {
+        let client = HttpClient::new("http://localhost:8082");
+        // No token set
+
+        let result = client.list_rooms().await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, HttpError::AuthenticationFailed(_)));
+    }
+
+    #[tokio::test]
+    async fn test_list_users_requires_auth() {
+        let client = HttpClient::new("http://localhost:8082");
+
+        let result = client.list_users().await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, HttpError::AuthenticationFailed(_)));
+    }
+
+    #[tokio::test]
+    async fn test_create_room_requires_auth() {
+        let client = HttpClient::new("http://localhost:8082");
+
+        let result = client.create_room("test-room", None).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, HttpError::AuthenticationFailed(_)));
+    }
+
+    #[tokio::test]
+    async fn test_join_room_requires_auth() {
+        let client = HttpClient::new("http://localhost:8082");
+
+        let result = client
+            .join_room("550e8400-e29b-41d4-a716-446655440000")
+            .await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, HttpError::AuthenticationFailed(_)));
+    }
+
+    #[tokio::test]
+    async fn test_get_messages_requires_auth() {
+        let client = HttpClient::new("http://localhost:8082");
+
+        let result = client
+            .get_messages("room", "550e8400-e29b-41d4-a716-446655440000", Some(50))
+            .await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, HttpError::AuthenticationFailed(_)));
+    }
+
+    #[tokio::test]
+    async fn test_logout_without_token_succeeds() {
+        let mut client = HttpClient::new("http://localhost:8082");
+        // No token set - logout should succeed silently
+
+        let result = client.logout().await;
+        assert!(result.is_ok());
+    }
+
+    // ========================================================================
+    // HttpError Tests
+    // ========================================================================
+
+    #[test]
+    fn test_http_error_display_request_failed() {
+        let err = HttpError::RequestFailed("timeout".to_string());
+        assert_eq!(format!("{}", err), "Request failed: timeout");
+    }
+
+    #[test]
+    fn test_http_error_display_invalid_response() {
+        let err = HttpError::InvalidResponse("bad json".to_string());
+        assert_eq!(format!("{}", err), "Invalid response: bad json");
+    }
+
+    #[test]
+    fn test_http_error_display_authentication_failed() {
+        let err = HttpError::AuthenticationFailed("expired".to_string());
+        assert_eq!(format!("{}", err), "Authentication failed: expired");
+    }
+
+    #[test]
+    fn test_http_error_display_server_error() {
+        let err = HttpError::ServerError {
+            code: "not_found".to_string(),
+            message: "Room not found".to_string(),
+        };
+        assert_eq!(
+            format!("{}", err),
+            "Server returned error: not_found - Room not found"
+        );
+    }
+
+    // ========================================================================
+    // UserWithStatus Tests
+    // ========================================================================
+
+    #[test]
+    fn test_user_with_status_online() {
+        let json = r#"{
+            "user": {
+                "id": "550e8400-e29b-41d4-a716-446655440000",
+                "username": "bob",
+                "email": "bob@example.com",
+                "role": "user",
+                "created_at": "2026-01-01T00:00:00Z"
+            },
+            "online": true
+        }"#;
+
+        let user_status: UserWithStatus = serde_json::from_str(json).unwrap();
+        assert_eq!(user_status.user.username, "bob");
+        assert!(user_status.online);
+    }
+
+    #[test]
+    fn test_user_with_status_offline() {
+        let json = r#"{
+            "user": {
+                "id": "550e8400-e29b-41d4-a716-446655440000",
+                "username": "charlie",
+                "email": "charlie@example.com",
+                "role": "admin",
+                "created_at": "2026-01-01T00:00:00Z"
+            },
+            "online": false
+        }"#;
+
+        let user_status: UserWithStatus = serde_json::from_str(json).unwrap();
+        assert_eq!(user_status.user.username, "charlie");
+        assert_eq!(user_status.user.role, "admin");
+        assert!(!user_status.online);
+    }
+
+    // ========================================================================
+    // RoomListItem Tests
+    // ========================================================================
+
+    #[test]
+    fn test_room_list_item_deserialization() {
+        let json = r#"{
+            "room": {
+                "id": "550e8400-e29b-41d4-a716-446655440000",
+                "name": "developers",
+                "owner": "550e8400-e29b-41d4-a716-446655440001",
+                "settings": {"public": true, "moderated": false},
+                "created_at": "2026-01-01T00:00:00Z"
+            },
+            "member_count": 42,
+            "is_member": false
+        }"#;
+
+        let item: RoomListItem = serde_json::from_str(json).unwrap();
+        assert_eq!(item.room.name, "developers");
+        assert_eq!(item.member_count, 42);
+        assert!(!item.is_member);
+    }
+
+    // ========================================================================
+    // AuthResponse Tests
+    // ========================================================================
+
+    #[test]
+    fn test_auth_response_deserialization() {
+        let json = r#"{
+            "user": {
+                "id": "550e8400-e29b-41d4-a716-446655440000",
+                "username": "testuser",
+                "email": "test@example.com",
+                "role": "user",
+                "created_at": "2026-01-01T00:00:00Z"
+            },
+            "session": {
+                "id": "660e8400-e29b-41d4-a716-446655440000",
+                "expires_at": "2026-12-31T23:59:59Z"
+            },
+            "token": "jwt-token-here"
+        }"#;
+
+        let response: AuthResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.user.username, "testuser");
+        assert_eq!(response.token, "jwt-token-here");
+        assert_eq!(response.session.id, "660e8400-e29b-41d4-a716-446655440000");
     }
 }
