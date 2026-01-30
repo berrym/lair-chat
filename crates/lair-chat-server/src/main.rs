@@ -33,6 +33,11 @@ use lair_chat_server::storage::sqlite::SqliteStorage;
 
 #[tokio::main]
 async fn main() {
+    // Initialize rustls crypto provider (required when both ring and aws-lc-rs features are enabled)
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+
     // Initialize tracing
     tracing_subscriber::registry()
         .with(
