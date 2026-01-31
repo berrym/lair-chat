@@ -15,7 +15,10 @@
 //! ```ignore
 //! use lair_chat_server::adapters::tcp::{TcpConfig, TcpServer};
 //!
-//! let config = TcpConfig { port: 8080 };
+//! let config = TcpConfig {
+//!     port: 8080,
+//!     max_connections: 10000, // 0 = unlimited
+//! };
 //! let server = TcpServer::start(config, engine).await?;
 //!
 //! // ... run server ...
@@ -35,10 +38,16 @@ pub use server::TcpServer;
 pub struct TcpConfig {
     /// Port to listen on.
     pub port: u16,
+    /// Maximum number of concurrent connections.
+    /// 0 means unlimited (not recommended for production).
+    pub max_connections: u32,
 }
 
 impl Default for TcpConfig {
     fn default() -> Self {
-        Self { port: 8080 }
+        Self {
+            port: 8080,
+            max_connections: 10000,
+        }
     }
 }

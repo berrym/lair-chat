@@ -73,9 +73,14 @@ utoipa-swagger-ui = { version = "9", features = ["axum"] }
 sysinfo = "0.37"
 signal-hook = "0.3"
 
+# Metrics
+metrics = "0.24"
+metrics-exporter-prometheus = "0.16"
+
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
 tempfile = "3.24"
 axum-test = "18"
 pretty_assertions = "1.4"
 fake = "4"
+tokio-tungstenite = "0.24"

@@ -47,8 +47,88 @@ pub struct Notification {
 
 use crate::protocol::{
     ClientMessage, Connection, HttpClient, HttpClientConfig, Invitation, MessageTarget, Room,
-    RoomListItem, RoomMember, ServerMessage, Session, TcpError, User,
+    RoomListItem, RoomMember, ServerMessage, Session, TcpError, User, WsConnection, WsError,
 };
+
+/// Transport type for real-time connection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TransportType {
+    /// TCP with optional end-to-end encryption (default).
+    #[default]
+    Tcp,
+    /// WebSocket (uses TLS for encryption, works through HTTP proxies).
+    WebSocket,
+}
+
+impl std::fmt::Display for TransportType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TransportType::Tcp => write!(f, "TCP"),
+            TransportType::WebSocket => write!(f, "WebSocket"),
+        }
+    }
+}
+
+/// Connection error that wraps both TCP and WebSocket errors.
+#[derive(Debug, thiserror::Error)]
+pub enum ConnectionError {
+    #[error("TCP error: {0}")]
+    Tcp(#[from] TcpError),
+    #[error("WebSocket error: {0}")]
+    WebSocket(#[from] WsError),
+}
+
+/// Transport connection that can be either TCP or WebSocket.
+pub enum Transport {
+    /// TCP connection.
+    Tcp(Connection),
+    /// WebSocket connection.
+    WebSocket(WsConnection),
+}
+
+impl Transport {
+    /// Send a message to the server.
+    pub async fn send(&self, message: ClientMessage) -> Result<(), ConnectionError> {
+        match self {
+            Transport::Tcp(conn) => conn.send(message).await.map_err(ConnectionError::Tcp),
+            Transport::WebSocket(conn) => {
+                conn.send(message).await.map_err(ConnectionError::WebSocket)
+            }
+        }
+    }
+
+    /// Try to receive a message from the rx channel with a timeout.
+    pub async fn try_recv(
+        &mut self,
+        timeout_ms: u64,
+    ) -> Result<Option<ServerMessage>, ConnectionError> {
+        let duration = std::time::Duration::from_millis(timeout_ms);
+        match self {
+            Transport::Tcp(conn) => {
+                match tokio::time::timeout(duration, conn.rx.recv()).await {
+                    Ok(Some(msg)) => Ok(Some(msg)),
+                    Ok(None) => Err(ConnectionError::Tcp(TcpError::ConnectionClosed)),
+                    Err(_) => Ok(None), // Timeout
+                }
+            }
+            Transport::WebSocket(conn) => {
+                match tokio::time::timeout(duration, conn.rx.recv()).await {
+                    Ok(Some(msg)) => Ok(Some(msg)),
+                    Ok(None) => Err(ConnectionError::WebSocket(WsError::ConnectionClosed)),
+                    Err(_) => Ok(None), // Timeout
+                }
+            }
+        }
+    }
+
+    /// Shutdown the connection.
+    pub async fn shutdown(self) {
+        match self {
+            Transport::Tcp(conn) => conn.shutdown().await,
+            Transport::WebSocket(conn) => conn.shutdown().await,
+        }
+    }
+}
 
 /// Type alias for user IDs.
 type UserId = Uuid;
@@ -57,15 +137,17 @@ type UserId = Uuid;
 pub struct App {
     /// Current screen.
     pub screen: Screen,
-    /// TCP connection to the server (for real-time messaging).
-    pub connection: Option<Connection>,
+    /// Real-time connection to the server (TCP or WebSocket).
+    pub connection: Option<Transport>,
     /// HTTP client for authentication and queries.
     pub http_client: HttpClient,
-    /// Server address (TCP).
+    /// Server address (TCP port, also used to derive WebSocket URL).
     pub server_addr: SocketAddr,
     /// HTTP server URL.
     #[allow(dead_code)]
     pub http_base_url: String,
+    /// Transport type to use for real-time connections.
+    pub transport_type: TransportType,
     /// Current user (after login).
     pub user: Option<User>,
     /// Current session.
@@ -247,6 +329,22 @@ impl App {
         http_url: String,
         skip_tls_verify: bool,
     ) -> Self {
+        Self::with_transport(server_addr, http_url, skip_tls_verify, TransportType::Tcp)
+    }
+
+    /// Create a new application with specified transport type.
+    ///
+    /// # Arguments
+    /// * `server_addr` - Server address (TCP port for TCP, used to derive WS URL for WebSocket)
+    /// * `http_url` - Full HTTP API base URL
+    /// * `skip_tls_verify` - Skip TLS certificate verification (for self-signed certs)
+    /// * `transport_type` - Transport to use (TCP or WebSocket)
+    pub fn with_transport(
+        server_addr: SocketAddr,
+        http_url: String,
+        skip_tls_verify: bool,
+        transport_type: TransportType,
+    ) -> Self {
         let http_config = HttpClientConfig {
             base_url: http_url.clone(),
             skip_tls_verify,
@@ -257,6 +355,7 @@ impl App {
             http_client: HttpClient::with_config(http_config),
             server_addr,
             http_base_url: http_url,
+            transport_type,
             user: None,
             session: None,
             token: None,
@@ -405,16 +504,36 @@ impl App {
         self.user_cache.insert(user.id, user.username.clone());
     }
 
-    /// Connect to the server.
-    pub async fn connect(&mut self) -> Result<(), TcpError> {
-        info!("Connecting to {}", self.server_addr);
-        self.status = Some("Connecting...".to_string());
+    /// Connect to the server using the configured transport.
+    pub async fn connect(&mut self) -> Result<(), ConnectionError> {
+        info!(
+            "Connecting to {} via {}",
+            self.server_addr, self.transport_type
+        );
+        self.status = Some(format!("Connecting via {}...", self.transport_type));
         self.clear_notifications();
 
-        let connection = Connection::connect(self.server_addr).await?;
-        self.connection = Some(connection);
-        self.status = Some("Connected".to_string());
-        self.add_system_message("Connected to server");
+        let transport = match self.transport_type {
+            TransportType::Tcp => {
+                let connection = Connection::connect(self.server_addr).await?;
+                Transport::Tcp(connection)
+            }
+            TransportType::WebSocket => {
+                // Derive WebSocket URL from HTTP base URL
+                // HTTP URL is like "http://host:8082", convert to "ws://host:8082/ws"
+                let ws_url = self
+                    .http_base_url
+                    .replace("https://", "wss://")
+                    .replace("http://", "ws://")
+                    + "/ws";
+                let connection = WsConnection::connect_and_handshake(&ws_url).await?;
+                Transport::WebSocket(connection)
+            }
+        };
+
+        self.connection = Some(transport);
+        self.status = Some(format!("Connected via {}", self.transport_type));
+        self.add_system_message(format!("Connected to server via {}", self.transport_type));
 
         Ok(())
     }
@@ -423,21 +542,45 @@ impl App {
     pub async fn reconnect(&mut self) {
         // Clear old connection state
         self.connection = None;
-        self.status = Some("Reconnecting...".to_string());
+        self.status = Some(format!("Reconnecting via {}...", self.transport_type));
 
-        // Attempt to reconnect TCP
-        match Connection::connect(self.server_addr).await {
-            Ok(connection) => {
-                self.connection = Some(connection);
+        // Attempt to reconnect using configured transport
+        let result = match self.transport_type {
+            TransportType::Tcp => Connection::connect(self.server_addr)
+                .await
+                .map(Transport::Tcp)
+                .map_err(ConnectionError::Tcp),
+            TransportType::WebSocket => {
+                let ws_url = self
+                    .http_base_url
+                    .replace("https://", "wss://")
+                    .replace("http://", "ws://")
+                    + "/ws";
+                WsConnection::connect_and_handshake(&ws_url)
+                    .await
+                    .map(Transport::WebSocket)
+                    .map_err(ConnectionError::WebSocket)
+            }
+        };
+
+        match result {
+            Ok(transport) => {
+                self.connection = Some(transport);
                 self.clear_notifications();
 
                 // If we have a valid token, try to re-authenticate
                 if let Some(token) = self.token.clone() {
-                    self.add_system_message("Reconnected to server. Re-authenticating...");
-                    self.authenticate_tcp_connection(token).await;
+                    self.add_system_message(format!(
+                        "Reconnected via {}. Re-authenticating...",
+                        self.transport_type
+                    ));
+                    self.authenticate_connection(token).await;
                 } else {
-                    self.status = Some("Reconnected".to_string());
-                    self.add_system_message("Reconnected to server. Please log in again.");
+                    self.status = Some(format!("Reconnected via {}", self.transport_type));
+                    self.add_system_message(format!(
+                        "Reconnected to server via {}. Please log in again.",
+                        self.transport_type
+                    ));
                     // Reset to login screen since session is lost
                     self.user = None;
                     self.session = None;
@@ -734,7 +877,7 @@ impl App {
                 self.token = Some(token.clone());
 
                 // Step 4: Authenticate TCP connection with the token
-                self.authenticate_tcp_connection(token).await;
+                self.authenticate_connection(token).await;
             }
             Err(e) => {
                 self.set_error(format!("Login failed: {}", e));
@@ -784,7 +927,7 @@ impl App {
                 self.token = Some(token.clone());
 
                 // Step 4: Authenticate TCP connection with the token
-                self.authenticate_tcp_connection(token).await;
+                self.authenticate_connection(token).await;
             }
             Err(e) => {
                 self.set_error(format!("Registration failed: {}", e));
@@ -813,19 +956,22 @@ impl App {
         Ok(())
     }
 
-    /// Authenticate the TCP connection using a JWT token.
-    async fn authenticate_tcp_connection(&mut self, token: String) {
+    /// Authenticate the connection using a JWT token.
+    async fn authenticate_connection(&mut self, token: String) {
         let Some(conn) = &self.connection else {
             self.set_error("Not connected to server");
             return;
         };
 
-        self.status = Some("Authenticating TCP connection...".to_string());
+        self.status = Some(format!(
+            "Authenticating {} connection...",
+            self.transport_type
+        ));
 
         let msg = ClientMessage::authenticate(&token);
 
         if let Err(e) = conn.send(msg).await {
-            self.set_error(format!("Failed to authenticate TCP: {}", e));
+            self.set_error(format!("Failed to authenticate: {}", e));
             self.status = None;
         }
 
@@ -1733,16 +1879,14 @@ impl App {
         if let Some(conn) = &mut self.connection {
             // Try to receive messages with a short timeout
             loop {
-                match tokio::time::timeout(std::time::Duration::from_millis(10), conn.rx.recv())
-                    .await
-                {
+                match conn.try_recv(10).await {
                     Ok(Some(msg)) => messages.push(msg),
-                    Ok(None) => {
+                    Ok(None) => break, // Timeout, no more messages
+                    Err(_) => {
                         // Connection closed
                         connection_lost = true;
                         break;
                     }
-                    Err(_) => break, // Timeout, no more messages
                 }
             }
         }

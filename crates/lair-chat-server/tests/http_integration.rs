@@ -9,7 +9,9 @@ use axum::http::{header, HeaderName, HeaderValue, StatusCode};
 use axum_test::TestServer;
 use serde_json::{json, Value};
 
-use lair_chat_server::adapters::http::routes::create_router;
+use lair_chat_server::adapters::http::handlers::metrics::init_metrics;
+use lair_chat_server::adapters::http::routes::{create_router, create_router_with_metrics};
+use lair_chat_server::adapters::tcp::{TcpConfig, TcpServer};
 use lair_chat_server::core::engine::ChatEngine;
 use lair_chat_server::storage::sqlite::SqliteStorage;
 
@@ -21,6 +23,15 @@ async fn create_test_server() -> TestServer {
     let storage = SqliteStorage::in_memory().await.unwrap();
     let engine = Arc::new(ChatEngine::new(Arc::new(storage), TEST_JWT_SECRET));
     let router = create_router(engine);
+    TestServer::new(router).unwrap()
+}
+
+/// Create a test server with metrics enabled.
+async fn create_test_server_with_metrics() -> TestServer {
+    let storage = SqliteStorage::in_memory().await.unwrap();
+    let engine = Arc::new(ChatEngine::new(Arc::new(storage), TEST_JWT_SECRET));
+    let metrics_handle = init_metrics();
+    let router = create_router_with_metrics(engine, metrics_handle);
     TestServer::new(router).unwrap()
 }
 
@@ -57,6 +68,210 @@ async fn test_readiness_check() {
     let body: Value = response.json();
     // Readiness returns "ready" field, not "status"
     assert_eq!(body["ready"], true);
+}
+
+// ============================================================================
+// Metrics Tests
+// ============================================================================
+
+/// Test that the metrics endpoint returns 500 when no metrics handle is configured.
+#[tokio::test]
+async fn test_metrics_endpoint_without_metrics_returns_error() {
+    let server = create_test_server().await;
+
+    let response = server.get("/metrics").await;
+
+    // Without metrics handle, should return 500
+    response.assert_status(StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+/// Test the metrics endpoint with metrics enabled.
+/// Note: This test may skip assertions if the Prometheus recorder was already installed
+/// by another test (since it's a global singleton).
+#[tokio::test]
+async fn test_metrics_endpoint_with_metrics_enabled() {
+    let storage = SqliteStorage::in_memory().await.unwrap();
+    let engine = Arc::new(ChatEngine::new(Arc::new(storage), TEST_JWT_SECRET));
+    let metrics_handle = init_metrics();
+
+    // Only test if we got a handle (first test to run gets it)
+    if let Some(handle) = metrics_handle {
+        let router = create_router_with_metrics(engine, Some(handle));
+        let server = TestServer::new(router).unwrap();
+
+        // Create a user to have some data
+        server
+            .post("/api/v1/auth/register")
+            .json(&json!({
+                "username": "metricsuser",
+                "email": "metrics@example.com",
+                "password": "SecurePass123!"
+            }))
+            .await;
+
+        let response = server.get("/metrics").await;
+
+        response.assert_status_ok();
+        let body = response.text();
+        // Should return Prometheus format text with expected gauges
+        assert!(body.contains("lair_chat_online_users"));
+    }
+    // If we didn't get a handle, another test already installed the recorder.
+    // The test passes trivially since we can't test this scenario.
+}
+
+/// Test that metrics_contains_expected_gauges is documented properly.
+/// This is combined with the above test since we can only install the recorder once.
+#[tokio::test]
+async fn test_metrics_contains_expected_gauges() {
+    // This test's functionality is covered by test_metrics_endpoint_with_metrics_enabled
+    // We keep it as a separate test for documentation purposes but it essentially
+    // tests the same thing.
+    let server = create_test_server_with_metrics().await;
+
+    let response = server.get("/metrics").await;
+
+    // This may succeed or return 500 depending on test execution order
+    // If we got the recorder, it should succeed
+    if response.status_code() == StatusCode::OK {
+        let body = response.text();
+        assert!(body.contains("lair_chat_online_users"));
+    }
+}
+
+// ============================================================================
+// Online Status Tests
+// ============================================================================
+
+/// Helper to get an available port.
+async fn get_available_port() -> u16 {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    port
+}
+
+#[tokio::test]
+async fn test_get_user_shows_online_status_offline() {
+    let server = create_test_server().await;
+
+    // Create two users
+    let user1_info = register_and_get_full_info(&server, "onlineuser1").await;
+    let user1_id = user1_info["user"]["id"].as_str().unwrap();
+
+    let user2_session = register_and_get_token(&server, "onlineuser2").await;
+
+    // User2 looks up User1 - should show offline (no TCP connection)
+    let (name, value) = auth_header(&user2_session);
+    let response = server
+        .get(&format!("/api/v1/users/{}", user1_id))
+        .add_header(name, value)
+        .await;
+
+    response.assert_status_ok();
+    let body: Value = response.json();
+    assert_eq!(body["user"]["username"], "onlineuser1");
+    // Without a TCP connection, user should appear offline
+    assert_eq!(body["online"], false);
+}
+
+#[tokio::test]
+async fn test_get_user_shows_online_status_when_connected() {
+    // For this test, we need both HTTP server and TCP server to test online status
+    // We create a shared engine that both servers use
+    let tcp_port = get_available_port().await;
+    let storage = SqliteStorage::in_memory().await.unwrap();
+    let engine = Arc::new(ChatEngine::new(Arc::new(storage), TEST_JWT_SECRET));
+
+    // Start TCP server with the same engine
+    let tcp_config = TcpConfig {
+        port: tcp_port,
+        max_connections: 100,
+    };
+    let tcp_server = TcpServer::start(tcp_config, engine.clone()).await.unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    // Create HTTP test server with the same engine
+    let router = create_router_with_metrics(engine.clone(), None);
+    let http_server = TestServer::new(router).unwrap();
+
+    // Register a user via HTTP
+    let reg_response = http_server
+        .post("/api/v1/auth/register")
+        .json(&json!({
+            "username": "tcponlineuser",
+            "email": "tcponline@example.com",
+            "password": "SecurePass123!"
+        }))
+        .await;
+    let reg_body: Value = reg_response.json();
+    let user_id = reg_body["user"]["id"].as_str().unwrap();
+    let token = reg_body["token"].as_str().unwrap();
+
+    // User is not connected via TCP yet - should be offline
+    let (name, value) = auth_header(token);
+    let response = http_server
+        .get(&format!("/api/v1/users/{}", user_id))
+        .add_header(name, value)
+        .await;
+    let body: Value = response.json();
+    assert_eq!(body["online"], false);
+
+    // Connect via TCP and authenticate
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut tcp_stream = tokio::net::TcpStream::connect(format!("127.0.0.1:{}", tcp_port))
+        .await
+        .unwrap();
+
+    // Read server hello
+    let mut len_bytes = [0u8; 4];
+    tcp_stream.read_exact(&mut len_bytes).await.unwrap();
+    let len = u32::from_be_bytes(len_bytes);
+    let mut payload = vec![0u8; len as usize];
+    tcp_stream.read_exact(&mut payload).await.unwrap();
+
+    // Send client hello
+    let client_hello = r#"{"type":"client_hello","version":"1.0"}"#;
+    let len = (client_hello.len() as u32).to_be_bytes();
+    tcp_stream.write_all(&len).await.unwrap();
+    tcp_stream.write_all(client_hello.as_bytes()).await.unwrap();
+    tcp_stream.flush().await.unwrap();
+
+    // Send authenticate with token
+    let auth_msg = format!(r#"{{"type":"authenticate","token":"{}"}}"#, token);
+    let len = (auth_msg.len() as u32).to_be_bytes();
+    tcp_stream.write_all(&len).await.unwrap();
+    tcp_stream.write_all(auth_msg.as_bytes()).await.unwrap();
+    tcp_stream.flush().await.unwrap();
+
+    // Read auth response
+    tcp_stream.read_exact(&mut len_bytes).await.unwrap();
+    let len = u32::from_be_bytes(len_bytes);
+    let mut payload = vec![0u8; len as usize];
+    tcp_stream.read_exact(&mut payload).await.unwrap();
+    let auth_response: Value = serde_json::from_slice(&payload).unwrap();
+    assert_eq!(auth_response["type"], "authenticate_response");
+    assert_eq!(auth_response["success"], true);
+
+    // Give the server time to update online status
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    // Now check online status via HTTP - should be online
+    let (name, value) = auth_header(token);
+    let response = http_server
+        .get(&format!("/api/v1/users/{}", user_id))
+        .add_header(name, value)
+        .await;
+    let body: Value = response.json();
+    assert_eq!(
+        body["online"], true,
+        "User should be online when connected via TCP"
+    );
+
+    // Cleanup
+    drop(tcp_stream);
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    tcp_server.shutdown().await;
 }
 
 // ============================================================================

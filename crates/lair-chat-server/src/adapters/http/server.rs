@@ -14,10 +14,12 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
+use metrics_exporter_prometheus::PrometheusHandle;
+
 use crate::core::engine::ChatEngine;
 use crate::storage::Storage;
 
-use super::routes::create_router;
+use super::routes::create_router_with_metrics;
 use super::HttpConfig;
 
 /// HTTP server handle for graceful shutdown.
@@ -38,10 +40,19 @@ impl HttpServer {
         config: HttpConfig,
         engine: Arc<ChatEngine<S>>,
     ) -> std::io::Result<Self> {
+        Self::start_with_metrics(config, engine, None).await
+    }
+
+    /// Start the HTTP server with optional metrics handle.
+    pub async fn start_with_metrics<S: Storage + Clone + 'static>(
+        config: HttpConfig,
+        engine: Arc<ChatEngine<S>>,
+        metrics_handle: Option<PrometheusHandle>,
+    ) -> std::io::Result<Self> {
         let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
 
-        // Create router with all routes
-        let app = create_router(engine)
+        // Create router with all routes and optional metrics
+        let app = create_router_with_metrics(engine, metrics_handle)
             .layer(
                 CorsLayer::new()
                     .allow_origin(Any)
@@ -77,9 +88,14 @@ impl HttpServer {
         warn!("TLS is disabled - connections are not encrypted. Enable TLS for production use.");
 
         let task = tokio::spawn(async move {
-            axum::serve(listener, app)
-                .await
-                .expect("HTTP server failed");
+            // Use into_make_service_with_connect_info to enable ConnectInfo extraction
+            // for WebSocket connections
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            .expect("HTTP server failed");
         });
 
         Ok(task.abort_handle())
@@ -105,7 +121,7 @@ impl HttpServer {
         tokio::spawn(async move {
             axum_server::bind_rustls(addr, rustls_config)
                 .handle(handle_clone)
-                .serve(app.into_make_service())
+                .serve(app.into_make_service_with_connect_info::<SocketAddr>())
                 .await
                 .expect("HTTPS server failed");
         });

@@ -51,6 +51,7 @@ impl Config {
     ///
     /// Environment variables:
     /// - `LAIR_TCP_PORT`: TCP server port (default: 8080)
+    /// - `LAIR_TCP_MAX_CONNECTIONS`: Max concurrent TCP connections (default: 10000, 0 = unlimited)
     /// - `LAIR_HTTP_PORT`: HTTP server port (default: 8082)
     /// - `LAIR_DATABASE_URL`: SQLite database URL (default: sqlite:lair-chat.db?mode=rwc)
     /// - `LAIR_JWT_SECRET`: JWT signing secret (auto-generated if not set)
@@ -62,6 +63,11 @@ impl Config {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(8080);
+
+        let tcp_max_connections = env::var("LAIR_TCP_MAX_CONNECTIONS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(10000);
 
         let http_port = env::var("LAIR_HTTP_PORT")
             .ok()
@@ -83,7 +89,10 @@ impl Config {
         let tls = Self::parse_tls_config()?;
 
         Ok(Self {
-            tcp: TcpConfig { port: tcp_port },
+            tcp: TcpConfig {
+                port: tcp_port,
+                max_connections: tcp_max_connections,
+            },
             http: HttpConfig {
                 port: http_port,
                 tls,
@@ -144,6 +153,7 @@ mod tests {
 
         // TCP defaults
         assert_eq!(config.tcp.port, 8080);
+        assert_eq!(config.tcp.max_connections, 10000);
 
         // HTTP defaults
         assert_eq!(config.http.port, 8082);

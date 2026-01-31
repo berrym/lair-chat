@@ -1,6 +1,6 @@
 # Lair Chat
 
-A secure, high-performance chat system built with Rust, featuring real-time messaging, end-to-end encryption support, and both TCP and REST API interfaces.
+A secure, high-performance chat system built with Rust, featuring real-time messaging, end-to-end encryption support, and TCP, WebSocket, and REST API interfaces.
 
 [![CI](https://github.com/berrym/lair-chat/actions/workflows/ci.yml/badge.svg)](https://github.com/berrym/lair-chat/actions/workflows/ci.yml)
 [![Security Audit](https://github.com/berrym/lair-chat/actions/workflows/security.yml/badge.svg)](https://github.com/berrym/lair-chat/actions/workflows/security.yml)
@@ -11,9 +11,10 @@ A secure, high-performance chat system built with Rust, featuring real-time mess
 ## Features
 
 ### Core Functionality
-- **Real-time messaging** via persistent TCP connections with server-pushed events
+- **Real-time messaging** via persistent TCP or WebSocket connections with server-pushed events
 - **REST API** for authentication, CRUD operations, and queries
-- **Terminal-based client** with modern TUI interface
+- **WebSocket support** for browser-compatible real-time connections through HTTP proxies
+- **Terminal-based client** with modern TUI interface (supports both TCP and WebSocket)
 - **Room-based chat** with invitations and membership management
 - **Direct messaging** between users
 - **Role-based access control** (Admin, Moderator, User)
@@ -49,23 +50,27 @@ cd lair-chat
 cargo run --package lair-chat-server
 ```
 
-The server exposes two protocols:
+The server exposes three protocols:
 - **HTTP API** (`http://localhost:8082`) - Authentication, room management, message history
-- **TCP** (`localhost:8080`) - Real-time messaging and presence
+- **TCP** (`localhost:8080`) - Real-time messaging and presence (with E2E encryption option)
+- **WebSocket** (`ws://localhost:8082/ws`) - Real-time messaging through HTTP (browser-compatible)
 
 For HTTPS, see [Transport Security](docs/protocols/HTTP.md#transport-security).
 
 ### Run the Client
 
 ```bash
-# In another terminal
+# In another terminal (default: TCP transport)
 cargo run --package lair-chat-client
+
+# Use WebSocket transport (works through HTTP proxies)
+cargo run --package lair-chat-client -- --websocket
 
 # Or with custom HTTP URL (for HTTPS)
 cargo run --package lair-chat-client -- --http-url https://localhost:8082 --insecure
 ```
 
-The TUI client handles both protocols automatically - it authenticates via HTTP and connects to TCP for real-time messaging.
+The TUI client authenticates via HTTP and connects to TCP (default) or WebSocket (`--websocket`) for real-time messaging.
 
 ### Configuration
 
@@ -98,20 +103,19 @@ Lair Chat uses a **protocol responsibility split** (see [ADR-013](docs/architect
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
 │  │                        PROTOCOL ADAPTERS                              │  │
 │  │                                                                       │  │
-│  │   ┌─────────────────────────┐    ┌─────────────────────────┐         │  │
-│  │   │      HTTP :8082         │    │      TCP :8080          │         │  │
-│  │   │  ────────────────────   │    │  ────────────────────   │         │  │
-│  │   │  - Auth (login/register)│    │  - Token authentication │         │  │
-│  │   │  - Room CRUD            │    │  - Send/edit/delete msg │         │  │
-│  │   │  - Message history      │    │  - Join/leave rooms     │         │  │
-│  │   │  - User queries         │    │  - Typing indicators    │         │  │
-│  │   │  - Invitations          │    │  - Real-time events     │         │  │
-│  │   │  - Admin operations     │    │  - Presence updates     │         │  │
-│  │   └───────────┬─────────────┘    └───────────┬─────────────┘         │  │
-│  │               │                              │                        │  │
-│  └───────────────┼──────────────────────────────┼────────────────────────┘  │
-│                  │                              │                           │
-│                  └──────────────┬───────────────┘                           │
+│  │   ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐│  │
+│  │   │    HTTP :8082     │  │  WebSocket :8082  │  │    TCP :8080      ││  │
+│  │   │ ───────────────── │  │ ───────────────── │  │ ───────────────── ││  │
+│  │   │ - Auth (login)    │  │ - Real-time msgs  │  │ - Real-time msgs  ││  │
+│  │   │ - Room CRUD       │  │ - Events (push)   │  │ - E2E encryption  ││  │
+│  │   │ - Message history │  │ - Pre-auth token  │  │ - Events (push)   ││  │
+│  │   │ - User queries    │  │ - Browser-compat  │  │ - Presence        ││  │
+│  │   │ - Invitations     │  │                   │  │ - Typing          ││  │
+│  │   └─────────┬─────────┘  └─────────┬─────────┘  └─────────┬─────────┘│  │
+│  │             │                      │                      │          │  │
+│  └─────────────┼──────────────────────┼──────────────────────┼──────────┘  │
+│                │                      │                      │             │
+│                └──────────────────────┼──────────────────────┘             │
 │                                 │                                           │
 │                                 ▼                                           │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
@@ -173,8 +177,9 @@ lair-chat/
 │   │       ├── core/             # Business logic services
 │   │       ├── storage/          # SQLite repository implementations
 │   │       ├── adapters/         # Protocol adapters
-│   │       │   ├── tcp/          # TCP real-time protocol
-│   │       │   └── http/         # REST API (handlers, middleware)
+│   │       │   ├── tcp/          # TCP real-time protocol (with E2E encryption)
+│   │       │   ├── http/         # REST API (handlers, middleware)
+│   │       │   └── ws/           # WebSocket real-time protocol
 │   │       ├── crypto/           # AES-256-GCM encryption, X25519 key exchange
 │   │       └── config/           # Configuration management
 │   │
@@ -182,7 +187,7 @@ lair-chat/
 │       └── src/
 │           ├── main.rs           # Client entry point
 │           ├── app.rs            # Application state
-│           ├── protocol/         # TCP protocol implementation
+│           ├── protocol/         # TCP and WebSocket protocol implementations
 │           └── components/       # TUI screens (login, chat, rooms)
 │
 └── docs/
@@ -193,8 +198,9 @@ lair-chat/
     │   ├── COMMANDS.md           # All operations
     │   └── EVENTS.md             # Real-time events
     └── protocols/                # Protocol specifications
-        ├── TCP.md                # TCP wire protocol (real-time)
-        └── HTTP.md               # REST API specification
+        ├── TCP.md                # TCP wire protocol (real-time, E2E encryption)
+        ├── HTTP.md               # REST API specification
+        └── WEBSOCKET.md          # WebSocket protocol (browser-compatible)
 ```
 
 ## Protocol Documentation
@@ -202,7 +208,8 @@ lair-chat/
 Lair Chat is designed to be protocol-first. You can implement clients in any language using the documented protocols:
 
 - **[HTTP API](docs/protocols/HTTP.md)** - RESTful JSON API for auth, CRUD, queries
-- **[TCP Protocol](docs/protocols/TCP.md)** - Length-prefixed JSON for real-time messaging
+- **[TCP Protocol](docs/protocols/TCP.md)** - Length-prefixed JSON for real-time messaging (with E2E encryption)
+- **[WebSocket Protocol](docs/protocols/WEBSOCKET.md)** - Plain JSON over WebSocket for browser-compatible real-time messaging
 
 ## API Examples
 
@@ -309,7 +316,8 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 - **[Architecture Overview](docs/architecture/OVERVIEW.md)** - High-level system design
 - **[Architecture Decisions](docs/architecture/DECISIONS.md)** - ADRs explaining why choices were made
 - **[Domain Model](docs/architecture/DOMAIN_MODEL.md)** - Entity definitions and relationships
-- **[TCP Protocol](docs/protocols/TCP.md)** - Real-time wire protocol specification
+- **[TCP Protocol](docs/protocols/TCP.md)** - Real-time wire protocol with E2E encryption
+- **[WebSocket Protocol](docs/protocols/WEBSOCKET.md)** - Browser-compatible real-time protocol
 - **[HTTP API](docs/protocols/HTTP.md)** - REST API specification
 
 ## License

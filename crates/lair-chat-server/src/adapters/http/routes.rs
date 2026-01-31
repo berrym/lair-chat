@@ -7,6 +7,7 @@ use axum::{
     routing::{delete, get, patch, post, put},
     Router,
 };
+use metrics_exporter_prometheus::PrometheusHandle;
 
 use crate::core::engine::ChatEngine;
 use crate::storage::Storage;
@@ -18,12 +19,24 @@ use super::middleware::{jwt_service_layer, rate_limit_middleware, RateLimiter};
 #[derive(Clone)]
 pub struct AppState<S: Storage + Clone> {
     pub engine: Arc<ChatEngine<S>>,
+    /// Prometheus metrics handle for rendering metrics.
+    /// Optional to allow the server to run without metrics.
+    pub metrics_handle: Option<Arc<PrometheusHandle>>,
 }
 
 /// Create the main router with all routes.
 pub fn create_router<S: Storage + Clone + 'static>(engine: Arc<ChatEngine<S>>) -> Router {
+    create_router_with_metrics(engine, None)
+}
+
+/// Create the main router with optional metrics handle.
+pub fn create_router_with_metrics<S: Storage + Clone + 'static>(
+    engine: Arc<ChatEngine<S>>,
+    metrics_handle: Option<PrometheusHandle>,
+) -> Router {
     let state = AppState {
         engine: engine.clone(),
+        metrics_handle: metrics_handle.map(Arc::new),
     };
 
     // Get JWT service from engine for middleware
@@ -37,6 +50,10 @@ pub fn create_router<S: Storage + Clone + 'static>(engine: Arc<ChatEngine<S>>) -
         // Health endpoints (no auth required, no rate limit)
         .route("/health", get(handlers::health::health_check))
         .route("/ready", get(handlers::health::readiness_check))
+        // Metrics endpoint (no auth required, no rate limit)
+        .route("/metrics", get(handlers::metrics::get_metrics))
+        // WebSocket endpoint (no auth required for upgrade, auth via protocol)
+        .route("/ws", get(handlers::websocket::ws_upgrade))
         // Auth endpoints (auth rate limit, no JWT required for login/register)
         .nest(
             "/api/v1/auth",

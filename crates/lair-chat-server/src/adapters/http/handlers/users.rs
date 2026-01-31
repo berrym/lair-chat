@@ -91,10 +91,8 @@ pub async fn get_user<S: Storage + Clone + 'static>(
         .await?
         .ok_or(Error::UserNotFound)?;
 
-    Ok(Json(UserWithStatus {
-        user,
-        online: false, // TODO: Check actual online status
-    }))
+    let online = state.engine.is_user_online(user.id).await;
+    Ok(Json(UserWithStatus { user, online }))
 }
 
 /// List users with filtering.

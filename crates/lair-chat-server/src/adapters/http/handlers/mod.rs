@@ -5,9 +5,11 @@ pub mod auth;
 pub mod health;
 pub mod invitations;
 pub mod messages;
+pub mod metrics;
 pub mod room_members;
 pub mod rooms;
 pub mod users;
+pub mod websocket;
 
 use axum::{
     http::StatusCode,

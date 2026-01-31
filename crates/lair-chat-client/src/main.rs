@@ -22,7 +22,7 @@ mod components;
 mod crypto;
 mod protocol;
 
-use app::{Action, App, Screen};
+use app::{Action, App, Screen, TransportType};
 use components::{
     render_toasts_default, ChatRenderContext, ChatScreen, CommandPalette, Dialog, DialogResult,
     HelpOverlay, InvitationAction, InvitationsOverlay, LoginScreen, MemberAction, MembersOverlay,
@@ -48,6 +48,12 @@ struct Args {
     /// WARNING: Do not use in production!
     #[arg(long, default_value = "false")]
     insecure: bool,
+
+    /// Use WebSocket instead of TCP for real-time messaging.
+    /// WebSocket works through HTTP proxies and on HTTP-only networks.
+    /// Note: WebSocket uses TLS for encryption (no E2E encryption).
+    #[arg(long, short = 'w')]
+    websocket: bool,
 }
 
 #[tokio::main]
@@ -77,18 +83,31 @@ async fn main() -> Result<()> {
         .http_url
         .unwrap_or_else(|| format!("http://{}:{}", server_addr.ip(), server_addr.port() + 2));
 
+    // Determine transport type
+    let transport_type = if args.websocket {
+        TransportType::WebSocket
+    } else {
+        TransportType::Tcp
+    };
+
     info!("Lair Chat Client starting...");
-    info!("TCP Server: {}", server_addr);
+    info!("Server: {}", server_addr);
     info!("HTTP URL: {}", http_url);
+    info!("Transport: {}", transport_type);
     if args.insecure {
         info!("TLS verification: disabled (insecure mode)");
     }
 
     // Run the TUI
-    run_tui(server_addr, http_url, args.insecure).await
+    run_tui(server_addr, http_url, args.insecure, transport_type).await
 }
 
-async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> Result<()> {
+async fn run_tui(
+    server_addr: SocketAddr,
+    http_url: String,
+    insecure: bool,
+    transport_type: TransportType,
+) -> Result<()> {
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -96,8 +115,8 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Create app with HTTP configuration
-    let mut app = App::with_http_config(server_addr, http_url, insecure);
+    // Create app with HTTP configuration and transport type
+    let mut app = App::with_transport(server_addr, http_url, insecure, transport_type);
 
     // Create login screen with the server address from CLI (or default)
     let mut login_screen = LoginScreen::with_server(server_addr.to_string());

@@ -9,9 +9,12 @@
 use std::sync::Arc;
 
 use crate::domain::{
-    events::{Event, EventPayload, RoomDeletedEvent, UserJoinedRoomEvent, UserLeftRoomEvent},
-    Invitation, InvitationId, Pagination, Room, RoomId, RoomMembership, RoomName, RoomSettings,
-    User, UserId,
+    events::{
+        Event, EventPayload, InvitationReceivedEvent, RoomDeletedEvent, UserJoinedRoomEvent,
+        UserLeftRoomEvent,
+    },
+    EnrichedInvitation, Invitation, InvitationId, Pagination, Room, RoomId, RoomMembership,
+    RoomName, RoomSettings, User, UserId,
 };
 use crate::storage::{
     InvitationRepository, MembershipRepository, RoomRepository, Storage, UserRepository,
@@ -339,7 +342,27 @@ impl<S: Storage + 'static> RoomService<S> {
         let invitation = Invitation::new(room_id, inviter_id, invitee_id);
         InvitationRepository::create(&*self.storage, &invitation).await?;
 
-        // TODO: Emit InvitationReceived event
+        // Emit InvitationReceived event
+        let room = RoomRepository::find_by_id(&*self.storage, room_id)
+            .await?
+            .ok_or(Error::RoomNotFound)?;
+        let inviter = UserRepository::find_by_id(&*self.storage, inviter_id)
+            .await?
+            .ok_or(Error::UserNotFound)?;
+        let invitee = UserRepository::find_by_id(&*self.storage, invitee_id)
+            .await?
+            .ok_or(Error::UserNotFound)?;
+
+        let enriched = EnrichedInvitation::from_invitation(
+            &invitation,
+            room.name.to_string(),
+            inviter.username.to_string(),
+            invitee.username.to_string(),
+        );
+        let event = Event::new(EventPayload::InvitationReceived(
+            InvitationReceivedEvent::new(enriched),
+        ));
+        self.events.dispatch(event).await;
 
         Ok(invitation)
     }

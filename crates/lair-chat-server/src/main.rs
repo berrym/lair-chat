@@ -26,6 +26,7 @@ use tokio::signal;
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+use lair_chat_server::adapters::http::handlers::metrics::init_metrics;
 use lair_chat_server::adapters::{http::HttpServer, tcp::TcpServer};
 use lair_chat_server::config::Config;
 use lair_chat_server::core::engine::ChatEngine;
@@ -83,11 +84,19 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     info!("Initializing chat engine...");
     let engine = Arc::new(ChatEngine::new(Arc::new(storage), &config.jwt_secret));
 
+    // Initialize Prometheus metrics
+    info!("Initializing metrics...");
+    let metrics_handle = init_metrics();
+    if metrics_handle.is_some() {
+        info!("  Metrics endpoint: /metrics");
+    }
+
     // Start protocol adapters
     info!("Starting protocol adapters...");
 
     let tcp_server = TcpServer::start(config.tcp.clone(), engine.clone()).await?;
-    let http_server = HttpServer::start(config.http.clone(), engine.clone()).await?;
+    let http_server =
+        HttpServer::start_with_metrics(config.http.clone(), engine.clone(), metrics_handle).await?;
 
     info!("Server ready!");
     info!("  TCP: telnet localhost {}", config.tcp.port);

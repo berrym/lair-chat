@@ -410,6 +410,21 @@ impl<S: Storage + 'static> ChatEngine<S> {
         self.events.online_users().await
     }
 
+    /// Get count of online users.
+    pub async fn online_user_count(&self) -> usize {
+        self.events.online_user_count().await
+    }
+
+    /// Get total number of registered users.
+    pub async fn total_user_count(&self) -> Result<u64> {
+        UserRepository::count(&*self.storage).await
+    }
+
+    /// Get total number of rooms.
+    pub async fn total_room_count(&self) -> Result<u64> {
+        RoomRepository::count(&*self.storage).await
+    }
+
     /// Check if a user is online.
     pub async fn is_user_online(&self, user_id: UserId) -> bool {
         self.events.is_online(user_id).await
