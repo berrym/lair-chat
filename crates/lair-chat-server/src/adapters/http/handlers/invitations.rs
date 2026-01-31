@@ -9,10 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::adapters::http::middleware::AuthUser;
 use crate::adapters::http::routes::AppState;
-use crate::domain::{
-    EnrichedInvitation, Event, EventPayload, InvitationId, InvitationReceivedEvent, Room, RoomId,
-    RoomMembership, UserId,
-};
+use crate::domain::{EnrichedInvitation, InvitationId, Room, RoomId, RoomMembership, UserId};
 use crate::storage::{
     InvitationRepository, MembershipRepository, RoomRepository, Storage, UserRepository,
 };
@@ -79,26 +76,15 @@ pub async fn create_invitation<S: Storage + Clone + 'static>(
         return Err(Error::PermissionDenied);
     }
 
-    // Create the invitation
+    // Create the invitation (RoomService emits InvitationReceived event)
     let invitation = state
         .engine
         .invite_to_room(auth.session_id, room_id, invitee_id)
         .await?;
 
-    // Enrich the invitation with names
+    // Enrich the invitation with names for the response
     let storage = state.engine.storage_clone();
     let enriched = enrich_invitation(&invitation, storage.as_ref()).await?;
-
-    // Emit invitation received event to the invitee
-    let event = Event::new(EventPayload::InvitationReceived(
-        InvitationReceivedEvent::new(enriched.clone()),
-    ));
-    tracing::info!(
-        "Dispatching InvitationReceived event to invitee_id={}, room={}",
-        enriched.invitee_id,
-        enriched.room_name
-    );
-    state.engine.events().dispatch(event).await;
 
     Ok((
         StatusCode::CREATED,
