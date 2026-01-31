@@ -1153,4 +1153,254 @@ mod tests {
         assert!(json.contains("\"type\":\"member_role_changed\""));
         assert!(json.contains("\"username\":\"testuser\""));
     }
+
+    #[test]
+    fn test_invitation_received_event() {
+        use crate::domain::{EnrichedInvitation, Invitation};
+
+        let room_id = RoomId::new();
+        let inviter = UserId::new();
+        let invitee = UserId::new();
+        let invitation = Invitation::new(room_id, inviter, invitee);
+
+        let enriched = EnrichedInvitation::from_invitation(
+            &invitation,
+            "test-room".to_string(),
+            "alice".to_string(),
+            "bob".to_string(),
+        );
+
+        let event = InvitationReceivedEvent::new(enriched.clone());
+        assert_eq!(event.invitation.room_name, "test-room");
+        assert_eq!(event.invitation.inviter_name, "alice");
+        assert_eq!(event.invitation.invitee_name, "bob");
+    }
+
+    #[test]
+    fn test_invitation_received_event_target() {
+        use crate::domain::{EnrichedInvitation, Invitation};
+
+        let room_id = RoomId::new();
+        let inviter = UserId::new();
+        let invitee = UserId::new();
+        let invitation = Invitation::new(room_id, inviter, invitee);
+
+        let enriched = EnrichedInvitation::from_invitation(
+            &invitation,
+            "room".to_string(),
+            "alice".to_string(),
+            "bob".to_string(),
+        );
+
+        let payload = EventPayload::InvitationReceived(InvitationReceivedEvent::new(enriched));
+        assert_eq!(payload.event_type(), "invitation_received");
+        assert!(matches!(payload.target(), EventTarget::User(id) if id == invitee));
+    }
+
+    #[test]
+    fn test_invitation_received_event_serialization() {
+        use crate::domain::{EnrichedInvitation, Invitation};
+
+        let invitation = Invitation::new(RoomId::new(), UserId::new(), UserId::new());
+        let enriched = EnrichedInvitation::from_invitation(
+            &invitation,
+            "general".to_string(),
+            "alice".to_string(),
+            "bob".to_string(),
+        );
+
+        let payload = EventPayload::InvitationReceived(InvitationReceivedEvent::new(enriched));
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(json.contains("\"type\":\"invitation_received\""));
+        assert!(json.contains("\"room_name\":\"general\""));
+    }
+
+    #[test]
+    fn test_room_updated_event() {
+        use crate::domain::{Room, RoomName, RoomSettings};
+
+        let owner_id = UserId::new();
+        let room = Room::new(
+            RoomName::new("test-room").unwrap(),
+            owner_id,
+            RoomSettings::default(),
+        );
+        let room_id = room.id;
+        let changed_by = UserId::new();
+
+        let event = RoomUpdatedEvent::new(
+            room,
+            changed_by,
+            vec![RoomChange::Name {
+                old: "old-name".to_string(),
+                new: "test-room".to_string(),
+            }],
+        );
+
+        assert_eq!(event.room.id, room_id);
+        assert_eq!(event.changed_by, changed_by);
+        assert_eq!(event.changes.len(), 1);
+    }
+
+    #[test]
+    fn test_room_updated_event_target() {
+        use crate::domain::{Room, RoomName, RoomSettings};
+
+        let owner_id = UserId::new();
+        let room = Room::new(
+            RoomName::new("room").unwrap(),
+            owner_id,
+            RoomSettings::default(),
+        );
+        let room_id = room.id;
+
+        let event = RoomUpdatedEvent::new(room, UserId::new(), vec![]);
+
+        let payload = EventPayload::RoomUpdated(event);
+        assert_eq!(payload.event_type(), "room_updated");
+        assert!(matches!(payload.target(), EventTarget::Room(id) if id == room_id));
+    }
+
+    #[test]
+    fn test_event_target_broadcast() {
+        let payload = EventPayload::ServerNotice(ServerNoticeEvent::info("Hello"));
+        assert!(matches!(payload.target(), EventTarget::Broadcast));
+    }
+
+    #[test]
+    fn test_invitation_cancelled_event_room_deleted() {
+        let event = InvitationCancelledEvent::new(
+            InvitationId::new(),
+            UserId::new(),
+            CancelReason::RoomDeleted,
+        );
+        assert!(matches!(event.reason, CancelReason::RoomDeleted));
+    }
+
+    #[test]
+    fn test_invitation_cancelled_event_target() {
+        let invitee = UserId::new();
+        let event = InvitationCancelledEvent::new(
+            InvitationId::new(),
+            invitee,
+            CancelReason::CancelledByInviter,
+        );
+
+        let payload = EventPayload::InvitationCancelled(event);
+        assert_eq!(payload.event_type(), "invitation_cancelled");
+        assert!(matches!(payload.target(), EventTarget::User(id) if id == invitee));
+    }
+
+    #[test]
+    fn test_session_expiring_event_target() {
+        let session_id = SessionId::new();
+        let event = SessionExpiringEvent::new(session_id, chrono::Utc::now());
+
+        let payload = EventPayload::SessionExpiring(event);
+        assert_eq!(payload.event_type(), "session_expiring");
+        assert!(matches!(payload.target(), EventTarget::Session(id) if id == session_id));
+    }
+
+    #[test]
+    fn test_event_target_serialization() {
+        // Note: Newtype variants (User, Room, UserConnections, Session) cannot be
+        // directly serialized with serde's tag attribute. Only struct and unit
+        // variants work. These variants are used internally for routing.
+
+        // Test DirectMessage target (struct variant works)
+        let target = EventTarget::DirectMessage {
+            user1: UserId::new(),
+            user2: UserId::new(),
+        };
+        let json = serde_json::to_string(&target).unwrap();
+        assert!(json.contains("\"type\":\"direct_message\""));
+
+        // Test Broadcast target (unit variant works)
+        let target = EventTarget::Broadcast;
+        let json = serde_json::to_string(&target).unwrap();
+        assert!(json.contains("\"type\":\"broadcast\""));
+    }
+
+    #[test]
+    fn test_cancel_reason_serialization() {
+        let reason = CancelReason::CancelledByInviter;
+        let json = serde_json::to_string(&reason).unwrap();
+        assert!(json.contains("cancelled_by_inviter"));
+
+        let reason = CancelReason::Expired;
+        let json = serde_json::to_string(&reason).unwrap();
+        assert!(json.contains("expired"));
+
+        let reason = CancelReason::RoomDeleted;
+        let json = serde_json::to_string(&reason).unwrap();
+        assert!(json.contains("room_deleted"));
+    }
+
+    #[test]
+    fn test_notice_severity_serialization() {
+        let severity = NoticeSeverity::Info;
+        let json = serde_json::to_string(&severity).unwrap();
+        assert_eq!(json, "\"info\"");
+
+        let severity = NoticeSeverity::Warning;
+        let json = serde_json::to_string(&severity).unwrap();
+        assert_eq!(json, "\"warning\"");
+
+        let severity = NoticeSeverity::Critical;
+        let json = serde_json::to_string(&severity).unwrap();
+        assert_eq!(json, "\"critical\"");
+    }
+
+    #[test]
+    fn test_user_left_room_event_new() {
+        let room_id = RoomId::new();
+        let user_id = UserId::new();
+        let reason = LeaveReason::RoomDeleted;
+
+        let event = UserLeftRoomEvent::new(room_id, user_id, reason.clone());
+        assert_eq!(event.room_id, room_id);
+        assert_eq!(event.user_id, user_id);
+        assert!(matches!(event.reason, LeaveReason::RoomDeleted));
+    }
+
+    #[test]
+    fn test_user_left_room_event_target() {
+        let room_id = RoomId::new();
+        let event = UserLeftRoomEvent::voluntary(room_id, UserId::new());
+
+        let payload = EventPayload::UserLeftRoom(event);
+        assert_eq!(payload.event_type(), "user_left_room");
+        assert!(matches!(payload.target(), EventTarget::Room(id) if id == room_id));
+    }
+
+    #[test]
+    fn test_user_joined_room_event_target() {
+        use crate::domain::{Email, Role, RoomRole, Username};
+
+        let room_id = RoomId::new();
+        let user_id = UserId::new();
+        let username = Username::new("alice").unwrap();
+        let email = Email::new("alice@example.com").unwrap();
+        let user = User::new(username, email, Role::User);
+        let membership = RoomMembership::new(room_id, user_id, RoomRole::Member);
+
+        let event = UserJoinedRoomEvent::new(room_id, user, membership);
+
+        let payload = EventPayload::UserJoinedRoom(event);
+        assert_eq!(payload.event_type(), "user_joined_room");
+        assert!(matches!(payload.target(), EventTarget::Room(id) if id == room_id));
+    }
+
+    #[test]
+    fn test_event_serialization_round_trip() {
+        let user_id = UserId::new();
+        let payload = EventPayload::UserOnline(UserOnlineEvent::new(user_id, "alice".to_string()));
+        let event = Event::new(payload);
+
+        let json = serde_json::to_string(&event).unwrap();
+        let deserialized: Event = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(event.id, deserialized.id);
+        assert_eq!(event.event_type(), deserialized.event_type());
+    }
 }

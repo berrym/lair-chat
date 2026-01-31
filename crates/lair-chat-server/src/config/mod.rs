@@ -129,3 +129,74 @@ impl Config {
         Self::from_env()
     }
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_config_default() {
+        let config = Config::default();
+
+        // TCP defaults
+        assert_eq!(config.tcp.port, 8080);
+
+        // HTTP defaults
+        assert_eq!(config.http.port, 8082);
+        assert!(config.http.tls.is_none());
+
+        // Database defaults
+        assert!(config.database.url.contains("sqlite"));
+
+        // JWT secret should be non-empty
+        assert!(!config.jwt_secret.is_empty());
+    }
+
+    #[test]
+    fn test_config_default_generates_unique_jwt_secrets() {
+        let config1 = Config::default();
+        let config2 = Config::default();
+
+        // Each default config should have a different random JWT secret
+        assert_ne!(config1.jwt_secret, config2.jwt_secret);
+    }
+
+    #[test]
+    fn test_config_debug() {
+        let config = Config::default();
+        let debug = format!("{:?}", config);
+
+        // Should contain field names
+        assert!(debug.contains("tcp"));
+        assert!(debug.contains("http"));
+        assert!(debug.contains("database"));
+        assert!(debug.contains("jwt_secret"));
+    }
+
+    #[test]
+    fn test_config_clone() {
+        let config = Config::default();
+        let cloned = config.clone();
+
+        assert_eq!(config.tcp.port, cloned.tcp.port);
+        assert_eq!(config.http.port, cloned.http.port);
+        assert_eq!(config.jwt_secret, cloned.jwt_secret);
+    }
+
+    #[test]
+    fn test_generate_default_jwt_secret() {
+        let secret = generate_default_jwt_secret();
+
+        // Should be non-empty
+        assert!(!secret.is_empty());
+
+        // Should be base64 encoded (no invalid chars)
+        assert!(
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &secret).is_ok()
+        );
+    }
+}

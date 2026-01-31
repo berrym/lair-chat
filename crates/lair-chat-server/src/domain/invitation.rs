@@ -561,4 +561,170 @@ mod tests {
         let json = serde_json::to_string(&accepted).unwrap();
         assert_eq!(json, "\"accepted\"");
     }
+
+    #[test]
+    fn test_invitation_status_as_str() {
+        assert_eq!(InvitationStatus::Pending.as_str(), "pending");
+        assert_eq!(InvitationStatus::Accepted.as_str(), "accepted");
+        assert_eq!(InvitationStatus::Declined.as_str(), "declined");
+        assert_eq!(InvitationStatus::Cancelled.as_str(), "cancelled");
+        assert_eq!(InvitationStatus::Expired.as_str(), "expired");
+    }
+
+    #[test]
+    fn test_invitation_status_parse() {
+        assert_eq!(
+            InvitationStatus::parse("pending"),
+            InvitationStatus::Pending
+        );
+        assert_eq!(
+            InvitationStatus::parse("accepted"),
+            InvitationStatus::Accepted
+        );
+        assert_eq!(
+            InvitationStatus::parse("declined"),
+            InvitationStatus::Declined
+        );
+        assert_eq!(
+            InvitationStatus::parse("cancelled"),
+            InvitationStatus::Cancelled
+        );
+        assert_eq!(
+            InvitationStatus::parse("expired"),
+            InvitationStatus::Expired
+        );
+        assert_eq!(
+            InvitationStatus::parse("unknown"),
+            InvitationStatus::Pending
+        );
+    }
+
+    #[test]
+    fn test_enriched_invitation_from_invitation() {
+        let room_id = RoomId::new();
+        let inviter = UserId::new();
+        let invitee = UserId::new();
+        let invitation = Invitation::with_message(room_id, inviter, invitee, "Welcome!");
+
+        let enriched = EnrichedInvitation::from_invitation(
+            &invitation,
+            "test-room".to_string(),
+            "alice".to_string(),
+            "bob".to_string(),
+        );
+
+        assert_eq!(enriched.id, invitation.id);
+        assert_eq!(enriched.room_id, room_id);
+        assert_eq!(enriched.room_name, "test-room");
+        assert_eq!(enriched.inviter_id, inviter);
+        assert_eq!(enriched.inviter_name, "alice");
+        assert_eq!(enriched.invitee_id, invitee);
+        assert_eq!(enriched.invitee_name, "bob");
+        assert_eq!(enriched.status, InvitationStatus::Pending);
+        assert_eq!(enriched.message, Some("Welcome!".to_string()));
+        assert_eq!(enriched.created_at, invitation.created_at);
+        assert_eq!(enriched.expires_at, invitation.expires_at);
+        assert!(enriched.responded_at.is_none());
+    }
+
+    #[test]
+    fn test_enriched_invitation_serialization() {
+        let room_id = RoomId::new();
+        let inviter = UserId::new();
+        let invitee = UserId::new();
+        let invitation = Invitation::new(room_id, inviter, invitee);
+
+        let enriched = EnrichedInvitation::from_invitation(
+            &invitation,
+            "general".to_string(),
+            "alice".to_string(),
+            "bob".to_string(),
+        );
+
+        let json = serde_json::to_string(&enriched).unwrap();
+        assert!(json.contains("\"room_name\":\"general\""));
+        assert!(json.contains("\"inviter_name\":\"alice\""));
+        assert!(json.contains("\"invitee_name\":\"bob\""));
+        assert!(json.contains("\"status\":\"pending\""));
+    }
+
+    #[test]
+    fn test_room_member_creation() {
+        let user_id = UserId::new();
+        let member = RoomMember {
+            user_id,
+            username: "alice".to_string(),
+            role: RoomRole::Owner,
+            joined_at: chrono::Utc::now(),
+            is_online: true,
+        };
+
+        assert_eq!(member.user_id, user_id);
+        assert_eq!(member.username, "alice");
+        assert_eq!(member.role, RoomRole::Owner);
+        assert!(member.is_online);
+    }
+
+    #[test]
+    fn test_room_member_serialization() {
+        let member = RoomMember {
+            user_id: UserId::new(),
+            username: "bob".to_string(),
+            role: RoomRole::Moderator,
+            joined_at: chrono::Utc::now(),
+            is_online: false,
+        };
+
+        let json = serde_json::to_string(&member).unwrap();
+        assert!(json.contains("\"username\":\"bob\""));
+        assert!(json.contains("\"role\":\"moderator\""));
+        assert!(json.contains("\"is_online\":false"));
+    }
+
+    #[test]
+    fn test_room_member_deserialization() {
+        let json = r#"{
+            "user_id": "00000000-0000-0000-0000-000000000001",
+            "username": "charlie",
+            "role": "member",
+            "joined_at": "2025-01-01T00:00:00Z",
+            "is_online": true
+        }"#;
+
+        let member: RoomMember = serde_json::from_str(json).unwrap();
+        assert_eq!(member.username, "charlie");
+        assert_eq!(member.role, RoomRole::Member);
+        assert!(member.is_online);
+    }
+
+    #[test]
+    fn test_invitation_error_display() {
+        let not_pending = InvitationError::NotPending(InvitationStatus::Accepted);
+        assert!(format!("{}", not_pending).contains("accepted"));
+
+        let expired = InvitationError::Expired;
+        assert!(format!("{}", expired).contains("expired"));
+    }
+
+    #[test]
+    fn test_invitation_id_display() {
+        let id = InvitationId::new();
+        let display = format!("{}", id);
+        assert!(!display.is_empty());
+        // Should be a valid UUID format
+        assert!(InvitationId::parse(&display).is_ok());
+    }
+
+    #[test]
+    fn test_invitation_id_default() {
+        let id = InvitationId::default();
+        assert!(!id.as_uuid().is_nil());
+    }
+
+    #[test]
+    fn test_invitation_id_from_uuid() {
+        let uuid = uuid::Uuid::new_v4();
+        let id = InvitationId::from_uuid(uuid);
+        assert_eq!(id.as_uuid(), uuid);
+    }
 }

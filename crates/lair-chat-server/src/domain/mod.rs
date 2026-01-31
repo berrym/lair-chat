@@ -111,3 +111,132 @@ impl Default for Pagination {
         }
     }
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ========================================================================
+    // ValidationError Tests
+    // ========================================================================
+
+    #[test]
+    fn test_validation_error_empty_display() {
+        let err = ValidationError::Empty;
+        assert_eq!(err.to_string(), "value cannot be empty");
+    }
+
+    #[test]
+    fn test_validation_error_too_short_display() {
+        let err = ValidationError::TooShort { min: 5, actual: 3 };
+        assert_eq!(err.to_string(), "value too short: minimum 5, got 3");
+    }
+
+    #[test]
+    fn test_validation_error_too_long_display() {
+        let err = ValidationError::TooLong {
+            max: 10,
+            actual: 15,
+        };
+        assert_eq!(err.to_string(), "value too long: maximum 10, got 15");
+    }
+
+    #[test]
+    fn test_validation_error_invalid_format_display() {
+        let err = ValidationError::InvalidFormat {
+            reason: "bad chars".to_string(),
+        };
+        assert_eq!(err.to_string(), "invalid format: bad chars");
+    }
+
+    #[test]
+    fn test_validation_error_custom_display() {
+        let err = ValidationError::Custom {
+            message: "custom error".to_string(),
+        };
+        assert_eq!(err.to_string(), "custom error");
+    }
+
+    #[test]
+    fn test_validation_error_equality() {
+        let err1 = ValidationError::Empty;
+        let err2 = ValidationError::Empty;
+        assert_eq!(err1, err2);
+
+        let err3 = ValidationError::TooShort { min: 5, actual: 3 };
+        assert_ne!(err1, err3);
+    }
+
+    #[test]
+    fn test_validation_error_clone() {
+        let err = ValidationError::InvalidFormat {
+            reason: "test".to_string(),
+        };
+        let cloned = err.clone();
+        assert_eq!(err, cloned);
+    }
+
+    #[test]
+    fn test_validation_error_serialization() {
+        let err = ValidationError::TooShort { min: 5, actual: 3 };
+        let json = serde_json::to_string(&err).unwrap();
+        assert!(json.contains("\"TooShort\""));
+
+        let deserialized: ValidationError = serde_json::from_str(&json).unwrap();
+        assert_eq!(err, deserialized);
+    }
+
+    // ========================================================================
+    // Pagination Tests
+    // ========================================================================
+
+    #[test]
+    fn test_pagination_default() {
+        let pagination = Pagination::default();
+        assert_eq!(pagination.offset, 0);
+        assert_eq!(pagination.limit, Pagination::DEFAULT_LIMIT);
+    }
+
+    #[test]
+    fn test_pagination_new() {
+        let pagination = Pagination::new(10, 25);
+        assert_eq!(pagination.offset, 10);
+        assert_eq!(pagination.limit, 25);
+    }
+
+    #[test]
+    fn test_pagination_max_limit_enforced() {
+        let pagination = Pagination::new(0, 200);
+        assert_eq!(pagination.limit, Pagination::MAX_LIMIT);
+    }
+
+    #[test]
+    fn test_pagination_constants() {
+        assert_eq!(Pagination::MAX_LIMIT, 100);
+        assert_eq!(Pagination::DEFAULT_LIMIT, 50);
+    }
+
+    #[test]
+    fn test_pagination_serialization() {
+        let pagination = Pagination::new(5, 20);
+        let json = serde_json::to_string(&pagination).unwrap();
+        assert!(json.contains("\"offset\":5"));
+        assert!(json.contains("\"limit\":20"));
+
+        let deserialized: Pagination = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.offset, 5);
+        assert_eq!(deserialized.limit, 20);
+    }
+
+    #[test]
+    fn test_pagination_clone() {
+        let pagination = Pagination::new(10, 50);
+        let cloned = pagination;
+        assert_eq!(pagination.offset, cloned.offset);
+        assert_eq!(pagination.limit, cloned.limit);
+    }
+}

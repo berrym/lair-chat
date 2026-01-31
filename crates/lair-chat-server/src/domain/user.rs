@@ -525,4 +525,239 @@ mod tests {
         assert!(user.is_moderator());
         assert!(user.has_permission(Role::Admin));
     }
+
+    #[test]
+    fn test_user_id_from_uuid() {
+        let uuid = Uuid::new_v4();
+        let id = UserId::from_uuid(uuid);
+        assert_eq!(id.as_uuid(), uuid);
+    }
+
+    #[test]
+    fn test_user_id_default() {
+        let id = UserId::default();
+        assert!(!id.as_uuid().is_nil());
+    }
+
+    #[test]
+    fn test_user_id_display() {
+        let id = UserId::new();
+        let display = format!("{}", id);
+        assert!(!display.is_empty());
+        assert!(UserId::parse(&display).is_ok());
+    }
+
+    #[test]
+    fn test_user_id_from_trait() {
+        let uuid = Uuid::new_v4();
+        let id: UserId = uuid.into();
+        assert_eq!(id.as_uuid(), uuid);
+    }
+
+    #[test]
+    fn test_username_display() {
+        let username = Username::new("testuser").unwrap();
+        assert_eq!(format!("{}", username), "testuser");
+    }
+
+    #[test]
+    fn test_username_as_str() {
+        let username = Username::new("testuser").unwrap();
+        assert_eq!(username.as_str(), "testuser");
+    }
+
+    #[test]
+    fn test_username_as_ref() {
+        let username = Username::new("testuser").unwrap();
+        let s: &str = username.as_ref();
+        assert_eq!(s, "testuser");
+    }
+
+    #[test]
+    fn test_username_new_unchecked() {
+        let username = Username::new_unchecked("unchecked");
+        assert_eq!(username.as_str(), "unchecked");
+    }
+
+    #[test]
+    fn test_username_try_from() {
+        let valid: Result<Username, _> = "validuser".to_string().try_into();
+        assert!(valid.is_ok());
+
+        let invalid: Result<Username, _> = "ab".to_string().try_into();
+        assert!(invalid.is_err());
+    }
+
+    #[test]
+    fn test_username_into_string() {
+        let username = Username::new("testuser").unwrap();
+        let s: String = username.into();
+        assert_eq!(s, "testuser");
+    }
+
+    #[test]
+    fn test_email_display() {
+        let email = Email::new("user@example.com").unwrap();
+        assert_eq!(format!("{}", email), "user@example.com");
+    }
+
+    #[test]
+    fn test_email_as_str() {
+        let email = Email::new("user@example.com").unwrap();
+        assert_eq!(email.as_str(), "user@example.com");
+    }
+
+    #[test]
+    fn test_email_local_part() {
+        let email = Email::new("user@example.com").unwrap();
+        assert_eq!(email.local_part(), "user");
+    }
+
+    #[test]
+    fn test_email_domain() {
+        let email = Email::new("user@example.com").unwrap();
+        assert_eq!(email.domain(), "example.com");
+    }
+
+    #[test]
+    fn test_email_as_ref() {
+        let email = Email::new("user@example.com").unwrap();
+        let s: &str = email.as_ref();
+        assert_eq!(s, "user@example.com");
+    }
+
+    #[test]
+    fn test_email_new_unchecked() {
+        let email = Email::new_unchecked("unchecked@test.com");
+        assert_eq!(email.as_str(), "unchecked@test.com");
+    }
+
+    #[test]
+    fn test_email_try_from() {
+        let valid: Result<Email, _> = "valid@test.com".to_string().try_into();
+        assert!(valid.is_ok());
+
+        let invalid: Result<Email, _> = "invalid".to_string().try_into();
+        assert!(invalid.is_err());
+    }
+
+    #[test]
+    fn test_email_into_string() {
+        let email = Email::new("user@example.com").unwrap();
+        let s: String = email.into();
+        assert_eq!(s, "user@example.com");
+    }
+
+    #[test]
+    fn test_email_too_long() {
+        // Email max length is 254 characters
+        let long_local = "a".repeat(250);
+        let email = format!("{}@example.com", long_local);
+        assert!(Email::new(email).is_err());
+    }
+
+    #[test]
+    fn test_role_is_admin() {
+        assert!(Role::Admin.is_admin());
+        assert!(!Role::Moderator.is_admin());
+        assert!(!Role::User.is_admin());
+    }
+
+    #[test]
+    fn test_role_is_moderator() {
+        assert!(Role::Admin.is_moderator());
+        assert!(Role::Moderator.is_moderator());
+        assert!(!Role::User.is_moderator());
+    }
+
+    #[test]
+    fn test_role_as_str() {
+        assert_eq!(Role::Admin.as_str(), "admin");
+        assert_eq!(Role::Moderator.as_str(), "moderator");
+        assert_eq!(Role::User.as_str(), "user");
+    }
+
+    #[test]
+    fn test_role_parse() {
+        assert_eq!(Role::parse("admin"), Role::Admin);
+        assert_eq!(Role::parse("ADMIN"), Role::Admin);
+        assert_eq!(Role::parse("moderator"), Role::Moderator);
+        assert_eq!(Role::parse("user"), Role::User);
+        assert_eq!(Role::parse("unknown"), Role::User);
+    }
+
+    #[test]
+    fn test_role_display() {
+        assert_eq!(format!("{}", Role::Admin), "admin");
+        assert_eq!(format!("{}", Role::Moderator), "moderator");
+        assert_eq!(format!("{}", Role::User), "user");
+    }
+
+    #[test]
+    fn test_role_default() {
+        let role = Role::default();
+        assert_eq!(role, Role::User);
+    }
+
+    #[test]
+    fn test_role_serialization() {
+        let admin = Role::Admin;
+        let json = serde_json::to_string(&admin).unwrap();
+        assert_eq!(json, "\"admin\"");
+
+        let moderator = Role::Moderator;
+        let json = serde_json::to_string(&moderator).unwrap();
+        assert_eq!(json, "\"moderator\"");
+
+        let user = Role::User;
+        let json = serde_json::to_string(&user).unwrap();
+        assert_eq!(json, "\"user\"");
+    }
+
+    #[test]
+    fn test_user_serialization() {
+        let username = Username::new("testuser").unwrap();
+        let email = Email::new("test@example.com").unwrap();
+        let user = User::new(username, email, Role::User);
+
+        let json = serde_json::to_string(&user).unwrap();
+        assert!(json.contains("\"username\":\"testuser\""));
+        assert!(json.contains("\"email\":\"test@example.com\""));
+        assert!(json.contains("\"role\":\"user\""));
+
+        let deserialized: User = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.id, user.id);
+    }
+
+    #[test]
+    fn test_username_serialization() {
+        let username = Username::new("testuser").unwrap();
+        let json = serde_json::to_string(&username).unwrap();
+        assert_eq!(json, "\"testuser\"");
+
+        let deserialized: Username = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.as_str(), "testuser");
+    }
+
+    #[test]
+    fn test_email_serialization() {
+        let email = Email::new("user@example.com").unwrap();
+        let json = serde_json::to_string(&email).unwrap();
+        assert_eq!(json, "\"user@example.com\"");
+
+        let deserialized: Email = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.as_str(), "user@example.com");
+    }
+
+    #[test]
+    fn test_user_moderator() {
+        let username = Username::new("moduser").unwrap();
+        let email = Email::new("mod@example.com").unwrap();
+        let user = User::new(username, email, Role::Moderator);
+
+        assert!(!user.is_admin());
+        assert!(user.is_moderator());
+        assert!(user.has_permission(Role::Moderator));
+        assert!(!user.has_permission(Role::Admin));
+    }
 }

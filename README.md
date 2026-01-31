@@ -31,7 +31,7 @@ A secure, high-performance chat system built with Rust, featuring real-time mess
 - **Async throughout** - Built on Tokio for high performance
 - **SQLite storage** - With migration support and connection pooling
 - **Cross-platform** - Linux, macOS, Windows (see [Platform Support](docs/deployment/PRODUCTION.md#platform-support))
-- **Comprehensive tests** - 570+ unit and integration tests with CI/CD
+- **Comprehensive tests** - 800+ unit and integration tests with CI/CD
 
 ## Quick Start
 
@@ -263,7 +263,7 @@ See [docs/protocols/TCP.md](docs/protocols/TCP.md) for the complete wire protoco
 ## Testing
 
 ```bash
-# Run all tests (570+ tests)
+# Run all tests (800+ tests)
 cargo test --workspace
 
 # Run server tests only

@@ -210,4 +210,64 @@ mod tests {
         let decrypted = cipher.decrypt(&nonce, &ciphertext).unwrap();
         assert_eq!(decrypted, plaintext);
     }
+
+    #[test]
+    fn test_cipher_debug() {
+        let key = test_key();
+        let cipher = Cipher::new(&key);
+
+        // Debug should not expose key material
+        let debug = format!("{:?}", cipher);
+        assert!(debug.contains("Cipher"));
+        assert!(!debug.contains(&format!("{:02x}", key[0])));
+    }
+
+    #[test]
+    fn test_crypto_error_display() {
+        assert_eq!(
+            CryptoError::EncryptionFailed.to_string(),
+            "Encryption failed"
+        );
+        assert_eq!(
+            CryptoError::DecryptionFailed.to_string(),
+            "Decryption failed: authentication tag mismatch"
+        );
+        assert_eq!(
+            CryptoError::InvalidKeyLength(16).to_string(),
+            "Invalid key length: expected 32 bytes, got 16"
+        );
+        assert_eq!(
+            CryptoError::InvalidNonceLength(8).to_string(),
+            format!("Invalid nonce length: expected {} bytes, got 8", NONCE_SIZE)
+        );
+        assert_eq!(
+            CryptoError::CiphertextTooShort(16).to_string(),
+            "Ciphertext too short: minimum 16 bytes required"
+        );
+    }
+
+    #[test]
+    fn test_wrong_nonce_fails() {
+        let key = test_key();
+        let cipher = Cipher::new(&key);
+
+        let plaintext = b"Hello, World!";
+        let (mut nonce, ciphertext) = cipher.encrypt(plaintext).unwrap();
+
+        // Change nonce
+        nonce[0] ^= 0xFF;
+
+        let result = cipher.decrypt(&nonce, &ciphertext);
+        assert!(matches!(result, Err(CryptoError::DecryptionFailed)));
+    }
+
+    #[test]
+    fn test_nonce_is_correct_size() {
+        assert_eq!(NONCE_SIZE, 12);
+    }
+
+    #[test]
+    fn test_tag_is_correct_size() {
+        assert_eq!(TAG_SIZE, 16);
+    }
 }

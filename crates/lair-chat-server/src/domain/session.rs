@@ -356,4 +356,132 @@ mod tests {
         let json = serde_json::to_string(&ws).unwrap();
         assert_eq!(json, "\"websocket\"");
     }
+
+    #[test]
+    fn test_session_id_from_uuid() {
+        let uuid = Uuid::new_v4();
+        let id = SessionId::from_uuid(uuid);
+        assert_eq!(id.as_uuid(), uuid);
+    }
+
+    #[test]
+    fn test_session_id_default() {
+        let id = SessionId::default();
+        assert!(!id.as_uuid().is_nil());
+    }
+
+    #[test]
+    fn test_session_id_display() {
+        let id = SessionId::new();
+        let display = format!("{}", id);
+        assert!(!display.is_empty());
+        assert!(SessionId::parse(&display).is_ok());
+    }
+
+    #[test]
+    fn test_session_id_from_trait() {
+        let uuid = Uuid::new_v4();
+        let id: SessionId = uuid.into();
+        assert_eq!(id.as_uuid(), uuid);
+    }
+
+    #[test]
+    fn test_protocol_as_str() {
+        assert_eq!(Protocol::Tcp.as_str(), "tcp");
+        assert_eq!(Protocol::Http.as_str(), "http");
+        assert_eq!(Protocol::WebSocket.as_str(), "websocket");
+    }
+
+    #[test]
+    fn test_protocol_parse() {
+        assert_eq!(Protocol::parse("tcp"), Protocol::Tcp);
+        assert_eq!(Protocol::parse("TCP"), Protocol::Tcp);
+        assert_eq!(Protocol::parse("websocket"), Protocol::WebSocket);
+        assert_eq!(Protocol::parse("ws"), Protocol::WebSocket);
+        assert_eq!(Protocol::parse("http"), Protocol::Http);
+        assert_eq!(Protocol::parse("unknown"), Protocol::Http); // defaults to Http
+    }
+
+    #[test]
+    fn test_protocol_display() {
+        assert_eq!(format!("{}", Protocol::Tcp), "tcp");
+        assert_eq!(format!("{}", Protocol::Http), "http");
+        assert_eq!(format!("{}", Protocol::WebSocket), "websocket");
+    }
+
+    #[test]
+    fn test_session_extend() {
+        let user_id = UserId::new();
+        let mut session = Session::new(user_id, Protocol::Http);
+        let original_expires = session.expires_at;
+
+        session.extend(Duration::hours(1));
+
+        assert!(session.expires_at > original_expires);
+    }
+
+    #[test]
+    fn test_session_supports_push() {
+        let user_id = UserId::new();
+
+        let tcp_session = Session::new(user_id, Protocol::Tcp);
+        assert!(tcp_session.supports_push());
+
+        let ws_session = Session::new(user_id, Protocol::WebSocket);
+        assert!(ws_session.supports_push());
+
+        let http_session = Session::new(user_id, Protocol::Http);
+        assert!(!http_session.supports_push());
+    }
+
+    #[test]
+    fn test_session_is_stateful() {
+        let user_id = UserId::new();
+
+        let tcp_session = Session::new(user_id, Protocol::Tcp);
+        assert!(tcp_session.is_stateful());
+
+        let ws_session = Session::new(user_id, Protocol::WebSocket);
+        assert!(ws_session.is_stateful());
+
+        let http_session = Session::new(user_id, Protocol::Http);
+        assert!(!http_session.is_stateful());
+    }
+
+    #[test]
+    fn test_session_serialization() {
+        let user_id = UserId::new();
+        let session = Session::new(user_id, Protocol::Tcp);
+
+        let json = serde_json::to_string(&session).unwrap();
+        assert!(json.contains("\"protocol\":\"tcp\""));
+
+        let deserialized: Session = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.id, session.id);
+        assert_eq!(deserialized.user_id, user_id);
+        assert_eq!(deserialized.protocol, Protocol::Tcp);
+    }
+
+    #[test]
+    fn test_session_with_metadata() {
+        let user_id = UserId::new();
+        let mut session = Session::new(user_id, Protocol::Http);
+        session.ip_address = Some("192.168.1.1".to_string());
+        session.user_agent = Some("TestClient/1.0".to_string());
+
+        assert_eq!(session.ip_address, Some("192.168.1.1".to_string()));
+        assert_eq!(session.user_agent, Some("TestClient/1.0".to_string()));
+    }
+
+    #[test]
+    fn test_protocol_deserialization() {
+        let tcp: Protocol = serde_json::from_str("\"tcp\"").unwrap();
+        assert_eq!(tcp, Protocol::Tcp);
+
+        let http: Protocol = serde_json::from_str("\"http\"").unwrap();
+        assert_eq!(http, Protocol::Http);
+
+        let ws: Protocol = serde_json::from_str("\"websocket\"").unwrap();
+        assert_eq!(ws, Protocol::WebSocket);
+    }
 }

@@ -116,4 +116,45 @@ mod tests {
             Err(KeyExchangeError::Base64DecodeError(_))
         ));
     }
+
+    #[test]
+    fn test_public_key_bytes() {
+        let kp = KeyPair::generate();
+        let bytes = kp.public_key_bytes();
+        assert_eq!(bytes.len(), 32);
+    }
+
+    #[test]
+    fn test_different_keypairs_produce_different_keys() {
+        let kp1 = KeyPair::generate();
+        let kp2 = KeyPair::generate();
+
+        assert_ne!(kp1.public_key_bytes(), kp2.public_key_bytes());
+    }
+
+    #[test]
+    fn test_error_display() {
+        assert_eq!(
+            KeyExchangeError::InvalidKeyLength(16).to_string(),
+            "Invalid public key length: expected 32 bytes, got 16"
+        );
+    }
+
+    #[test]
+    fn test_empty_base64() {
+        let result = parse_public_key("");
+        // Empty string decodes to empty bytes, which is wrong length
+        assert!(matches!(result, Err(KeyExchangeError::InvalidKeyLength(0))));
+    }
+
+    #[test]
+    fn test_key_exchange_produces_32_byte_secret() {
+        let alice = KeyPair::generate();
+        let bob = KeyPair::generate();
+
+        let bob_public = parse_public_key(&bob.public_key_base64()).unwrap();
+        let shared = alice.diffie_hellman(bob_public);
+
+        assert_eq!(shared.len(), 32);
+    }
 }

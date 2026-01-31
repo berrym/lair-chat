@@ -404,4 +404,146 @@ mod tests {
         let json = serde_json::to_string(&dm_target).unwrap();
         assert!(json.contains("\"type\":\"dm\""));
     }
+
+    #[test]
+    fn test_message_id_from_uuid() {
+        let uuid = Uuid::new_v4();
+        let id = MessageId::from_uuid(uuid);
+        assert_eq!(id.as_uuid(), uuid);
+    }
+
+    #[test]
+    fn test_message_id_default() {
+        let id = MessageId::default();
+        assert!(!id.as_uuid().is_nil());
+    }
+
+    #[test]
+    fn test_message_id_display() {
+        let id = MessageId::new();
+        let display = format!("{}", id);
+        assert!(!display.is_empty());
+        assert!(MessageId::parse(&display).is_ok());
+    }
+
+    #[test]
+    fn test_message_id_from_trait() {
+        let uuid = Uuid::new_v4();
+        let id: MessageId = uuid.into();
+        assert_eq!(id.as_uuid(), uuid);
+    }
+
+    #[test]
+    fn test_message_content_display() {
+        let content = MessageContent::new("Hello World").unwrap();
+        assert_eq!(format!("{}", content), "Hello World");
+    }
+
+    #[test]
+    fn test_message_content_as_str() {
+        let content = MessageContent::new("Test content").unwrap();
+        assert_eq!(content.as_str(), "Test content");
+    }
+
+    #[test]
+    fn test_message_content_len() {
+        let content = MessageContent::new("Hello").unwrap();
+        assert_eq!(content.len(), 5);
+    }
+
+    #[test]
+    fn test_message_content_is_empty() {
+        let content = MessageContent::new("Not empty").unwrap();
+        assert!(!content.is_empty());
+    }
+
+    #[test]
+    fn test_message_content_new_unchecked() {
+        let content = MessageContent::new_unchecked("Unchecked");
+        assert_eq!(content.as_str(), "Unchecked");
+    }
+
+    #[test]
+    fn test_message_content_as_ref() {
+        let content = MessageContent::new("Test").unwrap();
+        let s: &str = content.as_ref();
+        assert_eq!(s, "Test");
+    }
+
+    #[test]
+    fn test_message_content_try_from() {
+        let content: Result<MessageContent, _> = "Valid content".to_string().try_into();
+        assert!(content.is_ok());
+
+        let empty: Result<MessageContent, _> = "".to_string().try_into();
+        assert!(empty.is_err());
+    }
+
+    #[test]
+    fn test_message_content_into_string() {
+        let content = MessageContent::new("Test").unwrap();
+        let s: String = content.into();
+        assert_eq!(s, "Test");
+    }
+
+    #[test]
+    fn test_message_target_display() {
+        let room_id = RoomId::new();
+        let room_target = MessageTarget::room(room_id);
+        let display = format!("{}", room_target);
+        assert!(display.starts_with("room:"));
+
+        let user_id = UserId::new();
+        let dm_target = MessageTarget::dm(user_id);
+        let display = format!("{}", dm_target);
+        assert!(display.starts_with("dm:"));
+    }
+
+    #[test]
+    fn test_message_new() {
+        let author = UserId::new();
+        let room_id = RoomId::new();
+        let target = MessageTarget::room(room_id);
+        let content = MessageContent::new("Hello").unwrap();
+        let message = Message::new(author, target, content);
+
+        assert_eq!(message.author, author);
+        assert!(!message.is_edited);
+    }
+
+    #[test]
+    fn test_message_serialization() {
+        let author = UserId::new();
+        let room_id = RoomId::new();
+        let content = MessageContent::new("Test message").unwrap();
+        let message = Message::to_room(author, room_id, content);
+
+        let json = serde_json::to_string(&message).unwrap();
+        assert!(json.contains("\"edited\":false"));
+
+        let deserialized: Message = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.id, message.id);
+        assert_eq!(deserialized.content.as_str(), "Test message");
+    }
+
+    #[test]
+    fn test_message_content_serialization() {
+        let content = MessageContent::new("Hello").unwrap();
+        let json = serde_json::to_string(&content).unwrap();
+        assert_eq!(json, "\"Hello\"");
+
+        let deserialized: MessageContent = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.as_str(), "Hello");
+    }
+
+    #[test]
+    fn test_message_target_deserialization() {
+        let room_json = r#"{"type":"room","room_id":"00000000-0000-0000-0000-000000000001"}"#;
+        let room_target: MessageTarget = serde_json::from_str(room_json).unwrap();
+        assert!(room_target.is_room());
+
+        let dm_json = r#"{"type":"dm","recipient":"00000000-0000-0000-0000-000000000002"}"#;
+        let dm_target: MessageTarget = serde_json::from_str(dm_json).unwrap();
+        assert!(dm_target.is_dm());
+    }
 }
