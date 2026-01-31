@@ -13,6 +13,7 @@ use crate::app::Action;
 /// Which field is currently focused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FocusedField {
+    Server,
     Username,
     Email,
     Password,
@@ -21,6 +22,8 @@ pub enum FocusedField {
 
 /// Login screen state.
 pub struct LoginScreen {
+    /// Server address input (TCP).
+    pub server: String,
     /// Username input.
     pub username: String,
     /// Password input.
@@ -40,15 +43,27 @@ impl Default for LoginScreen {
 }
 
 impl LoginScreen {
-    /// Create a new login screen.
+    /// Create a new login screen with default server address.
     pub fn new() -> Self {
+        Self::with_server("127.0.0.1:8080".to_string())
+    }
+
+    /// Create a new login screen with a specific server address.
+    pub fn with_server(server: String) -> Self {
         Self {
+            server,
             username: String::new(),
             password: String::new(),
             email: String::new(),
             registering: false,
-            focused: FocusedField::Username,
+            focused: FocusedField::Server,
         }
+    }
+
+    /// Get the current server address.
+    #[allow(dead_code)]
+    pub fn server_addr(&self) -> &str {
+        &self.server
     }
 
     /// Handle a key event.
@@ -92,6 +107,7 @@ impl LoginScreen {
 
         // Handle input based on focused field
         match self.focused {
+            FocusedField::Server => self.handle_text_input(key, &mut self.server.clone()),
             FocusedField::Username => self.handle_text_input(key, &mut self.username.clone()),
             FocusedField::Email => self.handle_text_input(key, &mut self.email.clone()),
             FocusedField::Password => self.handle_text_input(key, &mut self.password.clone()),
@@ -104,6 +120,7 @@ impl LoginScreen {
             KeyCode::Char(c) => {
                 // Type character into the focused field
                 match self.focused {
+                    FocusedField::Server => self.server.push(c),
                     FocusedField::Username => self.username.push(c),
                     FocusedField::Email => self.email.push(c),
                     FocusedField::Password => self.password.push(c),
@@ -113,6 +130,9 @@ impl LoginScreen {
             }
             KeyCode::Backspace => {
                 match self.focused {
+                    FocusedField::Server => {
+                        self.server.pop();
+                    }
                     FocusedField::Username => {
                         self.username.pop();
                     }
@@ -152,6 +172,7 @@ impl LoginScreen {
 
     fn focus_next(&mut self) {
         self.focused = match self.focused {
+            FocusedField::Server => FocusedField::Username,
             FocusedField::Username => {
                 if self.registering {
                     FocusedField::Email
@@ -161,13 +182,14 @@ impl LoginScreen {
             }
             FocusedField::Email => FocusedField::Password,
             FocusedField::Password => FocusedField::Submit,
-            FocusedField::Submit => FocusedField::Username,
+            FocusedField::Submit => FocusedField::Server,
         };
     }
 
     fn focus_prev(&mut self) {
         self.focused = match self.focused {
-            FocusedField::Username => FocusedField::Submit,
+            FocusedField::Server => FocusedField::Submit,
+            FocusedField::Username => FocusedField::Server,
             FocusedField::Email => FocusedField::Username,
             FocusedField::Password => {
                 if self.registering {
@@ -181,7 +203,7 @@ impl LoginScreen {
     }
 
     fn can_submit(&self) -> bool {
-        if self.username.is_empty() || self.password.is_empty() {
+        if self.server.is_empty() || self.username.is_empty() || self.password.is_empty() {
             return false;
         }
         if self.registering && self.email.is_empty() {
@@ -197,12 +219,14 @@ impl LoginScreen {
 
         if self.registering {
             Some(Action::Register {
+                server: self.server.clone(),
                 username: self.username.clone(),
                 email: self.email.clone(),
                 password: self.password.clone(),
             })
         } else {
             Some(Action::Login {
+                server: self.server.clone(),
                 username: self.username.clone(),
                 password: self.password.clone(),
             })
@@ -211,8 +235,9 @@ impl LoginScreen {
 
     /// Render the login screen.
     pub fn render(&self, frame: &mut Frame, area: Rect, error: Option<&str>) {
-        // Center the login box
-        let popup_area = centered_rect(60, 60, area);
+        // Center the login box - registration needs more height for the extra email field
+        let height_percent = if self.registering { 70 } else { 60 };
+        let popup_area = centered_rect(60, height_percent, area);
 
         // Clear background
         frame.render_widget(Clear, popup_area);
@@ -234,6 +259,7 @@ impl LoginScreen {
         // Layout for fields
         let constraints = if self.registering {
             vec![
+                Constraint::Length(3), // Server
                 Constraint::Length(3), // Username
                 Constraint::Length(3), // Email
                 Constraint::Length(3), // Password
@@ -247,6 +273,7 @@ impl LoginScreen {
             ]
         } else {
             vec![
+                Constraint::Length(3), // Server
                 Constraint::Length(3), // Username
                 Constraint::Length(3), // Password
                 Constraint::Length(1), // Spacer
@@ -266,6 +293,41 @@ impl LoginScreen {
             .split(inner);
 
         let mut chunk_idx = 0;
+
+        // Server field
+        let server_focused = self.focused == FocusedField::Server;
+        let server_style = if server_focused {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        let server_block = Block::default()
+            .title(if server_focused {
+                " Server (typing) "
+            } else {
+                " Server "
+            })
+            .borders(Borders::ALL)
+            .style(server_style);
+        let server_text = if server_focused {
+            format!("{}|", self.server)
+        } else if self.server.is_empty() {
+            "e.g., 127.0.0.1:8080".to_string()
+        } else {
+            self.server.clone()
+        };
+        let server_text_style = if self.server.is_empty() && !server_focused {
+            Style::default().fg(Color::DarkGray)
+        } else {
+            Style::default()
+        };
+        let server_para = Paragraph::new(server_text)
+            .style(server_text_style)
+            .block(server_block);
+        frame.render_widget(server_para, chunks[chunk_idx]);
+        chunk_idx += 1;
 
         // Username field
         let username_focused = self.focused == FocusedField::Username;

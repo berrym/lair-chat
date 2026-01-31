@@ -156,10 +156,15 @@ impl ChatMessage {
 pub enum Action {
     /// Quit the application.
     Quit,
-    /// Login with credentials.
-    Login { username: String, password: String },
-    /// Register new account.
+    /// Login with credentials (includes server address for connection).
+    Login {
+        server: String,
+        username: String,
+        password: String,
+    },
+    /// Register new account (includes server address for connection).
     Register {
+        server: String,
         username: String,
         email: String,
         password: String,
@@ -477,16 +482,22 @@ impl App {
                 self.disconnect().await;
                 false
             }
-            Action::Login { username, password } => {
-                self.handle_login(username, password).await;
+            Action::Login {
+                server,
+                username,
+                password,
+            } => {
+                self.handle_login(server, username, password).await;
                 false
             }
             Action::Register {
+                server,
                 username,
                 email,
                 password,
             } => {
-                self.handle_register(username, email, password).await;
+                self.handle_register(server, username, email, password)
+                    .await;
                 false
             }
             Action::SendMessage(content) => {
@@ -693,11 +704,25 @@ impl App {
     }
 
     /// Handle login via HTTP, then authenticate TCP connection.
-    async fn handle_login(&mut self, username: String, password: String) {
-        self.status = Some("Logging in via HTTP...".to_string());
+    async fn handle_login(&mut self, server: String, username: String, password: String) {
         self.clear_notifications();
 
-        // Step 1: HTTP login to get JWT token
+        // Step 1: Parse and update server configuration
+        if let Err(e) = self.update_server_config(&server) {
+            self.set_error(format!("Invalid server address: {}", e));
+            return;
+        }
+
+        // Step 2: Connect to the server (TCP)
+        self.status = Some("Connecting to server...".to_string());
+        if let Err(e) = self.connect().await {
+            self.set_error(format!("Connection failed: {}", e));
+            self.status = None;
+            return;
+        }
+
+        // Step 3: HTTP login to get JWT token
+        self.status = Some("Logging in...".to_string());
         match self.http_client.login(&username, &password).await {
             Ok((user, session, token)) => {
                 info!("HTTP login successful");
@@ -708,7 +733,7 @@ impl App {
                 self.session = Some(session);
                 self.token = Some(token.clone());
 
-                // Step 2: Authenticate TCP connection with the token
+                // Step 4: Authenticate TCP connection with the token
                 self.authenticate_tcp_connection(token).await;
             }
             Err(e) => {
@@ -719,11 +744,31 @@ impl App {
     }
 
     /// Handle registration via HTTP, then authenticate TCP connection.
-    async fn handle_register(&mut self, username: String, email: String, password: String) {
-        self.status = Some("Registering via HTTP...".to_string());
+    async fn handle_register(
+        &mut self,
+        server: String,
+        username: String,
+        email: String,
+        password: String,
+    ) {
         self.clear_notifications();
 
-        // Step 1: HTTP register to get JWT token
+        // Step 1: Parse and update server configuration
+        if let Err(e) = self.update_server_config(&server) {
+            self.set_error(format!("Invalid server address: {}", e));
+            return;
+        }
+
+        // Step 2: Connect to the server (TCP)
+        self.status = Some("Connecting to server...".to_string());
+        if let Err(e) = self.connect().await {
+            self.set_error(format!("Connection failed: {}", e));
+            self.status = None;
+            return;
+        }
+
+        // Step 3: HTTP register to get JWT token
+        self.status = Some("Registering...".to_string());
         match self
             .http_client
             .register(&username, &email, &password)
@@ -738,7 +783,7 @@ impl App {
                 self.session = Some(session);
                 self.token = Some(token.clone());
 
-                // Step 2: Authenticate TCP connection with the token
+                // Step 4: Authenticate TCP connection with the token
                 self.authenticate_tcp_connection(token).await;
             }
             Err(e) => {
@@ -746,6 +791,26 @@ impl App {
                 self.status = None;
             }
         }
+    }
+
+    /// Update the server configuration (TCP address and HTTP URL).
+    /// Returns an error if the address cannot be parsed.
+    fn update_server_config(&mut self, server: &str) -> Result<(), std::net::AddrParseError> {
+        let server_addr: SocketAddr = server.parse()?;
+        self.server_addr = server_addr;
+
+        // Derive HTTP URL from TCP address (port + 2)
+        let http_url = format!("http://{}:{}", server_addr.ip(), server_addr.port() + 2);
+        self.http_base_url = http_url.clone();
+
+        // Update HTTP client with new base URL
+        let http_config = HttpClientConfig {
+            base_url: http_url,
+            skip_tls_verify: self.http_client.skip_tls_verify(),
+        };
+        self.http_client = HttpClient::with_config(http_config);
+
+        Ok(())
     }
 
     /// Authenticate the TCP connection using a JWT token.
@@ -2015,10 +2080,12 @@ mod tests {
         // Test that all action variants can be constructed
         let _ = Action::Quit;
         let _ = Action::Login {
+            server: "127.0.0.1:8080".to_string(),
             username: "test".to_string(),
             password: "pass".to_string(),
         };
         let _ = Action::Register {
+            server: "127.0.0.1:8080".to_string(),
             username: "test".to_string(),
             email: "test@test.com".to_string(),
             password: "pass".to_string(),

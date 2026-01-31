@@ -55,6 +55,7 @@ pub struct HttpClient {
     base_url: String,
     client: reqwest::Client,
     token: Option<String>,
+    skip_tls_verify: bool,
 }
 
 /// Login request body.
@@ -289,7 +290,13 @@ impl HttpClient {
             base_url: config.base_url,
             client,
             token: None,
+            skip_tls_verify: config.skip_tls_verify,
         }
+    }
+
+    /// Get whether TLS verification is skipped.
+    pub fn skip_tls_verify(&self) -> bool {
+        self.skip_tls_verify
     }
 
     /// Get the current JWT token.

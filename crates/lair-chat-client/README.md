@@ -46,27 +46,30 @@ lair-chat-client -s 192.168.1.100:8080
 
 ### Login Screen
 
-When the client starts, you'll see the login screen:
+When the client starts, you'll see the login screen. The server address field is
+pre-filled from the `--server` CLI argument (default: `127.0.0.1:8080`) and can
+be edited before logging in:
 
 ```
 ┌─────────────────────────────────────────┐
 │            LAIR CHAT                    │
 │                                         │
+│  Server:   [127.0.0.1:8080_____]        │
 │  Username: [____________]               │
 │  Password: [____________]               │
 │  Email:    [____________] (register)    │
 │                                         │
 │  [Tab] Switch fields                    │
-│  [Enter] Login / [Ctrl+R] Register      │
-│  [Ctrl+C] Quit                          │
+│  [Enter] Login / [F1] Register mode     │
+│  [Esc] Quit                             │
 └─────────────────────────────────────────┘
 ```
 
 **Controls:**
 - `Tab` - Move between input fields
-- `Enter` - Login with current credentials
-- `Ctrl+R` - Register new account (requires email field)
-- `Ctrl+C` - Quit
+- `Enter` - Login with current credentials (connects to server first)
+- `F1` - Toggle between login and registration mode
+- `Esc` - Quit
 
 ### Chat Screen
 

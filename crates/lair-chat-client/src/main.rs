@@ -98,7 +98,10 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
 
     // Create app with HTTP configuration
     let mut app = App::with_http_config(server_addr, http_url, insecure);
-    let mut login_screen = LoginScreen::new();
+
+    // Create login screen with the server address from CLI (or default)
+    let mut login_screen = LoginScreen::with_server(server_addr.to_string());
+
     let mut chat_screen = ChatScreen::new();
     let mut rooms_screen = RoomsScreen::new();
     let mut command_palette = CommandPalette::new();
@@ -107,10 +110,8 @@ async fn run_tui(server_addr: SocketAddr, http_url: String, insecure: bool) -> R
     let mut invitations_overlay = InvitationsOverlay::new();
     let mut members_overlay = MembersOverlay::new();
 
-    // Connect to server
-    if let Err(e) = app.connect().await {
-        app.set_error(format!("Failed to connect: {}", e));
-    }
+    // Note: Connection is now deferred until user submits login form
+    // This allows the user to configure the server address in the UI
 
     // Main loop
     let tick_rate = Duration::from_millis(100);
