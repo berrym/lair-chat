@@ -70,7 +70,7 @@ utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
 
 # System
-sysinfo = "0.37"
+sysinfo = "0.38"
 signal-hook = "0.3"
 
 # Metrics
