@@ -71,7 +71,7 @@ utoipa-swagger-ui = { version = "9", features = ["axum"] }
 
 # System
 sysinfo = "0.37"
-signal-hook = "0.3"
+signal-hook = "0.4"
 
 # Metrics
 metrics = "0.24"
