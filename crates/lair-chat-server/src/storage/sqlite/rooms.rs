@@ -128,7 +128,7 @@ impl RoomRepository for SqliteStorage {
         rows.into_iter().map(row_to_room).collect()
     }
 
-    async fn list_for_user(&self, user_id: UserId) -> Result<Vec<Room>> {
+    async fn list_for_user(&self, user_id: UserId, pagination: Pagination) -> Result<Vec<Room>> {
         let rows = sqlx::query(
             r#"
             SELECT r.id, r.name, r.description, r.owner_id, r.is_private, r.max_members, r.created_at, r.updated_at
@@ -136,9 +136,12 @@ impl RoomRepository for SqliteStorage {
             INNER JOIN room_memberships m ON r.id = m.room_id
             WHERE m.user_id = ?
             ORDER BY r.name ASC
+            LIMIT ? OFFSET ?
             "#,
         )
         .bind(user_id.to_string())
+        .bind(pagination.limit as i64)
+        .bind(pagination.offset as i64)
         .fetch_all(&self.pool)
         .await?;
 
@@ -480,7 +483,7 @@ mod tests {
         assert_eq!(members.len(), 2);
 
         // List rooms for user
-        let rooms = RoomRepository::list_for_user(&storage, user.id)
+        let rooms = RoomRepository::list_for_user(&storage, user.id, Pagination::default())
             .await
             .unwrap();
         assert_eq!(rooms.len(), 1);

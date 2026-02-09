@@ -95,8 +95,8 @@ impl<S: Storage + 'static> RoomService<S> {
     }
 
     /// List rooms a user is a member of.
-    pub async fn list_for_user(&self, user_id: UserId) -> Result<Vec<Room>> {
-        RoomRepository::list_for_user(&*self.storage, user_id).await
+    pub async fn list_for_user(&self, user_id: UserId, pagination: Pagination) -> Result<Vec<Room>> {
+        RoomRepository::list_for_user(&*self.storage, user_id, pagination).await
     }
 
     /// Join a room.
@@ -383,12 +383,22 @@ impl<S: Storage + 'static> RoomService<S> {
             return Err(Error::NotInvitee);
         }
 
-        // Accept invitation
+        // Verify invitation can be accepted (checks expiry/status)
         invitation.accept().map_err(|_| Error::InvitationExpired)?;
+
+        // Join the room first — join() checks for a pending invitation on
+        // private rooms, so we must not persist the "accepted" status until
+        // after the join succeeds.
+        let membership = self.join(user_id, invitation.room_id).await?;
+
+        // Persist the accepted status now that membership is confirmed.
+        // (join() already marks pending invitations as accepted for the
+        // public-room path, but for private rooms the invitation was found
+        // by join()'s find_pending check, so the update here is the
+        // authoritative persistence.)
         InvitationRepository::update(&*self.storage, &invitation).await?;
 
-        // Join the room
-        self.join(user_id, invitation.room_id).await
+        Ok(membership)
     }
 
     /// Decline a room invitation.
@@ -857,11 +867,18 @@ mod tests {
         let alice_id = create_user(&storage, "alice", "alice@example.com").await;
         let bob_id = create_user(&storage, "bob", "bob@example.com").await;
 
-        // Note: Using a public room here because the accept_invitation + join interaction
-        // has an edge case where accepting the invitation marks it as non-pending before
-        // the join() call checks for pending invitations on private rooms.
+        // Use a private room to verify the invitation acceptance works
+        // correctly with the join() pending-invitation check.
         let room = service
-            .create(alice_id, "public-room", None, None)
+            .create(
+                alice_id,
+                "private-room",
+                None,
+                Some(RoomSettings {
+                    is_private: true,
+                    ..Default::default()
+                }),
+            )
             .await
             .unwrap();
 

@@ -86,7 +86,7 @@ pub trait RoomRepository: Send + Sync {
     async fn list_public(&self, pagination: Pagination) -> Result<Vec<Room>>;
 
     /// List all rooms a user is a member of.
-    async fn list_for_user(&self, user_id: UserId) -> Result<Vec<Room>>;
+    async fn list_for_user(&self, user_id: UserId, pagination: Pagination) -> Result<Vec<Room>>;
 
     /// Count total rooms.
     async fn count(&self) -> Result<u64>;

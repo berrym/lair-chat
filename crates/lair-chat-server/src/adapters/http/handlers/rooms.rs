@@ -190,7 +190,7 @@ pub async fn list_rooms<S: Storage + Clone + 'static>(
         .map(|(_, user)| user.id);
 
     let rooms = if query.joined_only {
-        state.engine.list_user_rooms(auth.session_id).await?
+        state.engine.list_user_rooms(auth.session_id, pagination).await?
     } else {
         state.engine.list_public_rooms(pagination).await?
     };

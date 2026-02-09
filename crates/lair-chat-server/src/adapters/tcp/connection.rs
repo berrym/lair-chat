@@ -21,7 +21,7 @@ use crate::core::engine::ChatEngine;
 use crate::core::events::{should_receive_event, EventDispatcher};
 use crate::crypto::{parse_public_key, Cipher, KeyPair};
 use crate::domain::events::{Event, EventPayload};
-use crate::domain::{Protocol, RoomId, Session, SessionId, User};
+use crate::domain::{Pagination, Protocol, RoomId, Session, SessionId, User};
 use crate::storage::{RoomRepository, Storage, UserRepository};
 
 use super::commands::CommandHandler;
@@ -847,7 +847,7 @@ impl<S: Storage + 'static> Connection<S> {
 
                     // Fetch user's current room memberships for filtering
                     let user_rooms: Vec<RoomId> =
-                        match RoomRepository::list_for_user(&*storage, user_id).await {
+                        match RoomRepository::list_for_user(&*storage, user_id, Pagination { offset: 0, limit: u32::MAX }).await {
                             Ok(rooms) => rooms.into_iter().map(|r| r.id).collect(),
                             Err(e) => {
                                 debug!("Failed to fetch user rooms for event filtering: {}", e);
