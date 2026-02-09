@@ -444,7 +444,11 @@ impl<S: Storage + 'static> CommandHandler<S> {
                 };
             };
 
-            match self.engine.list_user_rooms(session_id, Pagination::default()).await {
+            match self
+                .engine
+                .list_user_rooms(session_id, Pagination::default())
+                .await
+            {
                 Ok(rooms) => {
                     let mut items = Vec::with_capacity(rooms.len());
                     for room in rooms {

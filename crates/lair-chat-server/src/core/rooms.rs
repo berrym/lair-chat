@@ -95,7 +95,11 @@ impl<S: Storage + 'static> RoomService<S> {
     }
 
     /// List rooms a user is a member of.
-    pub async fn list_for_user(&self, user_id: UserId, pagination: Pagination) -> Result<Vec<Room>> {
+    pub async fn list_for_user(
+        &self,
+        user_id: UserId,
+        pagination: Pagination,
+    ) -> Result<Vec<Room>> {
         RoomRepository::list_for_user(&*self.storage, user_id, pagination).await
     }
 

@@ -846,14 +846,22 @@ impl<S: Storage + 'static> Connection<S> {
                     );
 
                     // Fetch user's current room memberships for filtering
-                    let user_rooms: Vec<RoomId> =
-                        match RoomRepository::list_for_user(&*storage, user_id, Pagination { offset: 0, limit: u32::MAX }).await {
-                            Ok(rooms) => rooms.into_iter().map(|r| r.id).collect(),
-                            Err(e) => {
-                                debug!("Failed to fetch user rooms for event filtering: {}", e);
-                                Vec::new()
-                            }
-                        };
+                    let user_rooms: Vec<RoomId> = match RoomRepository::list_for_user(
+                        &*storage,
+                        user_id,
+                        Pagination {
+                            offset: 0,
+                            limit: u32::MAX,
+                        },
+                    )
+                    .await
+                    {
+                        Ok(rooms) => rooms.into_iter().map(|r| r.id).collect(),
+                        Err(e) => {
+                            debug!("Failed to fetch user rooms for event filtering: {}", e);
+                            Vec::new()
+                        }
+                    };
 
                     // Check if this user should receive this event
                     if !should_receive_event(&event, user_id, &user_rooms) {

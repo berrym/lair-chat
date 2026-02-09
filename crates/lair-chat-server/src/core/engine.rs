@@ -223,7 +223,11 @@ impl<S: Storage + 'static> ChatEngine<S> {
     }
 
     /// List rooms the user is a member of.
-    pub async fn list_user_rooms(&self, session_id: SessionId, pagination: Pagination) -> Result<Vec<Room>> {
+    pub async fn list_user_rooms(
+        &self,
+        session_id: SessionId,
+        pagination: Pagination,
+    ) -> Result<Vec<Room>> {
         let (_, user) = self.sessions.validate(session_id).await?;
         self.rooms.list_for_user(user.id, pagination).await
     }
