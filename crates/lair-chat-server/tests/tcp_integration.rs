@@ -1412,3 +1412,76 @@ async fn test_connection_limit_at_capacity() {
     server.shutdown().await;
     result.unwrap();
 }
+
+// ============================================================================
+// Invitation Event Delivery Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_invitation_received_event_delivery() {
+    let (server, port) = create_test_server().await;
+
+    let result = timeout(TEST_TIMEOUT, async {
+        // Alice registers and creates a private room
+        let mut alice = TestClient::connect(port).await;
+        alice.handshake().await;
+        let alice_reg = alice
+            .register("alice_inv", "alice_inv@example.com", "SecurePass123!")
+            .await;
+        assert_eq!(alice_reg["success"], true);
+
+        let create_response = alice
+            .request(&json!({
+                "type": "create_room",
+                "name": "Invite Test Room",
+                "settings": { "private": true }
+            }))
+            .await;
+        assert_eq!(create_response["success"], true);
+        let room_id = create_response["room"]["id"].as_str().unwrap();
+
+        // Bob registers (event listener starts after authentication)
+        let mut bob = TestClient::connect(port).await;
+        bob.handshake().await;
+        let bob_reg = bob
+            .register("bob_inv", "bob_inv@example.com", "SecurePass123!")
+            .await;
+        assert_eq!(bob_reg["success"], true);
+        let bob_id = bob_reg["user"]["id"].as_str().unwrap();
+
+        // Give event listeners time to start
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Alice invites Bob to the room
+        let invite_response = alice
+            .request(&json!({
+                "type": "invite_to_room",
+                "room_id": room_id,
+                "user_id": bob_id
+            }))
+            .await;
+        assert_eq!(
+            invite_response["success"], true,
+            "Invite failed: {:?}",
+            invite_response
+        );
+
+        // Bob should receive an invitation_received event
+        let event = timeout(Duration::from_secs(5), bob.recv())
+            .await
+            .expect("Timed out waiting for invitation_received event");
+
+        assert_eq!(
+            event["type"], "invitation_received",
+            "Expected invitation_received event, got: {:?}",
+            event
+        );
+        assert_eq!(event["invitation"]["room_name"], "Invite Test Room");
+        assert_eq!(event["invitation"]["inviter_name"], "alice_inv");
+        assert_eq!(event["invitation"]["invitee_name"], "bob_inv");
+    })
+    .await;
+
+    server.shutdown().await;
+    result.unwrap();
+}

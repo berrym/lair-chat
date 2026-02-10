@@ -14,26 +14,19 @@ This document outlines the development roadmap for Lair Chat, organized into pha
 
 ---
 
-## Phase 1: Production Hardening (In Progress)
+## Phase 1: Production Hardening (Done)
 
 **Goal**: Address immediate gaps for production readiness.
 
 | Task | Priority | Status | Description |
 |------|----------|--------|-------------|
-| Emit InvitationReceived event | High | **Done** | Real-time notification when users receive room invitations. Event emitted in `RoomService::invite()`, dispatched to TCP and WebSocket clients. |
+| Emit InvitationReceived event | High | **Done** | Real-time notification when users receive room invitations. Event emitted in `RoomService::invite()`, dispatched to TCP and WebSocket clients. Integration test verifies end-to-end event delivery. |
 | Expose online status to HTTP | High | **Done** | `EventDispatcher` tracks per-user connection counts across all adapters. `GET /api/v1/users` returns `UserWithStatus` with `online` field and supports `online_only` filter. |
-| Configure rate limiting | Medium | **Done** | Custom middleware with auth (10/60s) and general (100/60s) tiers. Per-IP tracking, proper `429` responses with `Retry-After` header, auto-cleanup. Messaging tier (30/60s) defined but not yet deployed. |
+| Configure rate limiting | Medium | **Done** | Custom middleware with auth (10/60s), messaging (30/60s), and general (100/60s) tiers. Per-IP tracking, proper `429` responses with `Retry-After` header, auto-cleanup. |
 | Connection limits | Medium | **Done** | TCP adapter enforces configurable `max_connections` (default 10,000) via `LAIR_TCP_MAX_CONNECTIONS` env var. Atomic counter with active enforcement and logging. |
-| Add observability/metrics | High | **Partial** | `/metrics` endpoint serves Prometheus format with 3 gauges (`lair_chat_online_users`, `lair_chat_total_users`, `lair_chat_total_rooms`). Missing: request counters, latency histograms, per-endpoint instrumentation. |
-| Add profile update endpoint | Medium | **Stub** | Route exists at `PATCH /api/v1/users/me` but handler returns "Not implemented". Request struct only has `email` field — needs `display_name` support. |
-
-### Remaining Work
-
-- [ ] Expand `/metrics` with request counters and latency histograms per endpoint
-- [ ] Deploy messaging rate limit tier to message endpoints
-- [ ] Implement profile update handler with `display_name` and `email` support
-- [ ] Add integration tests for InvitationReceived event delivery to connected clients
-- [ ] All existing tests pass
+| Add observability/metrics | High | **Done** | `/metrics` endpoint serves Prometheus format with 3 gauges (`lair_chat_online_users`, `lair_chat_total_users`, `lair_chat_total_rooms`) plus per-request `http_requests_total` counter and `http_request_duration_seconds` histogram with method/route/status labels. |
+| Add profile update endpoint | Medium | **Done** | `PATCH /api/v1/users/me` accepts `email` updates with validation and uniqueness checks. Wired through AuthService, ChatEngine, and HTTP handler. |
+| Wire up InviteToRoom command | Medium | **Done** | TCP and WebSocket adapters now handle `InviteToRoom` messages (previously returned "not_implemented"). Uses `invite_to_room_enriched` engine method. |
 
 ---
 
@@ -130,6 +123,7 @@ Health endpoints already exist (`/health`, `/ready`) but readiness check does no
 |---------|------|---------|
 | 1.0 | January 2025 | Initial roadmap |
 | 2.0 | February 2026 | Updated Phase 1 and 2 status to reflect implemented features |
+| 2.1 | February 2026 | Phase 1 complete: metrics middleware, messaging rate limit, profile update, InviteToRoom wired up |
 
 ---
 

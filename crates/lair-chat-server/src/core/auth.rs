@@ -191,6 +191,33 @@ impl<S: Storage + 'static> AuthService<S> {
         UserRepository::list(&*self.storage, pagination).await
     }
 
+    /// Update a user's profile (email).
+    pub async fn update_profile(&self, user_id: UserId, email: Option<&str>) -> Result<User> {
+        let mut user = UserRepository::find_by_id(&*self.storage, user_id)
+            .await?
+            .ok_or(Error::UserNotFound)?;
+
+        if let Some(new_email) = email {
+            let validated_email = Email::new(new_email).map_err(|e| Error::EmailInvalid {
+                reason: e.to_string(),
+            })?;
+
+            // Check uniqueness only if email actually changed
+            if validated_email.as_str() != user.email.as_str()
+                && UserRepository::email_exists(&*self.storage, validated_email.as_str()).await?
+            {
+                return Err(Error::EmailTaken);
+            }
+            user.email = validated_email;
+        }
+
+        UserRepository::update(&*self.storage, &user).await?;
+
+        UserRepository::find_by_id(&*self.storage, user_id)
+            .await?
+            .ok_or(Error::UserNotFound)
+    }
+
     // ========================================================================
     // Password Helpers
     // ========================================================================
@@ -699,5 +726,98 @@ mod tests {
         assert!(result.is_ok());
         let users = result.unwrap();
         assert_eq!(users.len(), 2);
+    }
+
+    // ========================================================================
+    // Update profile tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_update_profile_email_success() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        let (user, _, _) = auth
+            .register("profileuser", "old@example.com", "password123")
+            .await
+            .unwrap();
+
+        let updated = auth
+            .update_profile(user.id, Some("new@example.com"))
+            .await
+            .unwrap();
+
+        assert_eq!(updated.email.as_str(), "new@example.com");
+        assert_eq!(updated.username.as_str(), "profileuser");
+    }
+
+    #[tokio::test]
+    async fn test_update_profile_email_invalid() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        let (user, _, _) = auth
+            .register("profileuser2", "valid@example.com", "password123")
+            .await
+            .unwrap();
+
+        let result = auth.update_profile(user.id, Some("notanemail")).await;
+
+        assert!(matches!(result, Err(Error::EmailInvalid { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_update_profile_email_taken() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        auth.register("user1", "first@example.com", "password123")
+            .await
+            .unwrap();
+
+        let (user2, _, _) = auth
+            .register("user2", "second@example.com", "password123")
+            .await
+            .unwrap();
+
+        let result = auth
+            .update_profile(user2.id, Some("first@example.com"))
+            .await;
+
+        assert!(matches!(result, Err(Error::EmailTaken)));
+    }
+
+    #[tokio::test]
+    async fn test_update_profile_no_changes() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        let (user, _, _) = auth
+            .register("nochange", "same@example.com", "password123")
+            .await
+            .unwrap();
+
+        let updated = auth.update_profile(user.id, None).await.unwrap();
+
+        assert_eq!(updated.email.as_str(), "same@example.com");
+    }
+
+    #[tokio::test]
+    async fn test_update_profile_same_email() {
+        let storage = create_test_storage().await;
+        let auth = create_auth_service(storage);
+
+        let (user, _, _) = auth
+            .register("samemail", "keep@example.com", "password123")
+            .await
+            .unwrap();
+
+        // Updating to the same email should succeed (no uniqueness conflict)
+        let updated = auth
+            .update_profile(user.id, Some("keep@example.com"))
+            .await
+            .unwrap();
+
+        assert_eq!(updated.email.as_str(), "keep@example.com");
     }
 }

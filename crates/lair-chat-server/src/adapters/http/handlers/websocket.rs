@@ -629,8 +629,16 @@ impl<S: Storage + 'static> WsConnection<S> {
                 "not_supported",
                 "Key exchange not needed for WebSocket",
             ),
-            // Unimplemented
-            _ => ServerMessage::error(None, "not_implemented", "Operation not yet implemented"),
+            ClientMessage::InviteToRoom {
+                request_id: _,
+                room_id,
+                user_id,
+                message: _,
+            } => {
+                self.commands
+                    .handle_invite_to_room(session_id, &room_id, &user_id)
+                    .await
+            }
         };
 
         self.send(response).await

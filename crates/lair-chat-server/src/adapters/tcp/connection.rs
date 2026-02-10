@@ -740,6 +740,16 @@ impl<S: Storage + 'static> Connection<S> {
             | ClientMessage::Register { .. } => {
                 ServerMessage::error(None, "invalid_state", "Already authenticated")
             }
+            ClientMessage::InviteToRoom {
+                request_id: _,
+                room_id,
+                user_id,
+                message: _,
+            } => {
+                self.commands
+                    .handle_invite_to_room(session_id, &room_id, &user_id)
+                    .await
+            }
             // Unimplemented
             _ => ServerMessage::error(None, "not_implemented", "Operation not yet implemented"),
         };

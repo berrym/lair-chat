@@ -13,7 +13,9 @@ use crate::core::engine::ChatEngine;
 use crate::storage::Storage;
 
 use super::handlers;
-use super::middleware::{jwt_service_layer, rate_limit_middleware, RateLimiter};
+use super::middleware::{
+    jwt_service_layer, metrics_middleware, rate_limit_middleware, RateLimiter,
+};
 
 /// Application state shared across handlers.
 #[derive(Clone)]
@@ -44,6 +46,7 @@ pub fn create_router_with_metrics<S: Storage + Clone + 'static>(
 
     // Create rate limiters
     let auth_limiter = Arc::new(RateLimiter::auth());
+    let messaging_limiter = Arc::new(RateLimiter::messaging());
     let general_limiter = Arc::new(RateLimiter::general());
 
     Router::new()
@@ -65,7 +68,13 @@ pub fn create_router_with_metrics<S: Storage + Clone + 'static>(
         // Protected endpoints (general rate limit, JWT required)
         .nest("/api/v1/users", user_routes())
         .nest("/api/v1/rooms", room_routes())
-        .nest("/api/v1/messages", message_routes())
+        .nest(
+            "/api/v1/messages",
+            message_routes().layer(middleware::from_fn({
+                let limiter = messaging_limiter.clone();
+                move |req, next| rate_limit_middleware(limiter.clone(), req, next)
+            })),
+        )
         .nest("/api/v1/invitations", invitation_routes())
         .nest("/api/v1/admin", admin_routes())
         // Apply JWT service layer to all routes (extractors use it)
@@ -79,6 +88,7 @@ pub fn create_router_with_metrics<S: Storage + Clone + 'static>(
             move |req, next| rate_limit_middleware(limiter.clone(), req, next)
         }))
         .with_state(state)
+        .layer(middleware::from_fn(metrics_middleware))
 }
 
 /// Authentication routes.

@@ -9,7 +9,7 @@ use axum::{
     http::{header, StatusCode},
     response::{IntoResponse, Response},
 };
-use metrics::{describe_gauge, gauge};
+use metrics::{describe_counter, describe_gauge, describe_histogram, gauge};
 use metrics_exporter_prometheus::PrometheusHandle;
 
 use crate::adapters::http::routes::AppState;
@@ -32,6 +32,11 @@ pub fn init_metrics() -> Option<PrometheusHandle> {
     describe_gauge!("lair_chat_online_users", "Number of currently online users");
     describe_gauge!("lair_chat_total_users", "Total number of registered users");
     describe_gauge!("lair_chat_total_rooms", "Total number of rooms");
+    describe_counter!("http_requests_total", "Total HTTP requests");
+    describe_histogram!(
+        "http_request_duration_seconds",
+        "HTTP request latency in seconds"
+    );
 
     // Create and install the Prometheus recorder
     // Returns None if a recorder is already installed (e.g., in another test)

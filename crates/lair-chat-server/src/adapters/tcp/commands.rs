@@ -627,6 +627,66 @@ impl<S: Storage + 'static> CommandHandler<S> {
     // Invitations
     // ========================================================================
 
+    /// Handle invite to room request.
+    pub async fn handle_invite_to_room(
+        &self,
+        session_id: Option<SessionId>,
+        room_id: &str,
+        user_id: &str,
+    ) -> ServerMessage {
+        let Some(session_id) = session_id else {
+            return ServerMessage::InviteToRoomResponse {
+                request_id: None,
+                success: false,
+                invitation: None,
+                error: Some(ErrorInfo::new("unauthorized", "Not authenticated")),
+            };
+        };
+
+        let room_id = match RoomId::parse(room_id) {
+            Ok(id) => id,
+            Err(_) => {
+                return ServerMessage::InviteToRoomResponse {
+                    request_id: None,
+                    success: false,
+                    invitation: None,
+                    error: Some(ErrorInfo::new("validation_failed", "Invalid room ID")),
+                };
+            }
+        };
+
+        let invitee_id = match UserId::parse(user_id) {
+            Ok(id) => id,
+            Err(_) => {
+                return ServerMessage::InviteToRoomResponse {
+                    request_id: None,
+                    success: false,
+                    invitation: None,
+                    error: Some(ErrorInfo::new("validation_failed", "Invalid user ID")),
+                };
+            }
+        };
+
+        match self
+            .engine
+            .invite_to_room_enriched(session_id, room_id, invitee_id)
+            .await
+        {
+            Ok(enriched) => ServerMessage::InviteToRoomResponse {
+                request_id: None,
+                success: true,
+                invitation: Some(enriched),
+                error: None,
+            },
+            Err(e) => ServerMessage::InviteToRoomResponse {
+                request_id: None,
+                success: false,
+                invitation: None,
+                error: Some(error_to_info(&e)),
+            },
+        }
+    }
+
     /// Handle list invitations request.
     pub async fn handle_list_invitations(&self, session_id: Option<SessionId>) -> ServerMessage {
         let Some(session_id) = session_id else {

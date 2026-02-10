@@ -194,6 +194,12 @@ impl<S: Storage + 'static> ChatEngine<S> {
             .await
     }
 
+    /// Update the current user's profile.
+    pub async fn update_profile(&self, session_id: SessionId, email: Option<&str>) -> Result<User> {
+        let (_, user) = self.sessions.validate(session_id).await?;
+        self.auth.update_profile(user.id, email).await
+    }
+
     // ========================================================================
     // Room Operations
     // ========================================================================
@@ -334,6 +340,17 @@ impl<S: Storage + 'static> ChatEngine<S> {
         self.rooms.invite(user.id, room_id, invitee_id).await
     }
 
+    /// Invite a user to a room and return enriched invitation.
+    pub async fn invite_to_room_enriched(
+        &self,
+        session_id: SessionId,
+        room_id: RoomId,
+        invitee_id: UserId,
+    ) -> Result<EnrichedInvitation> {
+        let invitation = self.invite_to_room(session_id, room_id, invitee_id).await?;
+        self.enrich_invitation(&invitation).await
+    }
+
     /// Accept a room invitation.
     pub async fn accept_invitation(
         &self,
@@ -369,30 +386,32 @@ impl<S: Storage + 'static> ChatEngine<S> {
 
         let mut enriched = Vec::with_capacity(invitations.len());
         for inv in &invitations {
-            // Get room name
-            let room = RoomRepository::find_by_id(self.storage.as_ref(), inv.room_id)
-                .await?
-                .ok_or(crate::Error::RoomNotFound)?;
-
-            // Get inviter name
-            let inviter = UserRepository::find_by_id(self.storage.as_ref(), inv.inviter)
-                .await?
-                .ok_or(crate::Error::UserNotFound)?;
-
-            // Get invitee name
-            let invitee = UserRepository::find_by_id(self.storage.as_ref(), inv.invitee)
-                .await?
-                .ok_or(crate::Error::UserNotFound)?;
-
-            enriched.push(EnrichedInvitation::from_invitation(
-                inv,
-                room.name.to_string(),
-                inviter.username.to_string(),
-                invitee.username.to_string(),
-            ));
+            enriched.push(self.enrich_invitation(inv).await?);
         }
 
         Ok(enriched)
+    }
+
+    /// Enrich an invitation with room and user names.
+    async fn enrich_invitation(&self, invitation: &Invitation) -> Result<EnrichedInvitation> {
+        let room = RoomRepository::find_by_id(self.storage.as_ref(), invitation.room_id)
+            .await?
+            .ok_or(crate::Error::RoomNotFound)?;
+
+        let inviter = UserRepository::find_by_id(self.storage.as_ref(), invitation.inviter)
+            .await?
+            .ok_or(crate::Error::UserNotFound)?;
+
+        let invitee = UserRepository::find_by_id(self.storage.as_ref(), invitation.invitee)
+            .await?
+            .ok_or(crate::Error::UserNotFound)?;
+
+        Ok(EnrichedInvitation::from_invitation(
+            invitation,
+            room.name.to_string(),
+            inviter.username.to_string(),
+            invitee.username.to_string(),
+        ))
     }
 
     // ========================================================================

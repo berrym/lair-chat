@@ -69,12 +69,15 @@ pub async fn get_current_user<S: Storage + Clone + 'static>(
 
 /// Update the current user's profile.
 pub async fn update_profile<S: Storage + Clone + 'static>(
-    State(_state): State<AppState<S>>,
-    _auth: AuthUser,
-    Json(_req): Json<UpdateProfileRequest>,
+    State(state): State<AppState<S>>,
+    auth: AuthUser,
+    Json(req): Json<UpdateProfileRequest>,
 ) -> Result<Json<UserResponse>, Error> {
-    // TODO: Implement profile update
-    Err(Error::Internal("Not implemented".into()))
+    let user = state
+        .engine
+        .update_profile(auth.session_id, req.email.as_deref())
+        .await?;
+    Ok(Json(UserResponse { user }))
 }
 
 /// Get a user by ID.
