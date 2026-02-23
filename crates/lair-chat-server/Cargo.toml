@@ -74,7 +74,7 @@ metrics = "0.24"
 metrics-exporter-prometheus = "0.18"
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
+criterion = { version = "0.8", features = ["html_reports", "async_tokio"] }
 tempfile = "3.25"
 axum-test = "18"
 pretty_assertions = "1.4"
