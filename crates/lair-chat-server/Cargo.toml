@@ -58,7 +58,7 @@ uuid = { version = "1.19", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2.0"
 validator = { version = "0.20", features = ["derive"] }
-regex = "1.11"
+regex = "1.12"
 config = "0.15"
 
 # Logging
