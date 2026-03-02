@@ -81,7 +81,7 @@ jobs:
           Compress-Archive -Path dist/* -DestinationPath lair-chat-${{ matrix.name }}.zip
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: lair-chat-${{ matrix.name }}
           path: |
